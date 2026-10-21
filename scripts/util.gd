@@ -3,6 +3,8 @@ extends RefCounted
 
 static var _mats := {}
 static var _boxes := {}
+static var _detail: Texture2D
+static var _vmat: StandardMaterial3D
 
 
 static func mat(c: Color, unshaded := false) -> StandardMaterial3D:
@@ -35,3 +37,46 @@ static func box(parent: Node, size: Vector3, pos: Vector3, c: Color) -> MeshInst
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
+
+
+static func mesh(parent: Node, m: Mesh, pos := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = m
+	mi.material_override = vmat()
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+# Textura de ruído em tons de cinza. Multiplica a cor dos vértices e tira a cara de "plástico".
+static func detail_tex() -> Texture2D:
+	if _detail:
+		return _detail
+	var n := FastNoiseLite.new()
+	n.seed = 77
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	n.frequency = 0.06
+	n.fractal_octaves = 4
+	var src := n.get_seamless_image(128, 128, false, false, 0.1, true)
+	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
+	for y in 128:
+		for x in 128:
+			var v := 0.74 + src.get_pixel(x, y).r * 0.3
+			img.set_pixel(x, y, Color(v, v, v))
+	img.generate_mipmaps()
+	_detail = ImageTexture.create_from_image(img)
+	return _detail
+
+
+# Material único usado por quase tudo: cor no vértice + textura de detalhe.
+static func vmat() -> StandardMaterial3D:
+	if _vmat:
+		return _vmat
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	m.albedo_texture = detail_tex()
+	m.roughness = 0.92
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_vmat = m
+	return m
