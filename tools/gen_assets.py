@@ -2,7 +2,7 @@
 """Gera as texturas e os sons do jogo (tudo procedural, sem arquivos de terceiros).
 
 Uso:  python3 tools/gen_assets.py
-Saída: textures/atlas.png (4x4 camadas de 512 px, importado como Texture2DArray)
+Saída: textures/atlas2d.png (4x4 camadas de 512 px + borda de 16 px)
        sounds/*.wav
 """
 import math
@@ -306,14 +306,24 @@ LAYERS = [tex_grass, tex_dirt, tex_rock, tex_sand, tex_plaster, tex_brick, tex_r
           tex_metal, tex_concrete, tex_asphalt, tex_bark, tex_pine, tex_leaves, tex_fabric, tex_plain]
 
 
+PAD = 16
+T = S + PAD * 2   # cada camada com borda repetida (evita emenda ao repetir a textura)
+
+
+def pad_tile(im):
+    a = np.asarray(im)
+    a = np.pad(a, ((PAD, PAD), (PAD, PAD), (0, 0)), mode="wrap")
+    return Image.fromarray(a, "RGB")
+
+
 def build_atlas():
-    atlas = Image.new("RGB", (S * 4, S * 4))
+    atlas = Image.new("RGB", (T * 4, T * 4))
     for i, fn in enumerate(LAYERS):
         arr = fn()
         im = to_img(arr)
-        atlas.paste(im, ((i % 4) * S, (i // 4) * S))
+        atlas.paste(pad_tile(im), ((i % 4) * T, (i // 4) * T))
         print("textura", i, fn.__name__)
-    path = os.path.join(ROOT, "textures", "atlas.png")
+    path = os.path.join(ROOT, "textures", "atlas2d.png")
     atlas.save(path, optimize=True)
     print("ok", path)
 

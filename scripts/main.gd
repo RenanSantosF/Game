@@ -103,6 +103,7 @@ var auto_jump := -1.0
 var bots_only := false
 var shot_times := []
 var run_t := 0.0
+var _frames := 0
 var _seen_guns := ["", "", "glock"]
 var _seen_inv := {}
 var _seen_gear := [0.0, false, false]
@@ -192,6 +193,9 @@ func _build_menu() -> void:
 	vb.add_child(hb)
 	vb.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
 	var rep := _last_log()
+	if rep != "" and _crashed_loading(rep) and int(Cfg.get_v("quality")) > 0:
+		Cfg.set_v("quality", 0)
+		flash_msg = "Da última vez o jogo fechou ao carregar o mapa. Mudei os gráficos para BAIXA."
 	if rep != "":
 		var rb := _menu_btn("RELATÓRIO DA ÚLTIMA VEZ (se fechou sozinho)", func(): _show_report(rep))
 		rb.add_theme_font_size_override("font_size", 16)
@@ -222,6 +226,17 @@ func _last_log() -> String:
 		return ""
 	var lines := txt.split("\n")
 	return "\n".join(lines.slice(maxi(0, lines.size() - 60)))
+
+
+func _crashed_loading(txt: String) -> bool:
+	var last := txt.rfind("[etapa]")
+	if last < 0:
+		return false
+	var line := txt.substr(last).get_slice("\n", 0)
+	for k in ["iniciar partida", "montando o mapa", "mapa pronto", "criando tela", "partida pronta"]:
+		if line.contains(k):
+			return true
+	return false
 
 
 func _show_report(txt: String) -> void:
@@ -786,6 +801,10 @@ func _process(delta: float) -> void:
 			get_tree().quit()
 	if not in_game:
 		return
+	if not dedicated and _frames < 30:
+		_frames += 1
+		if _frames == 30:
+			_step("jogando")
 	match phase:
 		LOBBY:
 			phase_t = maxf(phase_t - delta, 0.0)

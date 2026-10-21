@@ -3,7 +3,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 
 // Material de quase tudo: textura do atlas (camada em UV2.x) vezes a cor do vértice.
 // UV2.y > 0 = balança com o vento (folhas).
-uniform sampler2DArray tex : source_color, filter_linear_mipmap, repeat_enable;
+#include "res://shaders/atlas.gdshaderinc"
 
 varying float layer;
 
@@ -19,7 +19,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 t = texture(tex, vec3(UV, floor(layer + 0.5))).rgb;
+	vec3 t = atlas_sample(UV, layer);
 	ALBEDO = t * COLOR.rgb;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.25;

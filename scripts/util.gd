@@ -1,7 +1,7 @@
 class_name U
 extends RefCounted
 
-# camadas do atlas de texturas (textures/atlas.png, gerado por tools/gen_assets.py)
+# camadas do atlas de texturas (textures/atlas2d.png, gerado por tools/gen_assets.py)
 const GRASS := 0
 const DIRT := 1
 const ROCK := 2
@@ -69,7 +69,7 @@ static func mesh(parent: Node, m: Mesh, pos := Vector3.ZERO) -> MeshInstance3D:
 
 static func atlas() -> Texture:
 	if _atlas == null:
-		_atlas = load("res://textures/atlas.png")
+		_atlas = load("res://textures/atlas2d.png")
 	return _atlas
 
 
