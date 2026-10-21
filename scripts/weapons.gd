@@ -2,29 +2,36 @@ class_name Weapons
 extends RefCounted
 
 # dmg = dano por bala, rate = tiros por segundo, spread = dispersão em graus,
-# head = multiplicador de tiro na cabeça, zoom = aumento da mira.
-# slot 0 = arma principal (2 vagas), slot 1 = pistola.
+# head = multiplicador de tiro na cabeça, zoom = aumento da mira, ammo = calibre.
+# slot 0 = arma principal (2 vagas), slot 1 = pistola. Vida de cada jogador: 200.
 const DATA := {
-	"fist": {"name": "Soco", "dmg": 18.0, "rate": 2.2, "mag": 1, "reload": 0.0, "spread": 0.0, "range": 2.2, "pellets": 1, "head": 1.5, "zoom": 1.0, "recoil": 0.0, "len": 0.0, "type": "fist", "slot": 2},
-	"glock": {"name": "Glock 17", "dmg": 19.0, "rate": 4.5, "mag": 17, "reload": 1.5, "spread": 1.6, "range": 60.0, "pellets": 1, "head": 1.8, "zoom": 1.0, "recoil": 0.012, "len": 0.2, "type": "pistol", "slot": 1},
-	"deagle": {"name": "Desert Eagle", "dmg": 45.0, "rate": 2.0, "mag": 7, "reload": 1.9, "spread": 1.8, "range": 80.0, "pellets": 1, "head": 2.0, "zoom": 1.0, "recoil": 0.045, "len": 0.27, "type": "pistol", "slot": 1},
-	"mp5": {"name": "MP5", "dmg": 17.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 2.4, "range": 70.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0},
-	"ump45": {"name": "UMP-45", "dmg": 21.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 2.2, "range": 75.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.01, "len": 0.65, "type": "smg", "slot": 0},
-	"m4a1": {"name": "M4A1", "dmg": 24.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 1.6, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0},
-	"scar": {"name": "SCAR-L", "dmg": 26.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 1.5, "range": 170.0, "pellets": 1, "head": 1.8, "zoom": 1.8, "recoil": 0.014, "len": 0.88, "type": "scar", "slot": 0},
-	"ak47": {"name": "AK-47", "dmg": 31.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 2.2, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.5, "recoil": 0.02, "len": 0.88, "type": "ak", "slot": 0},
-	"r870": {"name": "Remington 870", "dmg": 13.0, "rate": 1.2, "mag": 6, "reload": 3.0, "spread": 5.5, "range": 32.0, "pellets": 8, "head": 1.5, "zoom": 1.0, "recoil": 0.05, "len": 1.0, "type": "shotgun", "slot": 0},
-	"kar98": {"name": "Kar98k", "dmg": 75.0, "rate": 0.9, "mag": 5, "reload": 3.0, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 2.5, "zoom": 3.0, "recoil": 0.05, "len": 1.1, "type": "bolt", "slot": 0},
-	"awm": {"name": "AWM", "dmg": 92.0, "rate": 0.75, "mag": 5, "reload": 3.4, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.2, "zoom": 4.0, "recoil": 0.06, "len": 1.2, "type": "sniper", "slot": 0},
+	"fist": {"name": "Soco", "dmg": 25.0, "rate": 2.2, "mag": 1, "reload": 0.0, "spread": 0.0, "range": 2.2, "pellets": 1, "head": 1.5, "zoom": 1.0, "recoil": 0.0, "len": 0.0, "type": "fist", "slot": 2, "ammo": ""},
+	"glock": {"name": "Glock 17", "dmg": 30.0, "rate": 4.5, "mag": 17, "reload": 1.5, "spread": 1.6, "range": 60.0, "pellets": 1, "head": 1.8, "zoom": 1.0, "recoil": 0.012, "len": 0.2, "type": "pistol", "slot": 1, "ammo": "a9"},
+	"deagle": {"name": "Desert Eagle", "dmg": 72.0, "rate": 2.0, "mag": 7, "reload": 1.9, "spread": 1.8, "range": 80.0, "pellets": 1, "head": 2.0, "zoom": 1.0, "recoil": 0.045, "len": 0.27, "type": "pistol", "slot": 1, "ammo": "a9"},
+	"mp5": {"name": "MP5", "dmg": 27.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 2.4, "range": 70.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0, "ammo": "a9"},
+	"ump45": {"name": "UMP-45", "dmg": 34.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 2.2, "range": 75.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.01, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9"},
+	"m4a1": {"name": "M4A1", "dmg": 38.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 1.6, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556"},
+	"scar": {"name": "SCAR-L", "dmg": 41.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 1.5, "range": 170.0, "pellets": 1, "head": 1.8, "zoom": 1.8, "recoil": 0.014, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556"},
+	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 2.2, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.5, "recoil": 0.02, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a762"},
+	"r870": {"name": "Remington 870", "dmg": 21.0, "rate": 1.2, "mag": 6, "reload": 3.0, "spread": 5.5, "range": 32.0, "pellets": 8, "head": 1.5, "zoom": 1.0, "recoil": 0.05, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"m1014": {"name": "M1014", "dmg": 17.0, "rate": 3.2, "mag": 7, "reload": 3.2, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.5, "zoom": 1.0, "recoil": 0.04, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"kar98": {"name": "Kar98k", "dmg": 120.0, "rate": 0.9, "mag": 5, "reload": 3.0, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 2.5, "zoom": 3.0, "recoil": 0.05, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
+	"awm": {"name": "AWM", "dmg": 150.0, "rate": 0.75, "mag": 5, "reload": 3.4, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.2, "zoom": 4.0, "recoil": 0.06, "len": 1.2, "type": "sniper", "slot": 0, "ammo": "a762"},
 }
 
-# Itens que não são armas. stack = quantos cabem numa vaga da mochila.
+# Itens que não são armas. stack = quantos cabem numa vaga da mochila; count = quanto vem no chão.
 const ITEMS := {
-	"bandage": {"name": "Bandagem", "stack": 10, "count": 5, "kind": "heal", "heal": 15.0, "time": 1.8},
-	"med": {"name": "Kit médico", "stack": 3, "count": 1, "kind": "heal", "heal": 60.0, "time": 4.0},
+	"a9": {"name": "Munição 9mm", "stack": 60, "count": 30, "kind": "ammo"},
+	"a556": {"name": "Munição 5.56", "stack": 60, "count": 30, "kind": "ammo"},
+	"a762": {"name": "Munição 7.62", "stack": 60, "count": 25, "kind": "ammo"},
+	"a12": {"name": "Cartucho 12", "stack": 30, "count": 12, "kind": "ammo"},
+	"bandage": {"name": "Bandagem", "stack": 10, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
+	"med": {"name": "Kit médico", "stack": 4, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
 	"vest": {"name": "Colete", "kind": "gear"},
 	"helmet": {"name": "Capacete", "kind": "gear"},
-	"bag": {"name": "Mochila", "kind": "gear"},
+	"bag1": {"name": "Mochila nível 1", "kind": "gear", "level": 1},
+	"bag2": {"name": "Mochila nível 2", "kind": "gear", "level": 2},
+	"bag3": {"name": "Mochila nível 3", "kind": "gear", "level": 3},
 	"stock": {"name": "Coronha", "stack": 1, "count": 1, "kind": "att", "fits": ["smg", "rifle", "scar", "ak", "shotgun"]},
 	"extmag": {"name": "Carregador estendido", "stack": 1, "count": 1, "kind": "att", "fits": ["pistol", "smg", "rifle", "scar", "ak", "bolt", "sniper"]},
 	"holo": {"name": "Mira holográfica", "stack": 1, "count": 1, "kind": "att", "fits": ["smg", "rifle", "scar", "ak", "shotgun"]},
@@ -32,18 +39,19 @@ const ITEMS := {
 	"silencer": {"name": "Silenciador", "stack": 1, "count": 1, "kind": "att", "fits": ["pistol", "smg", "rifle", "scar", "ak", "bolt", "sniper"]},
 }
 const ATTS := ["stock", "extmag", "holo", "scope4", "silencer"]
-const BAG_BASE := 8
-const BAG_BIG := 16
+const AMMO := ["a9", "a556", "a762", "a12"]
+const BAGS := [6, 10, 14, 18]       # vagas sem mochila e com mochila nível 1, 2 e 3
 
 # Loot espalhado pelo mapa (repetido = mais comum)
 const LOOT := [
-	"mp5", "mp5", "ump45", "ump45", "m4a1", "m4a1", "scar", "ak47", "ak47", "r870", "r870",
-	"kar98", "awm", "deagle", "deagle",
-	"bandage", "bandage", "bandage", "bandage", "med", "med", "vest", "vest", "helmet", "helmet", "bag", "bag",
-	"stock", "extmag", "extmag", "holo", "holo", "scope4", "silencer",
+	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
+	"bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med",
+	"a9", "a9", "a9", "a556", "a556", "a556", "a762", "a762", "a762", "a12", "a12",
+	"vest", "vest", "helmet", "helmet", "bag1", "bag1", "bag2", "bag3",
+	"stock", "extmag", "holo", "scope4", "silencer",
 ]
-const LOOT_GUNS := ["mp5", "ump45", "m4a1", "scar", "ak47", "r870", "kar98", "deagle", "mp5", "m4a1", "ak47"]
-const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest", "helmet", "scope4", "extmag", "med", "bag"]
+const LOOT_GUNS := ["mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "mp5", "m4a1", "ak47", "ump45", "glock"]
+const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest", "helmet", "scope4", "extmag", "med", "bag2", "bag3", "a556", "a762"]
 
 const SCOPES := ["kar98", "awm"]   # armas com luneta própria (mira preta na tela inteira)
 
@@ -67,6 +75,18 @@ static func is_gun(kind: String) -> bool:
 
 static func is_att(kind: String) -> bool:
 	return ITEMS.has(kind) and ITEMS[kind]["kind"] == "att"
+
+
+static func is_ammo(kind: String) -> bool:
+	return ITEMS.has(kind) and ITEMS[kind]["kind"] == "ammo"
+
+
+static func is_bag(kind: String) -> bool:
+	return kind.begins_with("bag") and ITEMS.has(kind)
+
+
+static func ammo_of(gun: String) -> String:
+	return str(get_w(gun).get("ammo", ""))
 
 
 static func fits(att: String, gun: String) -> bool:
@@ -194,15 +214,23 @@ static func mesh_for(id: String, att: Array = []) -> Mesh:
 				else:
 					_b(m, Vector3(0, 0.07, -L * 0.05), Vector3(0.03, 0.018, 0.03), METAL)
 		"shotgun":
-			m.tex(U.WOOD, 8.0)
-			_b(m, Vector3(0, -0.06, 0.04), Vector3(0.035, 0.1, 0.05), WOOD, 0.35)
+			# Remington de madeira; M1014 toda preta com coronha e empunhadura de pistola
+			var wood_s := id == "r870"
+			var furn: Color = WOOD if wood_s else POLY
+			m.tex(U.WOOD if wood_s else U.PLAIN, 8.0)
+			_b(m, Vector3(0, -0.06, 0.04), Vector3(0.035, 0.11, 0.05), furn, 0.35)
 			m.tex(U.PLAIN, 6.0)
-			_b(m, Vector3(0, 0.02, -L * 0.1), Vector3(0.05, 0.07, L * 0.25), METAL)
-			_tube(m, Vector3(0, 0.035, -L * 0.22), 0.014, L * 0.78, METAL)
-			_tube(m, Vector3(0, 0.0, -L * 0.22), 0.013, L * 0.6, METAL)
-			m.tex(U.WOOD, 8.0)
-			_b(m, Vector3(0, 0.0, -L * 0.48), Vector3(0.045, 0.045, L * 0.2), WOOD)
-			_b(m, Vector3(0, -0.02, 0.2), Vector3(0.045, 0.09, 0.3), WOOD, -0.1)
+			_b(m, Vector3(0, 0.02, -L * 0.1), Vector3(0.05, 0.075, L * 0.28), METAL)
+			_tube(m, Vector3(0, 0.035, -L * 0.22), 0.015, L * 0.78, METAL)
+			_tube(m, Vector3(0, 0.0, -L * 0.22), 0.014, L * 0.6, METAL)
+			m.tex(U.WOOD if wood_s else U.PLAIN, 8.0)
+			_b(m, Vector3(0, 0.0, -L * 0.48), Vector3(0.048, 0.048, L * 0.22), furn)
+			if wood_s:
+				_b(m, Vector3(0, -0.02, 0.2), Vector3(0.045, 0.09, 0.3), furn, -0.1)
+			else:
+				_b(m, Vector3(0, 0.0, 0.14), Vector3(0.025, 0.035, 0.18), METAL)
+				_b(m, Vector3(0, -0.02, 0.25), Vector3(0.045, 0.1, 0.08), furn)
+				_b(m, Vector3(0, 0.07, -L * 0.15), Vector3(0.015, 0.02, 0.06), METAL)
 			m.tex(U.PLAIN, 6.0)
 		"bolt", "sniper":
 			var stock := WOOD if t == "bolt" else Color(0.35, 0.4, 0.3)
@@ -275,10 +303,21 @@ static func item_mesh(kind: String) -> Mesh:
 			m.boxp(Vector3(0, 0.13, 0.15), Vector3(0.3, 0.04, 0.16), olive.darkened(0.2))
 		"helmet":
 			m.blob(Transform3D(Basis.from_scale(Vector3(0.18, 0.15, 0.21)), Vector3(0, 0.02, 0)), 10, 4, olive)
-		"bag":
+		"bag1", "bag2", "bag3":
+			var lv := int(kind.substr(3))
+			var bc: Color = [Color(0.45, 0.4, 0.3), Color(0.3, 0.36, 0.25), Color(0.2, 0.22, 0.25)][lv - 1]
+			var sz := 0.8 + lv * 0.15
 			m.tex(U.FABRIC, 3.0)
-			m.boxp(Vector3(0, 0.12, 0), Vector3(0.45, 0.24, 0.55), Color(0.45, 0.4, 0.3))
-			m.boxp(Vector3(0, 0.12, -0.3), Vector3(0.32, 0.16, 0.08), Color(0.4, 0.36, 0.27))
+			m.boxp(Vector3(0, 0.12 * sz, 0), Vector3(0.42, 0.24, 0.5) * sz, bc)
+			m.boxp(Vector3(0, 0.12 * sz, -0.28 * sz), Vector3(0.3, 0.16, 0.08) * sz, bc.darkened(0.15))
+		"a9", "a556", "a762", "a12":
+			var ac: Color = {"a9": Color(0.75, 0.6, 0.2), "a556": Color(0.35, 0.5, 0.3), "a762": Color(0.6, 0.25, 0.2), "a12": Color(0.7, 0.15, 0.12)}[kind]
+			m.tex(U.METAL, 3.0)
+			m.boxp(Vector3(0, 0.08, 0), Vector3(0.34, 0.16, 0.2), Color(0.3, 0.33, 0.26))
+			m.tex(U.PLAIN, 4.0)
+			m.boxp(Vector3(0, 0.161, 0), Vector3(0.3, 0.004, 0.08), ac)
+			for i in 4:
+				m.cyl(Transform3D(Basis(), Vector3(-0.09 + i * 0.06, 0.16, 0.06)), 0.012, 0.006, 0.05, 5, Color(0.8, 0.65, 0.3))
 		"box":
 			m.tex(U.METAL, 1.5)
 			m.boxp(Vector3(0, 0.25, 0), Vector3(0.9, 0.5, 0.6), olive)

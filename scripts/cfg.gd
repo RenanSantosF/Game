@@ -14,10 +14,11 @@ static var v := {
 	"show_fps": true,
 	"sens": 1.0,         # multiplicador da sensibilidade geral
 	"sens_ads": 1.0,     # multiplicador quando está mirando
-	"aim_assist": 1,     # 0 = controle total, 1 = gruda só sem mira, 2 = gruda sempre
+	"aim_assist": 2,     # 0 = controle total, 1 = gruda só sem mira, 2 = gruda sempre
 	"volume": 0.9,
 	"layout": {},        # botão -> [x (fração da tela), y (fração), escala]
 	"invert": false,
+	"ver": 2,            # versão das configurações (migra padrões novos)
 }
 static var _loaded := false
 
@@ -32,6 +33,12 @@ static func load_cfg() -> void:
 	for k in v:
 		if cfg.has_section_key("jogo", k):
 			v[k] = cfg.get_value("jogo", k)
+	# versão nova: mira grudando sempre e botões no lugar novo
+	if not cfg.has_section_key("jogo", "ver") or int(cfg.get_value("jogo", "ver")) < 2:
+		v["aim_assist"] = 2
+		v["layout"] = {}
+		v["ver"] = 2
+		save()
 
 
 static func save() -> void:

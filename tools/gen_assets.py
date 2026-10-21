@@ -7,6 +7,7 @@ Saída: textures/atlas2d.png (4x4 camadas de 512 px + borda de 16 px)
 """
 import math
 import os
+import sys
 import wave
 
 import numpy as np
@@ -369,6 +370,8 @@ def secs(s):
 
 
 def save(name, x, gain=0.9):
+    if name in NEW_SOUNDS:
+        return
     x = np.asarray(x, np.float64)
     m = np.max(np.abs(x)) + 1e-9
     x = x / m * gain
@@ -415,6 +418,11 @@ def footstep(seed, hard):
             x[o:o + m] += b[:n - o]
         x += lowpass(wn(n, seed + 9), 300) * env_exp(n, 40) * 0.8
     return x
+
+
+NEW_SOUNDS = {"shot_pistol", "shot_deagle", "shot_smg", "shot_ump", "shot_rifle", "shot_scar", "shot_ak", "shot_shotgun",
+              "shot_m1014", "shot_bolt", "shot_sniper", "shot_silenced", "hit", "headshot", "kill", "land", "chute",
+              "plane", "wind_fall", "wind_chute"} | {"step_%s%d" % (k, i) for k in ("grass", "hard", "gravel") for i in range(6)}
 
 
 def build_sounds():
@@ -512,5 +520,9 @@ def build_sounds():
 if __name__ == "__main__":
     os.makedirs(os.path.join(ROOT, "textures"), exist_ok=True)
     os.makedirs(os.path.join(ROOT, "sounds"), exist_ok=True)
-    build_sounds()
+    # Os sons de tiro, passos, impacto, abate, vento etc. agora vêm de tools/prepare_sounds.py
+    # (gravações CC0) e tools/synth_sounds.py. Só gera os sons sintéticos antigos com --sons-antigos
+    # (e mesmo assim sem sobrescrever os novos).
+    if "--sons-antigos" in sys.argv:
+        build_sounds()
     build_atlas()

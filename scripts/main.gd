@@ -14,8 +14,8 @@ const PLANE_SPEED := 24.0
 const LOBBY_T := 45.0
 # espera, tempo fechando, raio final, dano por segundo
 const ZONES := [
-	[90.0, 60.0, 300.0, 1.5], [60.0, 45.0, 180.0, 3.0], [50.0, 35.0, 105.0, 5.0], [40.0, 30.0, 60.0, 8.0],
-	[30.0, 25.0, 30.0, 11.0], [20.0, 20.0, 12.0, 15.0], [15.0, 15.0, 0.0, 22.0],
+	[90.0, 60.0, 300.0, 3.0], [60.0, 45.0, 180.0, 6.0], [50.0, 35.0, 105.0, 10.0], [40.0, 30.0, 60.0, 16.0],
+	[30.0, 25.0, 30.0, 22.0], [20.0, 20.0, 12.0, 30.0], [15.0, 15.0, 0.0, 44.0],
 ]
 const ZONE_R0 := 540.0
 const BOT_NAMES := ["Zé", "Tonho", "Bigode", "Chico", "Juca", "Lelo", "Dudu", "Pedrão", "Tião", "Neno",
@@ -104,9 +104,9 @@ var bots_only := false
 var shot_times := []
 var run_t := 0.0
 var _frames := 0
-var _seen_guns := ["", "", "glock"]
+var _seen_guns := ["", "", ""]
 var _seen_inv := {}
-var _seen_gear := [0.0, false, false]
+var _seen_gear := [0.0, false, 0]
 
 
 func _ready() -> void:
@@ -539,14 +539,15 @@ func _enter_game() -> void:
 	spring.spring_length = 3.2
 	spring.position = Vector3(0.55, 0.15, 0)
 	spring.collision_mask = 1
-	spring.margin = 0.2
+	spring.margin = 0.25
 	var sh := SphereShape3D.new()
-	sh.radius = 0.2
+	sh.radius = 0.28
 	spring.shape = sh
 	cam_pitch.add_child(spring)
 	cam = Camera3D.new()
 	cam.fov = 75.0
 	cam.far = 400.0
+	cam.near = 0.04
 	spring.add_child(cam)
 	cam.current = true
 	cam_yaw.position = Vector3(0, 20, 0)
@@ -742,8 +743,10 @@ func sfx_at(n: String, pos: Vector3, local: bool, vol := 0.0, max_d := 50.0) -> 
 func on_step(p: Player, quiet: bool) -> void:
 	if dedicated or sfxn == null:
 		return
-	var hard := p.position.y - world.height(p.position.x, p.position.z) > 0.04
-	var n := ("step_hard%d" if hard else "step_grass%d") % randi_range(0, 2)
+	# piso de casa/asfalto = duro; estrada de terra = cascalho; resto = grama/terra
+	var hard := p.position.y - world.height(p.position.x, p.position.z) > 0.04 or world.hw_dist(p.position.x, p.position.z) < 4.5 or world.in_lobby(p.position)
+	var gravel := not hard and world.road_dist(p.position.x, p.position.z) < 3.0
+	var n := ("step_hard%d" if hard else ("step_gravel%d" if gravel else "step_grass%d")) % randi_range(0, 5)
 	if p.is_local:
 		sfxn.play(n, -14.0 if quiet else -9.0)
 		return
@@ -755,33 +758,10 @@ func on_step(p: Player, quiet: bool) -> void:
 
 
 func _make_loops() -> void:
-	sfxn.streams["plane"] = _gen_loop(1.0, 0.04, 0.6, 38.0)
-	sfxn.streams["wind"] = _gen_loop(1.0, 0.12, 0.5, 0.0)
-
-
-# ruído contínuo (motor do avião / vento); hum = frequência de ronco
-func _gen_loop(dur: float, smooth: float, vol: float, hum: float) -> AudioStreamWAV:
-	var rate := 22050
-	var n := int(dur * rate)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var v := 0.0
-	for i in n:
-		var t := float(i) / rate
-		v = lerpf(v, randf() * 2.0 - 1.0, smooth)
-		var s := v * 3.0
-		if hum > 0.0:
-			s = s * 0.6 + sin(TAU * hum * t) * 0.35 + sin(TAU * hum * 2.0 * t) * 0.15
-		data.encode_s16(i * 2, clampi(int(s * vol * 20000.0), -32768, 32767))
-	var st := AudioStreamWAV.new()
-	st.format = AudioStreamWAV.FORMAT_16_BITS
-	st.mix_rate = rate
-	st.stereo = false
-	st.data = data
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_begin = 0
-	st.loop_end = n
-	return st
+	# avião e vento vêm dos arquivos (já em loop); só garante que existem
+	for n in ["plane", "wind_fall", "wind_chute"]:
+		if not sfxn.streams.has(n):
+			sfxn.streams[n] = AudioStreamWAV.new()
 
 
 # ---------------- loop ----------------
@@ -829,7 +809,7 @@ func _process(delta: float) -> void:
 		lp.air = 0
 		cam_yaw_v = atan2(-(c.x - p.x), -(c.y - p.y))
 		cam_pitch_v = -0.08
-		lp.hp = 100.0
+		lp.hp = 200.0
 	_local_update(lp, delta)
 	_update_world_fx(delta)
 
@@ -858,14 +838,16 @@ func _update_world_fx(_delta: float) -> void:
 		if lp.air == 3:
 			want = "plane"
 		elif lp.air == 1:
-			want = "wind"
+			want = "wind_fall"
+		elif lp.air == 2:
+			want = "wind_chute"
 	if want != loop_kind:
 		loop_kind = want
 		if want == "":
 			loop_player.stop()
 		else:
 			loop_player.stream = sfxn.streams[want]
-			loop_player.volume_db = sfxn.db(-12.0 if want == "plane" else -14.0)
+			loop_player.volume_db = sfxn.db({"plane": -10.0, "wind_fall": -6.0, "wind_chute": -9.0}[want])
 			loop_player.play()
 
 
@@ -960,6 +942,18 @@ func _local_update(lp: Player, delta: float) -> void:
 	cam_yaw.position = base + Vector3(0, 1.55 if not (t and t.crouch) else 1.1, 0)
 	cam_yaw.rotation.y = cy if t == lp else lerp_angle(cam_yaw.rotation.y, cy, minf(1.0, 6.0 * delta))
 	cam_pitch.rotation.x = cp
+	# ombro da câmera: se tem parede do lado, encosta a câmera no centro (não vê através da parede)
+	var side := 0.55
+	if t and t.air == 0:
+		var from := cam_yaw.global_position
+		var right := cam_pitch.global_transform.basis * Vector3(0.55 + 0.35, 0.15, 0)
+		var q := PhysicsRayQueryParameters3D.create(from, from + right, 1)
+		if t:
+			q.exclude = [t.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			side = clampf(from.distance_to(hit["position"]) - 0.35, 0.0, 0.55)
+	spring.position.x = lerpf(spring.position.x, side, minf(1.0, (25.0 if side < spring.position.x else 6.0) * delta))
 	spring.spring_length = lerpf(spring.spring_length, target_len, minf(1.0, 8.0 * delta))
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, 12.0 * delta))
 	# manda posição pro servidor 20x por segundo
@@ -983,9 +977,11 @@ func _local_update(lp: Player, delta: float) -> void:
 	var sl := [{"id": "fist", "att": [], "ammo": 0, "max": 0}]
 	for g in lp.guns:
 		var gid: String = g["id"]
-		sl.append({"id": gid, "att": g["att"], "ammo": int(lp.mag.get(gid, 0)) if gid != "" else 0, "max": int(Weapons.stat(gid, g["att"])["mag"]) if gid != "" else 0})
+		sl.append({"id": gid, "att": g["att"], "ammo": int(lp.mag.get(gid, 0)) if gid != "" else 0, "max": int(Weapons.stat(gid, g["att"])["mag"]) if gid != "" else 0,
+			"res": lp.count(Weapons.ammo_of(gid)) if gid != "" else 0})
 	hud.slots = sl
 	hud.sel = lp.sel + 1
+	hud.sprinting = lp.sprint
 	hud.refresh_bag(lp)
 
 
@@ -1011,7 +1007,7 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 			if dist > minf(float(w["range"]), 120.0) or dist < 0.5:
 				continue
 			var ang := fwd.angle_to(d / dist)
-			var lim := clampf(atan2(2.0, dist), 0.025, 0.2)
+			var lim := clampf(atan2(3.4, dist), 0.045, 0.34)
 			if ang > lim or ang > best:
 				continue
 			var q := PhysicsRayQueryParameters3D.create(from, tp, 1)
@@ -1027,7 +1023,8 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	var dir := (aimp - from).normalized()
 	var wy := atan2(-dir.x, -dir.z)
 	var wp := asin(clampf(dir.y, -1.0, 1.0))
-	var k := minf(1.0, (9.0 if up_drag > 18.0 else 5.0) * delta)
+	var firing: bool = hud.fire_held
+	var k := minf(1.0, (14.0 if up_drag > 18.0 else (11.0 if firing else 6.5)) * delta)
 	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
@@ -1159,6 +1156,11 @@ func _on_action(act: String) -> void:
 				(l[0] as Button).pressed.emit()
 		"slot0", "slot1", "slot2", "slot3":
 			_select(lp, int(act.substr(4)) - 1)
+		"sprint":
+			lp.sprint = not lp.sprint
+			if lp.sprint and lp.crouch:
+				lp.set_crouch(false)
+			sfx("click", -8.0)
 
 
 # muda a arma na mão; tocar na que já está na mão guarda (mãos livres, corre mais)
@@ -1180,7 +1182,7 @@ func _start_heal(lp: Player, kind: String) -> void:
 	if lp.heal_t > 0.0:
 		lp.heal_t = 0.0
 		return
-	if lp.hp >= 100.0 or lp.air != 0:
+	if lp.hp >= 200.0 or lp.air != 0:
 		return
 	if kind == "":
 		kind = "med" if (lp.count("med") > 0 and (lp.hp < 55.0 or lp.count("bandage") == 0)) else "bandage"
@@ -1252,6 +1254,9 @@ func _start_reload(lp: Player) -> void:
 		return
 	var w := lp.cur_stat()
 	if lp.reload_t <= 0.0 and lp.mag[wid] < int(w["mag"]):
+		if phase != LOBBY and lp.count(Weapons.ammo_of(wid)) <= 0:
+			hud.center("Sem munição", 1.2)
+			return
 		lp.reload_t = w["reload"]
 		lp.scoped = false
 		sfx("reload_out")
@@ -1412,6 +1417,31 @@ func _server_init() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	phase = LOBBY
 	phase_t = LOBBY_T
+	_fill_bots()
+
+
+# bots já ficam no lobby com todo mundo; abre vaga quando entra gente
+func _fill_bots() -> void:
+	var nb := clampi(bots_per_match, 0, MAX_PLAYERS - _human_count())
+	var bots := []
+	for id in players:
+		if players[id].is_bot:
+			bots.append(id)
+	while bots.size() > nb:
+		_all("remove_player", [bots.pop_back()])
+	for i in nb - bots.size():
+		var k := next_bot - 1000
+		var nm: String = BOT_NAMES[k % BOT_NAMES.size()]
+		_server_add_player(next_bot, "Bot " + nm, true)
+		next_bot += 1
+
+
+# arma de aquecimento no lobby (some quando entra no avião)
+func _lobby_kit(p: Player) -> void:
+	if p.is_bot or p.spect or phase != LOBBY:
+		return
+	_give(p, "m4a1", 1, null)
+	_give(p, "glock", 1, null)
 
 
 func _human_count() -> int:
@@ -1432,6 +1462,10 @@ func _server_add_player(id: int, nick: String, bot: bool) -> void:
 		rpc_id(id, "welcome", _snapshot(), items_avail, _dyn_items(), ns, [phase, phase_t, plane_a, plane_b, plane_t, plane_dur],
 			[z_stage, z_c0, z_r0, z_c1, z_r1, z_wait, z_shrink, z_dmg, z_t])
 	_all("add_player", [id, nick, pos, bot, spect])
+	if not bot:
+		_lobby_kit(players[id])
+		if phase == LOBBY:
+			_fill_bots()
 	if dedicated and not bot:
 		print("[servidor] entrou: %s (%d)%s" % [nick, id, " (assistindo)" if spect else ""])
 
@@ -1460,6 +1494,8 @@ func _on_peer_left(id: int) -> void:
 	last_fire.erase(id)
 	if players.has(id):
 		_all("remove_player", [id])
+	if phase == LOBBY:
+		_fill_bots()
 	_check_end()
 
 
@@ -1522,13 +1558,15 @@ func _server_tick(delta: float) -> void:
 
 
 func _server_board() -> void:
-	var humans := _human_count()
-	var nb := clampi(bots_per_match, 0, MAX_PLAYERS - humans)
-	for i in nb:
-		var k := next_bot - 1000
-		var nm: String = BOT_NAMES[k % BOT_NAMES.size()]
-		_server_add_player(next_bot, "Bot " + nm, true)
-		next_bot += 1
+	_fill_bots()
+	var nb := 0
+	# todo mundo entra no avião sem nada (larga a arma do aquecimento)
+	for id in players:
+		var p: Player = players[id]
+		if p.is_bot:
+			nb += 1
+		if not p.spect:
+			_all("on_respawn", [id, p.position])
 	for id in players:
 		var p: Player = players[id]
 		if p.is_bot:
@@ -1618,6 +1656,10 @@ func _server_reset() -> void:
 	_all("match_reset", [])
 	for id in players:
 		_all("on_respawn", [id, world.random_spawn(rng)])
+	phase = LOBBY
+	for id in players:
+		_lobby_kit(players[id])
+	_fill_bots()
 	phase_t = LOBBY_T if not training else 6.0
 	if not training and not dedicated:
 		phase_t = 120.0
@@ -1696,7 +1738,7 @@ func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, 
 func _server_death_box(v: Player) -> void:
 	var list := []
 	for g in v.guns:
-		if g["id"] != "" and g["id"] != "glock":
+		if g["id"] != "":
 			list.append([g["id"], 1, g["att"].duplicate()])
 	for k in v.inv:
 		if int(v.inv[k]) > 0:
@@ -1705,8 +1747,8 @@ func _server_death_box(v: Player) -> void:
 		list.append(["vest", 1, v.armor])
 	if v.helmet:
 		list.append(["helmet", 1, null])
-	if v.bag:
-		list.append(["bag", 1, null])
+	if v.bag > 0:
+		list.append(["bag%d" % v.bag, 1, null])
 	if list.is_empty():
 		return
 	var at := v.position
@@ -1750,7 +1792,7 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 			else:
 				slot = p.sel if (p.sel == 0 or p.sel == 1) else 0
 		var old: Dictionary = p.guns[slot]
-		if old["id"] != "" and old["id"] != "glock":
+		if old["id"] != "":
 			_server_drop(old["id"], p.position, 1, old["att"].duplicate())
 		var att: Array = (extra as Array).duplicate() if extra is Array else []
 		for a in Weapons.ATTS:
@@ -1789,12 +1831,15 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 			p.helmet = true
 			_p_inv(p)
 			return 1
-		"bag":
-			if p.bag:
-				return 0
-			p.bag = true
-			_p_inv(p)
-			return 1
+	if Weapons.is_bag(kind):
+		var lv := int(kind.substr(3))
+		if lv <= p.bag:
+			return 0
+		if p.bag > 0:
+			_server_drop("bag%d" % p.bag, p.position)
+		p.bag = lv
+		_p_inv(p)
+		return 1
 	if not Weapons.ITEMS.has(kind):
 		return 0
 	# itens que empilham (bandagem, kit)
@@ -1848,13 +1893,46 @@ func server_pickup(id: int, i: int, sub: int) -> void:
 		_all("on_item_n", [i, n - got])
 
 
+# munição gasta numa recarga
+func ammo_used(p: Player, kind: String, n: int) -> void:
+	if multiplayer.is_server():
+		p.inv[kind] = maxi(p.count(kind) - n, 0)
+		_p_inv(p)
+	else:
+		p.inv[kind] = maxi(p.count(kind) - n, 0)
+		rpc_id(1, "req_ammo", kind, n)
+
+
+func fall_damage(p: Player, dmg: float) -> void:
+	if multiplayer.is_server():
+		_server_damage(p.pid, -1, dmg, false, "queda", true)
+	else:
+		rpc_id(1, "req_fall", dmg)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_ammo(kind: String, n: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var p: Player = players.get(_sender())
+	if p and p.alive:
+		p.inv[kind] = maxi(p.count(kind) - clampi(n, 0, 200), 0)
+		_p_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_fall(dmg: float) -> void:
+	if multiplayer.is_server():
+		_server_damage(_sender(), -1, clampf(dmg, 0.0, 200.0), false, "queda", true)
+
+
 func _server_heal(id: int, kind: String) -> void:
 	var p: Player = players.get(id)
-	if p == null or not p.alive or not Weapons.ITEMS.has(kind) or p.count(kind) <= 0 or p.hp >= 100.0:
+	if p == null or not p.alive or not Weapons.ITEMS.has(kind) or p.count(kind) <= 0 or p.hp >= 200.0:
 		return
 	p.inv[kind] = p.count(kind) - 1
 	_p_inv(p)
-	_all("on_hp", [id, minf(100.0, p.hp + float(Weapons.ITEMS[kind]["heal"])), p.armor, 0, false, 0.0])
+	_all("on_hp", [id, minf(200.0, p.hp + float(Weapons.ITEMS[kind]["heal"])), p.armor, 0, false, 0.0])
 
 
 # ---------------- RPCs: cliente -> servidor ----------------
@@ -2170,7 +2248,7 @@ func zone_set(stage: int, c0: Vector2, r0: float, c1: Vector2, r1: float, wait: 
 @rpc("authority", "call_remote", "reliable")
 func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: float) -> void:
 	var v: Player = players.get(vid)
-	var old := 100.0
+	var old := 200.0
 	if v:
 		old = v.hp
 		v.hp = hp
@@ -2207,13 +2285,17 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		v.die()
 	if info.has(aid) and aid != vid:
 		info[aid]["kills"] += 1
+	if dedicated:
+		print("[morte] %s <- %s (%s)" % [info[vid]["name"] if info.has(vid) else "?", info[aid]["name"] if info.has(aid) else "-", wid])
 	if hud == null:
 		return
 	var kn: String = info[aid]["name"] if info.has(aid) else "?"
 	var vn: String = info[vid]["name"] if info.has(vid) else "?"
 	var mine := aid == local_id or vid == local_id
 	var col := Color(1, 0.85, 0.35) if mine else Color.WHITE
-	if wid == "zona" or aid == 0:
+	if wid == "queda":
+		hud.feed("%s caiu de muito alto" % vn, col)
+	elif wid == "zona" or aid == 0:
 		hud.feed("%s morreu na zona" % vn, col)
 	else:
 		hud.feed("%s  [%s%s]  %s" % [kn, Weapons.get_w(wid)["name"], " · cabeça" if head else "", vn], col)
@@ -2231,7 +2313,7 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		if spec_id == 0:
 			_spec_next()
 		var me = info.get(local_id)
-		var why := "na zona" if (wid == "zona" or aid == 0) else "por %s" % kn
+		var why := "na queda" if wid == "queda" else ("na zona" if (wid == "zona" or aid == 0) else "por %s" % kn)
 		hud.center("Eliminado %s\nColocação: #%d    Abates: %d    Dano: %d" % [why, rank, me["kills"] if me else 0, int(me["dmg"]) if me else 0], 7.0)
 	elif vid == spec_id:
 		get_tree().create_timer(2.0).timeout.connect(func():
@@ -2301,9 +2383,9 @@ func on_respawn(id: int, pos: Vector3) -> void:
 	if p:
 		p.reset_state(pos)
 	if id == local_id:
-		_seen_guns = ["", "", "glock"]
+		_seen_guns = ["", "", ""]
 		_seen_inv = {}
-		_seen_gear = [0.0, false, false]
+		_seen_gear = [0.0, false, 0]
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2338,12 +2420,12 @@ func on_loadout(id: int, g: Array, sel: int) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_inv(id: int, inv: Dictionary, armor: float, helmet: bool, bag: bool) -> void:
+func on_inv(id: int, inv: Dictionary, armor: float, helmet: bool, bag: int) -> void:
 	var p: Player = players.get(id)
 	if p == null:
 		return
 	if id == local_id and hud:
-		var gained: bool = (armor > float(_seen_gear[0]) + 1.0) or (helmet and not _seen_gear[1]) or (bag and not _seen_gear[2])
+		var gained: bool = (armor > float(_seen_gear[0]) + 1.0) or (helmet and not _seen_gear[1]) or (bag > int(_seen_gear[2]))
 		for k in inv:
 			if int(inv[k]) > int(_seen_inv.get(k, 0)):
 				gained = true
@@ -2353,8 +2435,8 @@ func on_inv(id: int, inv: Dictionary, armor: float, helmet: bool, bag: bool) -> 
 			hud.center("Colete equipado", 1.2)
 		elif helmet and not _seen_gear[1]:
 			hud.center("Capacete equipado", 1.2)
-		elif bag and not _seen_gear[2]:
-			hud.center("Mochila grande: 16 vagas", 1.5)
+		elif bag > int(_seen_gear[2]):
+			hud.center("Mochila nível %d: %d vagas" % [bag, Weapons.BAGS[bag]], 1.5)
 		_seen_inv = inv.duplicate()
 		_seen_gear = [armor, helmet, bag]
 	p.inv = inv

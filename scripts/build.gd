@@ -249,6 +249,8 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var bs := Basis(Vector3.UP, yaw)
 	var door_out := pos + bs * Vector3(door_c, 0.3, -dp / 2.0 - 2.0)
 	var door_in := pos + bs * Vector3(door_c, 0.3, -dp / 2.0 + 1.3)
+	w.houses[-1]["din"] = door_in
+	w.houses[-1]["dout"] = door_out
 	var n_items := 2 + int(rng.randf() < 0.5) + int(wd * dp > 70.0)
 	for k in n_items:
 		var lx := rng.randf_range(-wd / 2.0 + 1.0, wd / 2.0 - 1.6)
@@ -310,6 +312,8 @@ func shack(pos: Vector3, yaw: float) -> void:
 	piece(root, Vector3(wd, 0.1, dp), Vector3(0, 0, 0), col, U.WOOD, 0.4)
 	piece(root, Vector3(wd + 0.6, 0.1, dp + 0.8), Vector3(0, h + 0.2, 0), Color(0.85, 0.85, 0.85), U.METAL, 0.3, true, Basis(Vector3.RIGHT, 0.12))
 	var bs := Basis(Vector3.UP, yaw)
+	w.houses[-1]["din"] = pos + bs * Vector3(0.6, 0.3, -dp / 2.0 + 1.0)
+	w.houses[-1]["dout"] = pos + bs * Vector3(0.6, 0.3, -dp / 2.0 - 1.8)
 	w.add_item(pos + bs * Vector3(-0.8, 0.07, 0.3), w.loot_kind(rng, rng.randf() < 0.5), pos + bs * Vector3(0.6, 0.3, -dp / 2.0 - 1.8), pos + bs * Vector3(0.6, 0.3, -dp / 2.0 + 1.0))
 
 
@@ -352,6 +356,8 @@ func church(pos: Vector3, yaw: float) -> void:
 		mb.box(root.transform * Transform3D(Basis(), Vector3(0, th + 4.6, tz)), Vector3(0.12, 1.4, 0.12), Color(0.4, 0.4, 0.4))
 		mb.box(root.transform * Transform3D(Basis(), Vector3(0, th + 4.8, tz)), Vector3(0.7, 0.12, 0.12), Color(0.4, 0.4, 0.4))
 	var bs := Basis(Vector3.UP, yaw)
+	w.houses[-1]["din"] = pos + bs * Vector3(0, 0.3, -dp / 2.0 + 1.5)
+	w.houses[-1]["dout"] = pos + bs * Vector3(0, 0.3, -dp / 2.0 - 4.5)
 	for k in 3:
 		w.add_item(pos + bs * Vector3(rng.randf_range(-3, 3), 0.07, rng.randf_range(-6, 6)), w.loot_kind(rng, k == 0), pos + bs * Vector3(0, 0.3, -dp / 2.0 - 4.5), pos + bs * Vector3(0, 0.3, -dp / 2.0 + 1.5))
 
@@ -467,6 +473,20 @@ func fence(a: Vector2, b: Vector2, y: float) -> void:
 
 # cerca em volta (polígono de pontos), com portões nos índices gaps
 func fence_ring(pts: Array, gaps: Array, use_wall := false) -> void:
+	# guarda o cercado e os portões (os bots usam pra sair)
+	var c := Vector2.ZERO
+	for q in pts:
+		c += q
+	c /= pts.size()
+	var r := 0.0
+	for q in pts:
+		r = maxf(r, c.distance_to(q))
+	var gates := []
+	for i in gaps:
+		var g: Vector2 = (pts[i] + pts[(i + 1) % pts.size()]) / 2.0
+		var d := (c - g).normalized()
+		gates.append([w.ground_pos(g + d * 2.5, 0.3), w.ground_pos(g - d * 3.0, 0.3)])
+	w.compounds.append({"c": c, "r": r, "gates": gates})
 	for i in pts.size():
 		if i in gaps:
 			continue
@@ -533,13 +553,13 @@ func watchtower(pos: Vector3, yaw: float) -> void:
 	var ang := atan2(h, L)
 	var ramp := sqrt(L * L + h * h)
 	var rz := -s / 2.0 - 0.2 - L / 2.0
-	col_box(root, Vector3(1.0, 0.15, ramp), Vector3(0, h / 2.0, rz), Basis(Vector3.RIGHT, ang))
+	col_box(root, Vector3(1.0, 0.15, ramp), Vector3(0, h / 2.0, rz), Basis(Vector3.RIGHT, -ang))
 	if not headless:
 		var n := 16
 		for i in n:
 			vis(root, Vector3(1.0, 0.08, 0.3), Vector3(0, (i + 1) * h / n - 0.04, -s / 2.0 - 0.2 - L + (i + 0.5) * L / n), wood, U.WOOD, 0.8)
 		for sx in [-0.55, 0.55]:
-			vis(root, Vector3(0.1, 0.18, ramp), Vector3(sx, h / 2.0, rz), wood.darkened(0.25), U.WOOD, 0.6, Basis(Vector3.RIGHT, ang))
+			vis(root, Vector3(0.1, 0.18, ramp), Vector3(sx, h / 2.0, rz), wood.darkened(0.25), U.WOOD, 0.6, Basis(Vector3.RIGHT, -ang))
 	var bs := Basis(Vector3.UP, yaw)
 	w.add_item(pos + bs * Vector3(0.5, h + 0.12, 0.5), w.loot_kind(rng, true), null, null, true)
 
@@ -573,7 +593,7 @@ func hay(pos: Vector3, yaw: float) -> void:
 	col_box(root, Vector3(1.4, 1.4, 1.5), Vector3(0, 0.7, 0))
 	if not headless:
 		mb.tex(U.FABRIC, 1.2)
-		mb.cyl(root.transform * Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(0.75, 0.72, 0)), 0.72, 0.72, 1.5, 12, Color(0.85, 0.72, 0.4), true)
+		mb.cyl(root.transform * Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(-0.75, 0.72, 0)), 0.72, 0.72, 1.5, 12, Color(0.85, 0.72, 0.4), true)
 
 
 func logs(pos: Vector3, yaw: float) -> void:
@@ -587,7 +607,7 @@ func logs(pos: Vector3, yaw: float) -> void:
 	for row in 3:
 		for i in 4 - row:
 			var z := -0.75 + i * 0.5 + row * 0.25
-			mb.cyl(root.transform * Transform3D(along, Vector3(2.5, 0.25 + row * 0.44, z)), 0.25, 0.25, 5.0, 8, Color(0.9, 0.85, 0.8), true)
+			mb.cyl(root.transform * Transform3D(along, Vector3(-2.5, 0.25 + row * 0.44, z)), 0.25, 0.25, 5.0, 8, Color(0.9, 0.85, 0.8), true)
 
 
 func radio_tower(pos: Vector3) -> void:

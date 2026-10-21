@@ -28,13 +28,13 @@ var is_local := false
 var is_bot := false
 var visual := true
 
-var hp := 100.0
+var hp := 200.0
 var alive := true
 var spect := false       # entrou com a partida em andamento: só assiste
 var yaw := 0.0           # para onde o corpo olha
 var pitch := 0.0         # mira pra cima/baixo
-var guns := [{"id": "", "att": []}, {"id": "", "att": []}, {"id": "glock", "att": []}]
-var sel := 2             # 0/1 = principais, 2 = pistola, -1 = mãos livres
+var guns := [{"id": "", "att": []}, {"id": "", "att": []}, {"id": "", "att": []}]
+var sel := -1            # 0/1 = principais, 2 = pistola, -1 = mãos livres
 var mag := {}
 var reload_t := 0.0
 var cool := 0.0
@@ -46,7 +46,10 @@ var shown_wid := "glock"
 var air := 0             # 0 = no chão, 1 = queda livre, 2 = paraquedas, 3 = no avião
 var armor := 0.0
 var helmet := false
-var bag := false
+var bag := 0             # nível da mochila (0 = sem mochila)
+var sprint := false
+var stun_t := 0.0        # atordoado depois de cair de alto
+var _fall_v := 0.0
 var inv := {}
 var heal_t := 0.0
 var heal_kind := ""
@@ -102,6 +105,15 @@ var b_item_t := 0.0
 var b_ignore := {}
 var b_skill := 1.0
 var b_far := false
+var _vault_drop := false
+var _breath := 0.0
+var _wall_chk := 0.0
+var _wall_near := false
+var _gun_low := 0.0
+var b_exit: Array = []       # caminho pra sair de casa (porta de dentro, porta de fora)
+var b_stuck_n := 0
+var b_escape_t := 0.0
+var b_escape := Vector3.ZERO
 
 
 func setup(g: Node, id: int, n: String, local: bool, bot: bool, vis: bool) -> void:
@@ -178,7 +190,7 @@ func head_y() -> float:
 
 
 func capacity() -> int:
-	return Weapons.BAG_BIG if bag else Weapons.BAG_BASE
+	return Weapons.BAGS[clampi(bag, 0, 3)]
 
 
 func free_slots() -> int:
@@ -273,18 +285,49 @@ static func _gear(kind: String) -> Mesh:
 			m.box(Transform3D(Basis(), Vector3(0, 1.25, 0.21)), Vector3(0.34, 0.44, 0.17), Color(0.45, 0.4, 0.3))
 			m.box(Transform3D(Basis(), Vector3(0, 1.12, 0.3)), Vector3(0.28, 0.16, 0.06), Color(0.4, 0.35, 0.26))
 		"chute":
-			var cc := Color(0.5, 0.55, 0.38)
+			# velame retangular (asa) arqueado, com espessura, e cordas presas na borda de baixo
+			var ca := Color(0.52, 0.56, 0.38)
+			var cb := Color(0.82, 0.8, 0.7)
+			var n := 10
+			var tops := []
+			var bots := []
+			for i in n + 1:
+				var ang := lerpf(-0.85, 0.85, float(i) / n)
+				var x := sin(ang) * 3.0
+				var y := 4.7 + cos(ang) * 1.5
+				tops.append(Vector3(x, y, 0))
+				bots.append(Vector3(x * 0.97, y - 0.32, 0))
 			m.tex(U.FABRIC, 0.6)
-			m.blob(Transform3D(Basis.from_scale(Vector3(2.6, 0.7, 1.8)), Vector3(0, 6.0, 0)), 12, 3, cc, null, 0.0, true, 0.4)
-			var line := Color(0.2, 0.2, 0.18)
+			var zf := -1.15
+			var zb := 1.0
+			for i in n:
+				var c: Color = ca if i % 2 == 0 else cb
+				var t0: Vector3 = tops[i]
+				var t1: Vector3 = tops[i + 1]
+				var b0: Vector3 = bots[i]
+				var b1: Vector3 = bots[i + 1]
+				var up := ((t0 + t1) / 2.0 - Vector3(0, 4.7, 0)).normalized()
+				# em cima, embaixo, frente (boca de ar) e trás
+				m.quad(t0 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0, zb), t0 + Vector3(0, 0, zb), c, up)
+				m.quad(b0 + Vector3(0, 0, zf * 0.92), b1 + Vector3(0, 0, zf * 0.92), b1 + Vector3(0, 0.12, zb), b0 + Vector3(0, 0.12, zb), c.darkened(0.25), -up)
+				m.quad(t0 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0.1, zf), b1 + Vector3(0, 0, zf * 0.92), b0 + Vector3(0, 0, zf * 0.92), c.darkened(0.45), Vector3.FORWARD)
+				m.quad(t0 + Vector3(0, 0, zb), t1 + Vector3(0, 0, zb), b1 + Vector3(0, 0.12, zb), b0 + Vector3(0, 0.12, zb), c.darkened(0.1), Vector3.BACK)
+			for e in [0, n]:
+				var t: Vector3 = tops[e]
+				var bt: Vector3 = bots[e]
+				var sd := Vector3(signf(t.x), 0, 0)
+				m.quad(t + Vector3(0, 0.1, zf), t + Vector3(0, 0, zb), bt + Vector3(0, 0.12, zb), bt + Vector3(0, 0, zf * 0.92), ca.darkened(0.2), sd)
+			# cordas: da borda de baixo do velame até os tirantes nos ombros
+			var line := Color(0.15, 0.15, 0.14)
 			m.tex(U.PLAIN, 1.0)
-			for sx in [-1.0, 1.0]:
-				for sz in [-1.0, 1.0]:
-					var top := Vector3(sx * 2.2, 5.8, sz * 1.3)
-					var bot := Vector3(sx * 0.2, 1.5, sz * 0.1)
-					var dir := (top - bot)
+			for i in [0, 2, 4, 6, 8, 10]:
+				var bp: Vector3 = bots[i]
+				var riser := Vector3(signf(bp.x) * 0.2 if absf(bp.x) > 0.2 else 0.0, 1.62, 0)
+				for z in [zf * 0.85, zb * 0.85]:
+					var top := bp + Vector3(0, 0.03, z)
+					var dir := top - riser
 					var bb := Basis(Quaternion(Vector3.UP, dir.normalized()))
-					m.box(Transform3D(bb, (top + bot) / 2.0), Vector3(0.02, dir.length(), 0.02), line)
+					m.box(Transform3D(bb, (top + riser) / 2.0), Vector3(0.018, dir.length(), 0.018), line)
 	var mesh := m.commit()
 	_shared[kind] = mesh
 	return mesh
@@ -405,7 +448,7 @@ func refresh_gear() -> void:
 		return
 	vest_mi.visible = armor > 0.0
 	helmet_mi.visible = helmet
-	bag_mi.visible = bag
+	bag_mi.visible = bag > 0
 
 
 func update_gun() -> void:
@@ -467,18 +510,20 @@ func die() -> void:
 func reset_state(pos: Vector3) -> void:
 	alive = true
 	spect = false
-	hp = 100.0
+	hp = 200.0
 	collision_layer = 2
 	collision_mask = 1
-	guns = [{"id": "", "att": []}, {"id": "", "att": []}, {"id": "glock", "att": []}]
-	sel = 2
+	guns = [{"id": "", "att": []}, {"id": "", "att": []}, {"id": "", "att": []}]
+	sel = -1
 	scoped = false
 	reload_t = 0.0
 	heal_t = 0.0
 	vault_t = -1.0
 	armor = 0.0
 	helmet = false
-	bag = false
+	bag = 0
+	stun_t = 0.0
+	sprint = false
 	inv = {}
 	air = 0
 	set_crouch(false)
@@ -521,10 +566,20 @@ func _physics_process(delta: float) -> void:
 		if reload_t <= 0.0:
 			reload_t = 0.0
 			var w := cur_wid()
-			mag[w] = cur_stat()["mag"]
+			var full: int = cur_stat()["mag"]
+			var am := Weapons.ammo_of(w)
+			var take := mini(full - int(mag.get(w, 0)), count(am))
+			if game.phase == game.LOBBY:
+				mag[w] = full
+				take = 0
+			if take > 0:
+				mag[w] = int(mag.get(w, 0)) + take
+				if is_local or (is_bot and multiplayer.is_server()):
+					game.ammo_used(self, am, take)
 			if is_local:
 				game.sfx("reload_in")
 	var sim := is_local or (is_bot and multiplayer.is_server())
+	stun_t = maxf(stun_t - delta, 0.0)
 	if sim and heal_t > 0.0:
 		heal_t -= delta
 		if heal_t <= 0.0:
@@ -585,9 +640,10 @@ func _move(delta: float) -> void:
 				game.sfx("chute")
 		_keep_in()
 		return
-	var spd := SPEED
-	if sel < 0 or cur_wid() == "fist":
-		spd = 6.9
+	# andar normal é mais lento; com o botão de correr fica rápido (mãos livres corre mais)
+	var spd := 4.4
+	if sprint:
+		spd = 7.0 if (sel < 0 or cur_wid() == "fist") else 6.4
 	if crouch:
 		spd = 2.8
 	if scoped:
@@ -597,20 +653,27 @@ func _move(delta: float) -> void:
 	if game.world.in_water(position):
 		spd = minf(spd, 3.2)
 	if is_bot:
-		spd = minf(spd, 5.4)
-	velocity.x = dir.x * spd
-	velocity.z = dir.z * spd
+		spd = (6.6 if sprint else 5.4) if b_target == 0 else (6.0 if sprint else 4.6)
+		if crouch:
+			spd = 2.6
+	if stun_t > 0.0:
+		spd = 0.0
+	var on_floor := is_on_floor()
+	# no ar não dá pra mudar a direção
+	if on_floor:
+		velocity.x = dir.x * spd
+		velocity.z = dir.z * spd
 	# corpo vira pra onde anda, ou pra mira quando está atirando
 	if not is_bot:
 		if aim_t > 0.0 or scoped:
 			yaw = lerp_angle(yaw, game.cam_yaw_v, minf(1.0, 18.0 * delta))
 		elif dir.length() > 0.15:
 			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 10.0 * delta))
-	var on_floor := is_on_floor()
 	if not on_floor:
 		velocity.y -= GRAVITY * delta
 		_air_time += delta
-	elif want_jump:
+		_fall_v = maxf(_fall_v, -velocity.y)
+	elif want_jump and stun_t <= 0.0:
 		if crouch:
 			set_crouch(false)
 		elif not try_vault(dir if dir.length() > 0.1 else Basis(Vector3.UP, yaw) * Vector3.FORWARD):
@@ -621,15 +684,25 @@ func _move(delta: float) -> void:
 	move_and_slide()
 	if is_on_floor() and not _was_floor and _air_time > 0.35:
 		game.sfx_at("land", global_position, is_local)
+		# queda alta: dano e um tempinho sem conseguir andar (pular da janela de cima = ~1 s)
+		if _fall_v > 9.5:
+			stun_t = clampf(0.45 + (_fall_v - 9.5) * 0.12, 0.45, 1.4)
+		if _vault_drop and _fall_v > 6.0:
+			stun_t = maxf(stun_t, 1.0)
+		if _fall_v > 14.0:
+			game.fall_damage(self, (_fall_v - 14.0) * 9.0)
+		_vault_drop = false
 	if is_on_floor():
 		_air_time = 0.0
+		_fall_v = 0.0
 	_was_floor = is_on_floor()
 	_keep_in()
 
 
 func _keep_in() -> void:
-	if position.y < -60.0:
-		position = game.world.random_spawn(game.rng)
+	var lobby: bool = game.phase == game.LOBBY
+	if position.y < -60.0 or (lobby and position.y < World.LOBBY_P.y - 8.0):
+		position = game.world.random_spawn(game.rng) if lobby else game.world.map_spawn(game.rng)
 		velocity = Vector3.ZERO
 		air = 0
 
@@ -670,7 +743,7 @@ func try_vault(dir: Vector3) -> bool:
 	# onde vai cair do outro lado
 	for extra in [0.75, 1.1, 1.5]:
 		var p: Vector3 = base + f * (hit_d + extra)
-		var dq := PhysicsRayQueryParameters3D.create(p + Vector3(0, top + 0.5, 0), p + Vector3(0, -3.0, 0), 1, ex)
+		var dq := PhysicsRayQueryParameters3D.create(p + Vector3(0, top + 0.5, 0), p + Vector3(0, -12.0, 0), 1, ex)
 		var dr := space.intersect_ray(dq)
 		if dr.is_empty():
 			continue
@@ -680,6 +753,10 @@ func try_vault(dir: Vector3) -> bool:
 		var cq := PhysicsRayQueryParameters3D.create(land + Vector3(0, 0.3, 0), land + Vector3(0, 1.7, 0), 1, ex)
 		if not space.intersect_ray(cq).is_empty():
 			continue
+		# se do outro lado é alto (janela de cima), passa e cai
+		_vault_drop = land.y < base.y - 1.2
+		if _vault_drop:
+			land = Vector3(p.x, base.y + top + 0.05, p.z)
 		_vault = [base, base + f * (hit_d * 0.6) + Vector3(0, top + 0.35, 0), land + Vector3(0, 0.05, 0)]
 		vault_t = 0.0
 		collision_mask = 0
@@ -748,7 +825,16 @@ func _animate(delta: float, sim: bool) -> void:
 		aim.rotation.x = 0.0
 		_arms(false, sp, false, true)
 		return
-	aim.rotation.x = pitch * 0.85
+	# arma encostada na parede: abaixa o cano (não atravessa a parede)
+	_wall_chk -= delta
+	if _wall_chk <= 0.0 and armed and gun:
+		_wall_chk = 0.15
+		var from := global_position + Vector3(0, 1.4, 0)
+		var fw := Basis(Vector3.UP, yaw) * Vector3.FORWARD
+		var q := PhysicsRayQueryParameters3D.create(from, from + fw * 1.05, 1)
+		_wall_near = not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+	_gun_low = lerpf(_gun_low, 1.0 if (_wall_near and armed) else 0.0, minf(1.0, 10.0 * delta))
+	aim.rotation.x = pitch * 0.85 * (1.0 - _gun_low) - 1.1 * _gun_low
 	if vault_t >= 0.0:
 		model.position.y = lerpf(model.position.y, -0.15, k)
 		_legs(1.3, 0.4, -1.6, -0.6)
@@ -767,11 +853,17 @@ func _animate(delta: float, sim: bool) -> void:
 		_arms(armed, 0.0, false, false, true)
 		return
 	model.position.y = lerpf(model.position.y, 0.0, k)
+	# correndo inclina o corpo pra frente; parado respira de leve
+	var lean := clampf((sp - 4.6) / 2.5, 0.0, 1.0) * 0.14
+	model.rotation.x = lerpf(model.rotation.x, -lean, k)
 	anim_t += delta * sp * 1.5
 	var amt := clampf(sp / 6.0, 0.0, 1.0)
-	var sw := sin(anim_t) * amt * 0.7
+	var sw := sin(anim_t) * amt * (0.7 + lean * 1.5)
 	_legs(sw, -sw, -maxf(0.0, sin(anim_t - 1.4)) * amt * 1.15, -maxf(0.0, sin(anim_t + PI - 1.4)) * amt * 1.15)
 	model.position.y = absf(sin(anim_t)) * amt * 0.045 - amt * 0.02
+	if sp < 0.3:
+		_breath += delta
+		model.position.y += sin(_breath * 1.9) * 0.006
 	_arms(armed, sp)
 
 
@@ -849,86 +941,250 @@ func _bot(delta: float) -> void:
 		var d := b_dest - position
 		wish = Vector3(d.x, 0, d.z).normalized() if Vector2(d.x, d.z).length() > 4.0 else Vector3.ZERO
 		return
+	if game.phase == game.LOBBY:
+		_bot_lobby(delta)
+		return
 	b_think -= delta
 	if b_think <= 0.0:
-		b_think = 0.3
+		b_think = 0.25
 		_bot_pick_target()
 		if b_target == 0:
 			_bot_plan()
+			# dentro de casa/cercado com o destino lá fora: sai pela porta/portão (sem ficar raspando na parede)
+			if b_exit.is_empty() and b_item < 0:
+				var h := _bot_house()
+				if not h.is_empty() and Vector2(b_dest.x, b_dest.z).distance_to(h["pos"]) > float(h["r"]) + 1.0:
+					b_exit = [h["din"], h["dout"]]
+				else:
+					b_exit = _bot_gate()
 	var mv := Vector2.ZERO
 	var t: Player = game.players.get(b_target)
+	var zc: Vector2 = game.zone_now()[0]
+	var zr: float = game.zone_now()[1]
+	var me := Vector2(position.x, position.z)
+	var out_zone := me.distance_to(zc) > zr - 6.0
+	# bem fora da zona: larga a briga (a não ser que o inimigo esteja colado) e corre pra dentro
+	if t != null and me.distance_to(zc) > zr + 10.0 and t.position.distance_to(position) > 12.0:
+		t = null
+		b_target = 0
+		b_think = 0.0
 	if t != null and is_instance_valid(t) and t.alive and t.air == 0:
 		heal_t = 0.0
-		if sel < 0 or cur_wid() == "fist":
+		b_exit.clear()
+		if sel < 0 or cur_wid() == "fist" or not _has_ammo(cur_wid()):
 			_bot_best_gun()
 		var from := position + Vector3(0, head_y(), 0)
-		var aimp := t.position + Vector3(0, t.head_y() - 0.3, 0)
+		# mira no peito, às vezes na cabeça
+		var aimp := t.position + Vector3(0, t.head_y() - (0.05 if randf() < 0.25 * b_skill else 0.45), 0)
 		var d := aimp - from
 		var wy := atan2(-d.x, -d.z)
 		var wp := atan2(d.y, Vector2(d.x, d.z).length())
-		yaw = lerp_angle(yaw, wy, minf(1.0, 5.0 * b_skill * delta))
-		pitch = lerpf(pitch, wp, minf(1.0, 5.0 * delta))
+		yaw = lerp_angle(yaw, wy, minf(1.0, 7.0 * b_skill * delta))
+		pitch = lerpf(pitch, wp, minf(1.0, 7.0 * delta))
 		b_strafe_t -= delta
 		if b_strafe_t <= 0.0:
-			b_strafe = [-1.0, 0.0, 1.0].pick_random()
-			b_strafe_t = randf_range(0.7, 1.8)
-			set_crouch(randf() < 0.25)
+			b_strafe = [-1.0, -1.0, 0.0, 1.0, 1.0].pick_random()
+			b_strafe_t = randf_range(0.5, 1.4)
+			set_crouch(randf() < 0.2 and hp > 80.0)
+			# pula de vez em quando pra atrapalhar a mira
+			if randf() < 0.15 * b_skill:
+				want_jump = true
 		var dist := d.length()
 		var w := cur_stat()
-		var ideal := 8.0 if w["type"] == "shotgun" else (2.0 if w["type"] == "fist" else 22.0)
+		var ideal := 8.0 if w["type"] == "shotgun" else (2.0 if w["type"] == "fist" else (60.0 if w["type"] == "sniper" else 20.0))
 		var fwd := 0.0
 		if dist > ideal + 6.0:
 			fwd = -1.0
 		elif dist < ideal - 6.0:
 			fwd = 0.6
+		# vida baixa: recua pra quebrar a linha de visão e se curar
+		if hp < 70.0 and (count("med") > 0 or count("bandage") > 0) and w["type"] != "fist":
+			fwd = 1.0
 		mv = Vector2(b_strafe, fwd)
+		# fora da zona: briga andando pra dentro dela
+		if out_zone:
+			var to := (zc - me).normalized()
+			mv = _world_to_local(Vector3(to.x, 0, to.y))
 		b_react -= delta
-		if b_react <= 0.0 and absf(angle_difference(yaw, wy)) < 0.15 and dist < float(w["range"]):
+		if b_react <= 0.0 and absf(angle_difference(yaw, wy)) < 0.12 and dist < float(w["range"]):
 			_bot_fire(from, aimp, w)
 	else:
-		b_react = randf_range(0.6, 1.2)
+		b_react = randf_range(0.45, 0.9)
 		set_crouch(false)
 		if heal_t > 0.0:
-			wish = Vector3.ZERO
-			return
-		if hp < 70.0 and count("bandage") > 0 and hp > 40.0:
-			heal_kind = "bandage"
-			heal_t = Weapons.ITEMS["bandage"]["time"]
-			return
-		if hp < 60.0 and count("med") > 0:
-			heal_kind = "med"
-			heal_t = Weapons.ITEMS["med"]["time"]
-			return
+			if not out_zone:
+				wish = Vector3.ZERO
+				return
+		elif _bot_try_heal(out_zone):
+			if not out_zone:
+				wish = Vector3.ZERO
+				return
+		if (sel < 0 or not _has_ammo(cur_wid())) and has_any_gun():
+			_bot_best_gun()
 		var dest := b_dest
 		if b_item >= 0:
 			dest = _bot_item_step(delta)
+		if not b_exit.is_empty():
+			dest = b_exit[0]
+			if Vector2(dest.x - position.x, dest.z - position.z).length() < 1.0:
+				b_exit.pop_front()
 		var d2 := dest - position
 		if Vector2(d2.x, d2.z).length() > 1.0:
-			yaw = lerp_angle(yaw, atan2(-d2.x, -d2.z), minf(1.0, 4.0 * delta))
+			yaw = lerp_angle(yaw, atan2(-d2.x, -d2.z), minf(1.0, 5.0 * delta))
 			mv = Vector2(0, -1)
 		pitch = lerpf(pitch, 0.0, minf(1.0, 3.0 * delta))
+	sprint = mv != Vector2.ZERO and (b_target == 0 or out_zone)
 	if mv.length() > 1.0:
 		mv = mv.normalized()
 	wish = Basis(Vector3.UP, yaw) * Vector3(mv.x, 0, mv.y)
+	# preso: tenta pular e depois anda numa direção aleatória por um tempo
+	if b_escape_t > 0.0:
+		b_escape_t -= delta
+		wish = b_escape
+		yaw = lerp_angle(yaw, atan2(-b_escape.x, -b_escape.z), minf(1.0, 6.0 * delta))
 	b_stuck_t += delta
 	if b_stuck_t > 0.8:
-		if mv != Vector2.ZERO and position.distance_to(b_last) < 0.6:
+		if wish != Vector3.ZERO and position.distance_to(b_last) < 0.6:
+			b_stuck_n += 1
 			want_jump = true
 			b_strafe = -b_strafe
-			b_dest_t = 0.0
+			if b_stuck_n >= 2:
+				var h := _bot_house()
+				var gate := _bot_gate()
+				if not h.is_empty() and b_exit.is_empty() and b_stuck_n < 4:
+					b_exit = [h["din"], h["dout"]]
+				elif not gate.is_empty() and b_exit.is_empty() and b_stuck_n < 5:
+					b_exit = gate
+				else:
+					b_exit.clear()
+					b_escape = _bot_free_dir()
+					b_escape_t = randf_range(1.0, 1.8)
+			if b_stuck_n >= 6:
+				# preso no andar de cima (ou sem saída): desce pela porta da frente
+				var hh := _bot_house(true)
+				if not hh.is_empty() and position.y - float(hh["din"].y) > 2.0:
+					position = hh["dout"]
+					target_pos = position
+					velocity = Vector3.ZERO
+				b_dest_t = 0.0
+				b_stuck_n = 0
 			if b_item >= 0 and b_item_t > 6.0:
 				b_ignore[b_item] = true
 				b_item = -1
+		else:
+			b_stuck_n = 0
 		b_last = position
 		b_stuck_t = 0.0
 
 
+# direção mais livre (raio no peito e no joelho), puxando pro destino
+func _bot_free_dir() -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var to := Vector3(b_dest.x - position.x, 0, b_dest.z - position.z).normalized()
+	var best := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+	var bs := -1.0
+	for k in 12:
+		var d := Vector3.FORWARD.rotated(Vector3.UP, k * TAU / 12.0 + randf_range(-0.2, 0.2))
+		var free := 6.0
+		for hy in [0.45, 1.3]:
+			var from := position + Vector3(0, hy, 0)
+			var q := PhysicsRayQueryParameters3D.create(from, from + d * 6.0, 1)
+			var r := space.intersect_ray(q)
+			if not r.is_empty():
+				free = minf(free, from.distance_to(r["position"]))
+		var sc := free + d.dot(to) * 1.5 + randf() * 0.5
+		if sc > bs:
+			bs = sc
+			best = d
+	return best
+
+
+func _world_to_local(v: Vector3) -> Vector2:
+	var l := Basis(Vector3.UP, yaw).inverse() * v
+	return Vector2(l.x, l.z)
+
+
+# casa onde o bot está (com porta conhecida), ou vazio
+func _bot_house(any_floor := false) -> Dictionary:
+	var me := Vector2(position.x, position.z)
+	for h in game.world.houses:
+		if not h.has("din"):
+			continue
+		var l: Vector2 = (me - h["pos"]).rotated(-float(h["yaw"]))
+		if absf(l.x) < float(h["w"]) / 2.0 + 0.3 and absf(l.y) < float(h["d"]) / 2.0 + 0.3 and (any_floor or position.y - float(h["din"].y) < 2.0):
+			return h
+	return {}
+
+
+# preso num cercado com o destino do lado de fora: vai pelo portão mais perto
+func _bot_gate() -> Array:
+	var me := Vector2(position.x, position.z)
+	var dst := Vector2(b_dest.x, b_dest.z)
+	for cp in game.world.compounds:
+		var c: Vector2 = cp["c"]
+		if me.distance_to(c) < float(cp["r"]) and dst.distance_to(c) > float(cp["r"]) * 0.9:
+			var best: Array = []
+			var bd := 1e9
+			for g in cp["gates"]:
+				var d := position.distance_to(g[0])
+				if d < bd:
+					bd = d
+					best = [g[0], g[1]]
+			return best
+	return []
+
+
+func _bot_try_heal(moving: bool) -> bool:
+	if heal_t > 0.0:
+		return true
+	if hp < 120.0 and count("med") > 0:
+		heal_kind = "med"
+	elif hp < 170.0 and count("bandage") > 0:
+		heal_kind = "bandage"
+	else:
+		return false
+	heal_t = Weapons.ITEMS[heal_kind]["time"]
+	return true
+
+
+func _has_ammo(wid: String) -> bool:
+	if wid == "" or wid == "fist":
+		return wid == "fist"
+	return int(mag.get(wid, 0)) > 0 or count(Weapons.ammo_of(wid)) > 0
+
+
+func has_any_gun() -> bool:
+	for g in guns:
+		if g["id"] != "" and _has_ammo(g["id"]):
+			return true
+	return false
+
+
+# no lobby: anda à toa pela área de aquecimento
+func _bot_lobby(delta: float) -> void:
+	b_dest_t -= delta
+	if b_dest_t <= 0.0 or Vector2(b_dest.x - position.x, b_dest.z - position.z).length() < 1.5:
+		b_dest = game.world.lobby_point(game.rng)
+		b_dest_t = randf_range(4.0, 10.0)
+	var d := b_dest - position
+	if Vector2(d.x, d.z).length() > 1.5:
+		yaw = lerp_angle(yaw, atan2(-d.x, -d.z), minf(1.0, 4.0 * delta))
+		wish = Basis(Vector3.UP, yaw) * Vector3.FORWARD
+	else:
+		wish = Vector3.ZERO
+	sprint = randf() < 0.01 or sprint
+
+
 func _bot_best_gun() -> void:
 	for i in [0, 1, 2]:
-		if guns[i]["id"] != "":
-			sel = i
-			update_gun()
+		if guns[i]["id"] != "" and _has_ammo(guns[i]["id"]):
+			if sel != i:
+				sel = i
+				update_gun()
 			return
+	if sel != -1:
+		sel = -1
+		update_gun()
 
 
 func _bot_item_step(delta: float) -> Vector3:
@@ -957,7 +1213,7 @@ func wants(kind: String) -> bool:
 	if Weapons.is_gun(kind):
 		var w := Weapons.get_w(kind)
 		if int(w["slot"]) == 1:
-			return guns[2]["id"] == "glock" and kind == "deagle"
+			return guns[2]["id"] == "" or (guns[2]["id"] == "glock" and kind == "deagle")
 		if guns[0]["id"] == "" or guns[1]["id"] == "":
 			return not has_gun(kind)
 		return false
@@ -967,17 +1223,22 @@ func wants(kind: String) -> bool:
 			if Weapons.fits(kind, g["id"]) and not (kind in g["att"]):
 				return true
 		return false
+	if Weapons.is_ammo(kind):
+		for g in guns:
+			if g["id"] != "" and Weapons.ammo_of(g["id"]) == kind:
+				return count(kind) < 90 and free_slots() > 0
+		return false
+	if Weapons.is_bag(kind):
+		return int(kind.substr(3)) > bag
 	match kind:
 		"bandage":
 			return count("bandage") < 10 and free_slots() > 0
 		"med":
-			return count("med") < 3 and free_slots() > 0
+			return count("med") < 4 and free_slots() > 0
 		"vest":
 			return armor < 50.0
 		"helmet":
 			return not helmet
-		"bag":
-			return not bag
 		"box":
 			return true
 	return false
@@ -997,7 +1258,7 @@ func _bot_plan() -> void:
 		return
 	if b_item < 0:
 		var best := -1
-		var bd := 55.0
+		var bd := 55.0 if has_any_gun() else 110.0
 		for i in game.items_avail.size():
 			if not game.items_avail[i] or b_ignore.has(i):
 				continue
@@ -1026,6 +1287,8 @@ func _bot_plan() -> void:
 
 
 func _bot_pick_target() -> void:
+	var zn: Array = game.zone_now()
+	var far_out: bool = Vector2(position.x, position.z).distance_to(zn[0]) > float(zn[1]) + 10.0
 	var best := 0
 	var bd := 75.0
 	if float(cur_stat()["range"]) > 150.0:
@@ -1040,7 +1303,7 @@ func _bot_pick_target() -> void:
 		var dd := o.position.distance_to(position)
 		if dd < 160.0:
 			b_far = false
-		if dd >= bd:
+		if dd >= bd or (far_out and dd > 12.0):
 			continue
 		# agachado em moita fica mais difícil de ver de longe
 		if o.crouch and dd > 35.0:
@@ -1063,20 +1326,23 @@ func _bot_fire(from: Vector3, aimp: Vector3, w: Dictionary) -> void:
 		punch_t = 0.3
 		game.server_bot_shot(pid, from, [(aimp - from).normalized()], wid)
 		return
-	if mag[wid] <= 0:
-		reload_t = w["reload"]
+	if int(mag.get(wid, 0)) <= 0:
+		if count(Weapons.ammo_of(wid)) > 0:
+			reload_t = w["reload"]
+		else:
+			_bot_best_gun()
 		return
 	mag[wid] -= 1
-	cool = 1.0 / float(w["rate"]) * 1.4
+	cool = 1.0 / float(w["rate"]) * 1.2
 	var base := (aimp - from).normalized()
 	var right := base.cross(Vector3.UP).normalized()
 	var up := right.cross(base)
-	var s := tan(deg_to_rad(float(w["spread"]) + 4.0 / b_skill))
+	var s := tan(deg_to_rad(float(w["spread"]) * 0.8 + 2.2 / b_skill))
 	var dirs := []
 	for i in int(w["pellets"]):
 		var a := randf() * TAU
 		var r := sqrt(randf()) * s
 		dirs.append((base + right * cos(a) * r + up * sin(a) * r).normalized())
 	game.server_bot_shot(pid, from, dirs, wid)
-	if mag[wid] <= 0:
+	if mag[wid] <= 0 and count(Weapons.ammo_of(wid)) > 0:
 		reload_t = w["reload"]

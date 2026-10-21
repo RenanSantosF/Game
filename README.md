@@ -4,33 +4,38 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Como é a partida
 
-1. **Sala de espera**: todo mundo aparece no mapa, ninguém leva dano. Dá pra aquecer a mira.
+1. **Sala de espera (lobby)**: um pátio cercado fora do mapa, com todo mundo junto (bots também). Ninguém leva dano; você recebe uma M4A1 e uma Glock só pra aquecer a mira (somem ao entrar no avião).
 2. **Avião**: o avião cruza o mapa por uma rota sorteada (sempre por cima do mapa). Toque em **SALTAR** quando quiser.
 3. **Queda**: queda livre guiada pelo joystick; o paraquedas abre sozinho perto do chão (ou toque em **PARAQUEDAS**).
-4. **Loot**: todo mundo começa só com a Glock (e os punhos). Armas, acessórios, coletes, capacetes, mochilas, bandagens e kits ficam nas casas, nas caixas, perto de pedras e na base militar. Quem morre vira uma **caixa** com tudo o que tinha.
+4. **Loot**: todo mundo começa sem arma e sem equipamento, só com os punhos. Munição não é infinita: cada arma usa um tipo (9 mm, 5.56, 7.62, calibre 12) e a munição aparece do lado das armas e solta pelo mapa. Armas, acessórios, coletes, capacetes, mochilas, bandagens e kits ficam nas casas, nas caixas, perto de pedras e na base militar. Quem morre vira uma **caixa** com tudo o que tinha.
 5. **Zona**: o círculo azul fecha em 7 etapas; o branco no mapa mostra a próxima. Fora dele você perde vida.
 6. **Vitória**: não tem renascimento. O último de pé vence.
 
-50 jogadores por partida: no treino são você + 49 bots. Os bots saltam, pegam loot, saqueiam caixas, se curam, fogem da zona e brigam entre si.
+50 jogadores por partida: no treino são você + 49 bots. Os bots saltam, pegam loot e munição, saqueiam caixas, se curam (inclusive no meio da briga, quando perdem você de vista), entram na zona com antecedência (e brigam andando pra dentro dela), saem das casas pela porta e brigam entre si.
 
 ## Conteúdo
 
+- Vida 200 (colete e capacete reduzem o dano); dano de queda quando pula de muito alto
 - Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com rua asfaltada, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
-- Morros altos, barrancos, lagoa rasa, linha de trem com vagões, estradas de terra com postes, bosques de pinheiros
-- Casas de um e dois andares (com escada e sacada), varandas, muros baixos, cercas, carros e picapes abandonados
-- **Pular janela e muro baixo**: chegue perto e toque em PULAR
-- Armas reais: Glock 17, Desert Eagle, MP5, UMP-45, M4A1, SCAR-L, AK-47, Remington 870, Kar98k e AWM, além do soco
+- Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
+- Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco
+- Casas quase todas térreas (algumas de dois andares, com escada e sacada), varandas, muros baixos, cercas, carros e picapes abandonados
+- **Pular janela e muro baixo**: chegue perto e toque em PULAR. Pulando da janela de cima, cai, faz barulho e fica ~1 s sem andar
+- Armas reais: Glock 17, Desert Eagle, MP5, UMP-45, M4A1, SCAR-L, AK-47, Remington 870, M1014 (escopeta 12 semiautomática), Kar98k e AWM, além do soco
 - Acessórios: coronha (menos coice), carregador estendido, mira holográfica, luneta 4x e silenciador
-- Duas armas principais + pistola. Toque na arma que já está na mão pra guardar e correr mais rápido (soco)
-- **Mochila**: veja os itens, use, equipe acessórios, largue o que quiser. Mochila grande dobra o espaço
-- Itens por perto aparecem na lista do canto direito (rola se tiver muitos); toque pra pegar
-- Sons de tudo: passos (dá pra ouvir o inimigo chegando, e eles aparecem no minimapa), tiros por arma, silenciador, pulo, janela, troca de arma, recarga, cura, soco, acerto, abate
+- Duas armas principais + pistola. Painel de armas como no FF: a da mão grande em cima, as outras pequenas embaixo (ícones brancos com o nome). Toque na arma da mão pra guardar
+- Botão de **correr** do lado do minimapa: só com o joystick anda mais devagar; com ele corre (de mãos livres corre mais). No ar não dá pra mudar a direção do pulo
+- **Mochila** níveis 1, 2 e 3 (sem mochila cabe pouco). Tela da mochila com ícones: toque num item pra usar/equipar/largar, ou **arraste o acessório até a arma** pra equipar e da arma pra mochila pra tirar; arraste qualquer coisa pra lixeira pra largar. Tocar fora fecha
+- Itens por perto aparecem numa faixa horizontal embaixo (5 por vez; arraste pro lado pra ver mais); toque pra pegar
+- Bússola no topo (N, NE, L, SE, S, SO, O, NO) e minimapa com uma seta só (pra onde a câmera olha)
+- Botões só com ícones
+- Sons gravados de verdade (bibliotecas CC0, veja `sounds/CREDITOS.txt`): cada arma tem o seu tiro; passos diferentes na grama, no cascalho e no piso; silenciador com o "tiu" abafado; vento na queda livre e outro no paraquedas; pouso; acerto, tiro na cabeça e abate novos
 - Números de dano subindo, seta discreta mostrando de onde veio o tiro, contador de vivos e abates
 - Texturas realistas geradas pelo próprio projeto (grama, terra, pedra, reboco, tijolo, telha, madeira, metal, asfalto, casca, folhagem)
 
 ## Configurações
 
-- **Mira assistida**: CONTROLE TOTAL (sem ajuda), GRUDA SEM MIRA (puxa só no tiro sem mirar) ou GRUDA SEMPRE. Arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
+- **Mira assistida**: CONTROLE TOTAL (sem ajuda), GRUDA SEM MIRA (puxa só no tiro sem mirar) ou GRUDA SEMPRE (padrão). Arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
 - Sensibilidade geral e mirando, inverter vertical
 - **Editar posição dos botões**: arraste cada botão e mude o tamanho
 - Gráficos BAIXA/MÉDIA/ALTA, limite de FPS (30/45/60), mostrar FPS, volume
@@ -39,7 +44,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 - Casas de cada localidade e cada tipo de vegetação viram poucas malhas (poucas chamadas de desenho); árvores longe usam um modelo simples e a vegetação distante some em blocos
 - Na BAIXA: resolução 60%, sem sombra e sem grama
-- Todas as texturas ficam numa só (Texture2DArray comprimida em ETC2)
+- Todas as texturas ficam numa só imagem (atlas 2D com borda, comprimida)
 
 ## Como baixar o APK
 
@@ -63,7 +68,8 @@ Na primeira instalação, o Android pede pra liberar "instalar apps desconhecido
 |---|---|---|
 | Andar / guiar a queda (o personagem vira pra onde anda) | Arrastar o lado esquerdo da tela | WASD |
 | Olhar e mirar | Arrastar o lado direito (ou o próprio botão ATIRAR) | Arrastar com o mouse |
-| Atirar | ATIRAR (segurar) | F |
+| Atirar | Botão da mira (segurar) | F |
+| Correr | Botão do bonequinho correndo, do lado do minimapa | — |
 | Saltar do avião / pular | SALTAR / PULAR | Espaço |
 | Paraquedas | PARAQUEDAS | Espaço |
 | Pular janela / muro | PULAR, de frente pra janela | Espaço |
@@ -71,7 +77,7 @@ Na primeira instalação, o Android pede pra liberar "instalar apps desconhecido
 | Recarregar / mira | RECAR. / MIRA | R / C |
 | Trocar arma / guardar | Tocar na arma no canto superior direito | X, 1, 2, 3 |
 | Curar | CURAR (mostra bandagens e kits) | H |
-| Pegar item | Tocar na lista do canto direito (colete, capacete e mochila pegam sozinhos) | E |
+| Pegar item | Tocar na faixa de itens embaixo (colete, capacete e mochila pegam sozinhos) | E |
 | Mochila | MOCHILA | Tab |
 | Mapa grande | Tocar no minimapa | M |
 

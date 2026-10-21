@@ -1,0 +1,15 @@
+Sons do Confronto
+=================
+
+Gravações (domínio público, CC0), cortadas e tratadas por tools/prepare_sounds.py:
+
+- Tiros: "The Free Firearm Sound Library" (OpenGameArt.org, CC0)
+  Walther PPQ, 1911, Carl Gustav M45, PPSh, AR-15, SKS, AK-47, Mossberg, Nova, Mosin Nagant, Tikka.
+- Passos na grama/terra e no piso: "Fantozzi's Footsteps (Grass/Sand & Stone)" (OpenGameArt.org, CC0)
+- Passos no cascalho: Corsica_S, "42 Snow and Gravel Footsteps" (OpenGameArt.org, CC0)
+
+Sintetizados por tools/synth_sounds.py (feitos pra este jogo):
+tiro com silenciador, acerto, tiro na cabeça, abate, vento em queda livre, vento no paraquedas,
+motor do avião, abertura do paraquedas.
+
+Demais sons de interface (troca de arma, recarga, coleta etc.): tools/gen_assets.py.

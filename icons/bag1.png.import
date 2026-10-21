@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ddutaxrfseib"
-path="res://.godot/imported/bag.png-b99f114940db8ef3349b9a982dd79e19.ctex"
+uid="uid://d0786eo1ar183"
+path="res://.godot/imported/bag1.png-9c73bb0da5ceb87a74ff67e75d8ae969.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/bag.png"
-dest_files=["res://.godot/imported/bag.png-b99f114940db8ef3349b9a982dd79e19.ctex"]
+source_file="res://icons/bag1.png"
+dest_files=["res://.godot/imported/bag1.png-9c73bb0da5ceb87a74ff67e75d8ae969.ctex"]
 
 [params]
 

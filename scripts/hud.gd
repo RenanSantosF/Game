@@ -8,11 +8,13 @@ signal inv_action(act: String, a: String, b: int)
 const JOY_R := 90.0
 const MINI := 170.0
 const MINI_M := 170.0      # metros mostrados no minimapa
-const EDITABLE := ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag"]
+const EDITABLE := ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]
 # posição padrão dos botões (fração da tela) e raio base
+# mochila e cura ficam embaixo do minimapa; correr do lado do minimapa
 const DEFAULTS := {
 	"fire": [0.883, 0.757, 78.0], "fire2": [0.3, 0.46, 46.0], "jump": [0.765, 0.882, 44.0], "crouch": [0.945, 0.917, 40.0],
-	"reload": [0.945, 0.54, 38.0], "scope": [0.85, 0.54, 40.0], "heal": [0.68, 0.85, 40.0], "bag": [0.6, 0.075, 30.0],
+	"reload": [0.945, 0.54, 38.0], "scope": [0.85, 0.54, 40.0], "heal": [0.112, 0.345, 32.0], "bag": [0.04, 0.345, 32.0],
+	"sprint": [0.18, 0.13, 36.0],
 }
 
 var game: Node
@@ -33,18 +35,24 @@ var lbl_fps: Label
 var lbl_spec: Label
 var feed_box: VBoxContainer
 var pick_panel: PanelContainer
-var pick_list: VBoxContainer
+var pick_list: HBoxContainer
 var pick_scroll: ScrollContainer
 var bag_panel: PanelContainer
 var bag_left: VBoxContainer
-var bag_right: VBoxContainer
+var bag_grid: GridContainer
 var bag_title: Label
+var bag_cap: Label
+var bag_bar: Control
+var bag_act: HBoxContainer
+var bag_sel := {}          # item escolhido na mochila: {t, kind, slot}
+var _bag_cap_k := 0.0
 
 var center_t := 0.0
 var hit_t := 0.0
 var hit_head := false
 var hit_kill := false
-var hp := 100.0
+var hp := 200.0
+var sprinting := false
 var armor := 0.0
 var heals := [0, 0]        # bandagens, kits
 var overlay := false       # luneta (tela preta em volta)
@@ -72,6 +80,7 @@ var edit_mode := false
 var edit_sel := ""
 var bag_open := false
 var _pick_sig := ""
+var _pick_n := 0
 var _bag_sig := ""
 var _slot_rects := []
 
@@ -139,60 +148,145 @@ func _panel_style(alpha := 0.55) -> StyleBoxFlat:
 	return sb
 
 
+# coleta: faixa horizontal (largura 100 x altura 20), mostra 5 itens; arrasta pro lado pra ver o resto
 func _build_pick_panel() -> void:
 	pick_panel = PanelContainer.new()
-	pick_panel.add_theme_stylebox_override("panel", _panel_style(0.45))
+	pick_panel.add_theme_stylebox_override("panel", _panel_style(0.5))
 	pick_panel.visible = false
 	add_child(pick_panel)
 	pick_scroll = ScrollContainer.new()
-	pick_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	pick_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	pick_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	pick_scroll.scroll_deadzone = 12
 	pick_panel.add_child(pick_scroll)
-	pick_list = VBoxContainer.new()
-	pick_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pick_list = HBoxContainer.new()
 	pick_list.add_theme_constant_override("separation", 4)
 	pick_scroll.add_child(pick_list)
 
 
+func _tile_style(c: Color, border := Color(1, 1, 1, 0.18)) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(6)
+	sb.set_border_width_all(1)
+	sb.border_color = border
+	sb.set_content_margin_all(3)
+	return sb
+
+
 func _build_bag_panel() -> void:
 	bag_panel = PanelContainer.new()
-	bag_panel.add_theme_stylebox_override("panel", _panel_style(0.88))
+	var st := _panel_style(0.9)
+	st.set_corner_radius_all(14)
+	st.set_content_margin_all(12)
+	st.border_color = Color(1, 1, 1, 0.12)
+	st.set_border_width_all(1)
+	bag_panel.add_theme_stylebox_override("panel", st)
 	bag_panel.visible = false
 	add_child(bag_panel)
 	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
 	bag_panel.add_child(vb)
+	# topo: ícone da mochila, ocupação e X
 	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 10)
 	vb.add_child(top)
+	var ic := Control.new()
+	ic.custom_minimum_size = Vector2(34, 34)
+	ic.draw.connect(func(): glyph(ic, "bag", ic.size / 2.0, 15.0, Color(1, 0.85, 0.35)))
+	top.add_child(ic)
 	bag_title = Label.new()
-	bag_title.add_theme_font_size_override("font_size", 24)
-	bag_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_title.add_theme_font_size_override("font_size", 20)
 	top.add_child(bag_title)
-	var close := _btn("FECHAR", func(): set_bag(false))
-	top.add_child(close)
+	bag_bar = Control.new()
+	bag_bar.custom_minimum_size = Vector2(120, 34)
+	bag_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_bar.draw.connect(func():
+		var r := Rect2(Vector2(0, 13), Vector2(bag_bar.size.x, 8))
+		bag_bar.draw_rect(r, Color(1, 1, 1, 0.12))
+		var k := clampf(_bag_cap_k, 0.0, 1.0)
+		bag_bar.draw_rect(Rect2(r.position, Vector2(r.size.x * k, r.size.y)), Color(1, 0.3, 0.25) if k >= 1.0 else Color(1, 0.8, 0.3)))
+	top.add_child(bag_bar)
+	bag_cap = Label.new()
+	bag_cap.add_theme_font_size_override("font_size", 18)
+	top.add_child(bag_cap)
+	top.add_child(_icon_btn("close", 40.0, func(): set_bag(false)))
 	var hb := HBoxContainer.new()
 	hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hb.add_theme_constant_override("separation", 14)
+	hb.add_theme_constant_override("separation", 12)
 	vb.add_child(hb)
-	for side in 2:
-		var sc := ScrollContainer.new()
-		sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		hb.add_child(sc)
-		var col := VBoxContainer.new()
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.add_theme_constant_override("separation", 6)
-		sc.add_child(col)
-		if side == 0:
-			bag_left = col
-		else:
-			bag_right = col
+	bag_left = VBoxContainer.new()
+	bag_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_left.size_flags_stretch_ratio = 1.15
+	bag_left.add_theme_constant_override("separation", 6)
+	hb.add_child(bag_left)
+	var sc := ScrollContainer.new()
+	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.scroll_deadzone = 12
+	hb.add_child(sc)
+	# tirar acessório arrastando ele pra mochila
+	sc.set_drag_forwarding(Callable(), func(_p, d): return d is Dictionary and d.get("t") == "att",
+		func(_p, d): inv_action.emit("unequip", d["kind"], int(d["slot"])); bag_sel = {})
+	bag_grid = GridContainer.new()
+	bag_grid.columns = 4
+	bag_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_grid.add_theme_constant_override("h_separation", 6)
+	bag_grid.add_theme_constant_override("v_separation", 6)
+	sc.add_child(bag_grid)
+	# barra de ações do item escolhido + lixeira (arraste pra largar)
+	var bot := HBoxContainer.new()
+	bot.add_theme_constant_override("separation", 8)
+	vb.add_child(bot)
+	bag_act = HBoxContainer.new()
+	bag_act.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_act.add_theme_constant_override("separation", 8)
+	bag_act.custom_minimum_size = Vector2(0, 48)
+	bot.add_child(bag_act)
+	var trash := PanelContainer.new()
+	trash.add_theme_stylebox_override("panel", _tile_style(Color(0.5, 0.1, 0.08, 0.5)))
+	trash.custom_minimum_size = Vector2(56, 48)
+	var tg := Control.new()
+	tg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tg.draw.connect(func(): glyph(tg, "drop", tg.size / 2.0, 14.0, Color.WHITE))
+	trash.add_child(tg)
+	trash.set_drag_forwarding(Callable(), func(_p, d): return d is Dictionary,
+		func(_p, d): _drop_any(d))
+	bot.add_child(trash)
 
 
-func _btn(t: String, cb: Callable, fs := 18) -> Button:
+func _drop_any(d: Dictionary) -> void:
+	bag_sel = {}
+	match d.get("t"):
+		"item":
+			inv_action.emit("drop", d["kind"], int(d["n"]))
+		"att":
+			inv_action.emit("unequip", d["kind"], int(d["slot"]))
+		"gun":
+			inv_action.emit("drop_gun", "", int(d["slot"]))
+		"gear":
+			inv_action.emit("drop", d["kind"], 0)
+	_bag_sig = ""
+
+
+# botão redondo com ícone desenhado (sem texto)
+func _icon_btn(kind: String, sz: float, cb: Callable, col := Color(1, 1, 1, 0.08)) -> Button:
 	var b := Button.new()
-	b.text = t
-	b.add_theme_font_size_override("font_size", fs)
-	b.custom_minimum_size = Vector2(0, 44)
+	b.custom_minimum_size = Vector2(sz, sz)
+	b.focus_mode = Control.FOCUS_NONE
+	var sb := _tile_style(col, Color(1, 1, 1, 0.35))
+	sb.set_corner_radius_all(int(sz / 2.0))
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb)
+	var sp := _tile_style(Color(1, 0.8, 0.3, 0.4), Color(1, 1, 1, 0.6))
+	sp.set_corner_radius_all(int(sz / 2.0))
+	b.add_theme_stylebox_override("pressed", sp)
+	var g := Control.new()
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	g.set_anchors_preset(Control.PRESET_FULL_RECT)
+	g.draw.connect(func(): glyph(g, kind, g.size / 2.0, sz * 0.27, Color.WHITE))
+	b.add_child(g)
 	b.pressed.connect(cb)
 	return b
 
@@ -210,6 +304,9 @@ func make_icons() -> void:
 		var path := "res://icons/%s.png" % id
 		if ResourceLoader.exists(path):
 			icons[id] = load(path)
+		var wp := "res://icons/w_%s.png" % id
+		if ResourceLoader.exists(wp):
+			icons["w_" + id] = load(wp)
 	_pick_sig = ""
 	_bag_sig = ""
 
@@ -279,6 +376,7 @@ func feed(t: String, col := Color.WHITE) -> void:
 func set_bag(open: bool) -> void:
 	bag_open = open
 	bag_panel.visible = open
+	bag_sel = {}
 	_bag_sig = ""
 
 
@@ -291,106 +389,232 @@ func set_pickups(list: Array) -> void:
 	if sig == _pick_sig:
 		return
 	_pick_sig = sig
+	_pick_n = list.size()
 	for c in pick_list.get_children():
+		pick_list.remove_child(c)
 		c.queue_free()
 	for e in list:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(0, 46)
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		var hb := HBoxContainer.new()
-		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.set_anchors_preset(Control.PRESET_FULL_RECT)
-		hb.add_theme_constant_override("separation", 8)
-		b.add_child(hb)
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("normal", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
+		b.add_theme_stylebox_override("hover", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
+		b.add_theme_stylebox_override("pressed", _tile_style(Color(1, 0.8, 0.3, 0.35)))
+		var vb := VBoxContainer.new()
+		vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		vb.add_theme_constant_override("separation", 0)
+		b.add_child(vb)
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(72, 36)
+		tr.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr.texture = icons.get(e["kind"])
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(tr)
+		vb.add_child(tr)
 		var l := Label.new()
-		l.text = e["label"] + ("  x%d" % e["n"] if int(e["n"]) > 1 else "")
-		l.add_theme_font_size_override("font_size", 17)
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		l.text = e["label"]
+		l.add_theme_font_size_override("font_size", 12)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(l)
+		vb.add_child(l)
+		if int(e["n"]) > 1:
+			var nl := Label.new()
+			nl.text = "x%d" % e["n"]
+			nl.add_theme_font_size_override("font_size", 13)
+			nl.add_theme_color_override("font_color", Color(1, 0.85, 0.4))
+			nl.add_theme_constant_override("outline_size", 4)
+			nl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+			nl.position = Vector2(4, 1)
+			nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(nl)
 		var key: Array = e["key"]
 		b.pressed.connect(func(): pick.emit(key))
 		pick_list.add_child(b)
-	pick_panel.visible = not list.is_empty()
+	pick_scroll.scroll_horizontal = 0
+	pick_panel.visible = _pick_n > 0
 
 
-func _bag_row(parent: Container, kind: String, text: String, buttons: Array) -> void:
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 6)
+# quadradinho de item da mochila (arrastável)
+func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := false) -> PanelContainer:
+	var t := PanelContainer.new()
+	var selected: bool = not bag_sel.is_empty() and bag_sel.get("t") == data.get("t") and bag_sel.get("kind") == data.get("kind") and int(bag_sel.get("slot", -9)) == int(data.get("slot", -9))
+	t.add_theme_stylebox_override("panel", _tile_style(Color(1, 0.8, 0.3, 0.35) if selected else Color(0.62, 0.66, 0.62, 0.32), Color(1, 0.85, 0.35, 0.9) if selected else Color(1, 1, 1, 0.22)))
+	t.custom_minimum_size = Vector2(sz, sz)
 	var tr := TextureRect.new()
-	tr.custom_minimum_size = Vector2(80, 40)
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tr.texture = icons.get(kind)
-	hb.add_child(tr)
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", 17)
-	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD
-	hb.add_child(l)
-	for bt in buttons:
-		var b := _btn(bt[0], bt[1], 15)
-		b.custom_minimum_size = Vector2(86, 42)
-		hb.add_child(b)
-	parent.add_child(hb)
+	tr.texture = icons.get(("w_" if white else "") + kind, icons.get(kind))
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.add_child(tr)
+	if n > 1:
+		var l := Label.new()
+		l.text = str(n)
+		l.add_theme_font_size_override("font_size", 13)
+		l.add_theme_constant_override("outline_size", 4)
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		l.size_flags_horizontal = Control.SIZE_SHRINK_END
+		l.size_flags_vertical = Control.SIZE_SHRINK_END
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.add_child(l)
+	t.set_drag_forwarding(func(_p):
+		var pv := TextureRect.new()
+		pv.texture = tr.texture
+		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pv.size = Vector2(sz, sz) * 1.2
+		pv.modulate = Color(1, 1, 1, 0.85)
+		var wrap := Control.new()
+		wrap.add_child(pv)
+		pv.position = -pv.size / 2.0
+		t.set_drag_preview(wrap)
+		return data, Callable(), Callable())
+	t.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and not t.get_viewport().gui_is_dragging():
+			bag_sel = {} if selected else data
+			_bag_sig = "")
+	return t
+
+
+func _act_btn(kind: String, cb: Callable) -> void:
+	bag_act.add_child(_icon_btn(kind, 46.0, cb, Color(1, 1, 1, 0.12)))
 
 
 func refresh_bag(p: Player) -> void:
 	if not bag_open or p == null:
 		return
-	var sig := "%s|%s|%s|%d|%s|%s|%d" % [str(p.guns), str(p.inv), p.armor, int(p.helmet), p.bag, p.sel, icons.size()]
+	var sig := "%s|%s|%s|%d|%s|%s|%d|%s" % [str(p.guns), str(p.inv), p.armor, int(p.helmet), p.bag, p.sel, icons.size(), str(bag_sel)]
 	if sig == _bag_sig:
 		return
 	_bag_sig = sig
 	for c in bag_left.get_children():
+		bag_left.remove_child(c)
 		c.queue_free()
-	for c in bag_right.get_children():
+	for c in bag_grid.get_children():
+		bag_grid.remove_child(c)
 		c.queue_free()
-	bag_title.text = "MOCHILA   %d / %d vagas" % [Weapons.slots_used(p.inv), p.capacity()]
-	var names := ["Principal 1", "Principal 2", "Pistola"]
+	for c in bag_act.get_children():
+		bag_act.remove_child(c)
+		c.queue_free()
+	var used := Weapons.slots_used(p.inv)
+	_bag_cap_k = float(used) / maxf(1.0, float(p.capacity()))
+	bag_title.text = "MOCHILA" if p.bag <= 0 else "MOCHILA NÍV. %d" % p.bag
+	bag_cap.text = "%d/%d" % [used, p.capacity()]
+	bag_bar.queue_redraw()
+	# armas: arraste um acessório em cima da arma pra equipar
 	for i in 3:
 		var g: Dictionary = p.guns[i]
 		var id: String = g["id"]
-		if id == "":
-			_bag_row(bag_left, "", "%s: vazio" % names[i], [])
-			continue
-		var t := "%s: %s" % [names[i], Weapons.item_name(id)]
-		var bts := [["LARGAR", func(): inv_action.emit("drop_gun", "", i)]]
-		_bag_row(bag_left, id, t, bts)
-		for a in g["att"]:
-			var att: String = a
-			_bag_row(bag_left, att, "   + " + Weapons.item_name(att), [["TIRAR", func(): inv_action.emit("unequip", att, i)]])
+		var card := PanelContainer.new()
+		var active := i == p.sel
+		card.add_theme_stylebox_override("panel", _tile_style(Color(1, 1, 1, 0.1 if active else 0.05), Color(1, 0.85, 0.35, 0.9) if active else Color(1, 1, 1, 0.15)))
+		card.custom_minimum_size = Vector2(0, 62)
+		var slot := i
+		card.set_drag_forwarding(
+			func(_p): return {"t": "gun", "kind": id, "slot": slot} if id != "" else null,
+			func(_p, d): return d is Dictionary and d.get("t") == "item" and Weapons.is_att(d["kind"]) and Weapons.fits(d["kind"], id),
+			func(_p, d): inv_action.emit("equip", d["kind"], slot); bag_sel = {})
+		card.gui_input.connect(func(ev: InputEvent):
+			if id != "" and ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and not card.get_viewport().gui_is_dragging():
+				var d := {"t": "gun", "kind": id, "slot": slot}
+				bag_sel = {} if bag_sel == d else d
+				_bag_sig = "")
+		var hb := HBoxContainer.new()
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_theme_constant_override("separation", 6)
+		card.add_child(hb)
+		var tr := TextureRect.new()
+		tr.custom_minimum_size = Vector2(104, 52)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.texture = icons.get("w_" + id) if id != "" else null
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(tr)
+		var col := VBoxContainer.new()
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_theme_constant_override("separation", 2)
+		hb.add_child(col)
+		var nm := Label.new()
+		nm.text = Weapons.item_name(id).to_upper() if id != "" else ("PISTOLA" if i == 2 else "ARMA %d" % (i + 1))
+		nm.add_theme_font_size_override("font_size", 15)
+		nm.add_theme_color_override("font_color", Color.WHITE if id != "" else Color(1, 1, 1, 0.35))
+		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(nm)
+		var ar := HBoxContainer.new()
+		ar.add_theme_constant_override("separation", 3)
+		col.add_child(ar)
+		if id != "":
+			for a in Weapons.ATTS:
+				if not Weapons.fits(a, id):
+					continue
+				if a in g["att"]:
+					ar.add_child(_item_tile(a, 1, {"t": "att", "kind": a, "slot": i}, 30.0))
+				else:
+					var empty := Panel.new()
+					empty.custom_minimum_size = Vector2(30, 30)
+					empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.25), Color(1, 1, 1, 0.08)))
+					empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					ar.add_child(empty)
+		bag_left.add_child(card)
+	# equipamento vestido
+	var gear := HBoxContainer.new()
+	gear.add_theme_constant_override("separation", 6)
+	bag_left.add_child(gear)
 	if p.armor > 0.0:
-		_bag_row(bag_left, "vest", "Colete (%d)" % int(p.armor), [["LARGAR", func(): inv_action.emit("drop", "vest", 0)]])
+		gear.add_child(_item_tile("vest", int(p.armor), {"t": "gear", "kind": "vest"}, 50.0))
 	if p.helmet:
-		_bag_row(bag_left, "helmet", "Capacete", [["LARGAR", func(): inv_action.emit("drop", "helmet", 0)]])
-	if p.bag:
-		_bag_row(bag_left, "bag", "Mochila grande (16 vagas)", [])
-	if p.inv.is_empty():
-		var l := Label.new()
-		l.text = "Mochila vazia"
-		bag_right.add_child(l)
+		gear.add_child(_item_tile("helmet", 1, {"t": "gear", "kind": "helmet"}, 50.0))
+	if p.bag > 0:
+		gear.add_child(_item_tile("bag%d" % p.bag, 1, {"t": "none", "kind": "bag"}, 50.0))
+	# itens soltos
 	for k in p.inv:
 		var kind: String = k
 		var n: int = p.inv[k]
 		if n <= 0:
 			continue
-		var bts := []
-		if Weapons.ITEMS[kind]["kind"] == "heal":
-			bts.append(["USAR", func(): inv_action.emit("use", kind, 0)])
-		elif Weapons.is_att(kind):
-			bts.append(["EQUIPAR", func(): inv_action.emit("equip", kind, p.sel)])
-		bts.append(["LARGAR", func(): inv_action.emit("drop", kind, n)])
-		_bag_row(bag_right, kind, "%s  x%d" % [Weapons.item_name(kind), n], bts)
+		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 64.0))
+	for i in maxi(0, p.capacity() - used):
+		var empty := Panel.new()
+		empty.custom_minimum_size = Vector2(64, 64)
+		empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.22), Color(1, 1, 1, 0.06)))
+		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bag_grid.add_child(empty)
+	# ações do item escolhido
+	if bag_sel.is_empty():
+		var hint := Label.new()
+		hint.text = "Toque num item ou arraste ele até a arma"
+		hint.add_theme_font_size_override("font_size", 14)
+		hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+		bag_act.add_child(hint)
+		return
+	var d := bag_sel
+	var nm2 := Label.new()
+	nm2.text = Weapons.item_name(d["kind"]) if d["t"] != "gun" else Weapons.item_name(d["kind"]).to_upper()
+	nm2.add_theme_font_size_override("font_size", 16)
+	nm2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bag_act.add_child(nm2)
+	match d["t"]:
+		"item":
+			var kind: String = d["kind"]
+			if Weapons.ITEMS.get(kind, {}).get("kind", "") == "heal":
+				_act_btn("heal", func(): inv_action.emit("use", kind, 0))
+			elif Weapons.is_att(kind):
+				for i in 3:
+					if p.guns[i]["id"] != "" and Weapons.fits(kind, p.guns[i]["id"]) and not (kind in p.guns[i]["att"]):
+						var gi := i
+						_act_btn("equip", func(): inv_action.emit("equip", kind, gi); bag_sel = {})
+						break
+			_act_btn("drop", func(): _drop_any(d))
+		"att":
+			_act_btn("unequip", func(): inv_action.emit("unequip", d["kind"], int(d["slot"])); bag_sel = {})
+		"gun":
+			var si: int = d["slot"]
+			_act_btn("hand", func(): action.emit("slot%d" % (si + 1)); bag_sel = {}; _bag_sig = "")
+			_act_btn("drop", func(): _drop_any(d))
+		"gear":
+			_act_btn("drop", func(): _drop_any(d))
 
 
 # ---------------- botões e toque ----------------
@@ -407,58 +631,48 @@ func _buttons() -> Dictionary:
 	if edit_mode:
 		for k in EDITABLE:
 			var bp := btn_pos(k, s)
-			b[k] = [bp[0], bp[1], _btn_label(k)]
-		b["e_small"] = [Vector2(s.x * 0.5 - 200, 60), 34.0, "MENOR"]
-		b["e_big"] = [Vector2(s.x * 0.5 - 110, 60), 34.0, "MAIOR"]
-		b["e_reset"] = [Vector2(s.x * 0.5 - 20, 60), 34.0, "PADRÃO"]
-		b["e_save"] = [Vector2(s.x * 0.5 + 70, 60), 34.0, "SALVAR"]
-		b["e_cancel"] = [Vector2(s.x * 0.5 + 160, 60), 34.0, "SAIR"]
+			b[k] = [bp[0], bp[1], _btn_icon(k)]
+		b["e_small"] = [Vector2(s.x * 0.5 - 200, 60), 30.0, "minus"]
+		b["e_big"] = [Vector2(s.x * 0.5 - 110, 60), 30.0, "plus"]
+		b["e_reset"] = [Vector2(s.x * 0.5 - 20, 60), 30.0, "reset"]
+		b["e_save"] = [Vector2(s.x * 0.5 + 70, 60), 30.0, "check"]
+		b["e_cancel"] = [Vector2(s.x * 0.5 + 160, 60), 30.0, "close"]
 		return b
-	b["exit"] = [Vector2(212, 36), 24.0, "SAIR"]
-	b["settings"] = [Vector2(272, 36), 24.0, "AJUSTES"]
+	b["exit"] = [Vector2(s.x - 400, 34), 22.0, "exit"]
+	b["settings"] = [Vector2(s.x - 450, 34), 22.0, "gear"]
 	if big_map:
-		b["map"] = [Vector2(s.x - 70, s.y - 60), 34.0, "FECHAR"]
+		b["map"] = [Vector2(s.x - 70, s.y - 60), 34.0, "close"]
 		return b
 	if bag_open:
 		return b
 	var fp := btn_pos("fire", s)
 	match mode:
 		"plane":
-			b["leave"] = [fp[0], 80.0, "SALTAR"]
+			b["leave"] = [fp[0], 80.0, "leave"]
 		"fall":
-			b["chute"] = [fp[0], 70.0, "PARAQUEDAS"]
+			b["chute"] = [fp[0], 70.0, "chute"]
 		"ground", "lobby":
-			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag"]:
+			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
 				var bp := btn_pos(k, s)
-				b[k] = [bp[0], bp[1], _btn_label(k)]
+				b[k] = [bp[0], bp[1], _btn_icon(k)]
 			if can_start:
-				b["start"] = [Vector2(s.x * 0.5, s.y * 0.5 + 120), 60.0, "COMEÇAR"]
+				b["start"] = [Vector2(s.x * 0.5, s.y * 0.5 + 120), 56.0, "play"]
 		"dead":
-			b["spec"] = [Vector2(s.x - 110, s.y - 110), 54.0, "PRÓXIMO"]
-			b["menu"] = [Vector2(110, s.y - 110), 54.0, "MENU"]
+			b["spec"] = [Vector2(s.x - 110, s.y - 110), 50.0, "next"]
+			b["menu"] = [Vector2(110, s.y - 110), 50.0, "home"]
 		"end":
-			b["menu"] = [Vector2(s.x * 0.5 - (110 if can_retry else 0), s.y * 0.72), 62.0, "MENU"]
+			b["menu"] = [Vector2(s.x * 0.5 - (110 if can_retry else 0), s.y * 0.72), 58.0, "home"]
 			if can_retry:
-				b["retry"] = [Vector2(s.x * 0.5 + 110, s.y * 0.72), 62.0, "DE NOVO"]
+				b["retry"] = [Vector2(s.x * 0.5 + 110, s.y * 0.72), 58.0, "reset"]
 	return b
 
 
-func _btn_label(k: String) -> String:
+func _btn_icon(k: String) -> String:
 	match k:
 		"fire", "fire2":
-			return "ATIRAR" if (sel >= 1 and _slot_has(sel)) else "SOCAR"
-		"jump":
-			return "PULAR"
+			return "fire" if (sel >= 1 and _slot_has(sel)) else "punch"
 		"crouch":
-			return "LEVANTAR" if crouched else "AGACHAR"
-		"reload":
-			return "RECAR."
-		"scope":
-			return "MIRA"
-		"heal":
-			return "CURAR"
-		"bag":
-			return "MOCHILA"
+			return "stand" if crouched else "crouch"
 	return k
 
 
@@ -530,6 +744,11 @@ func _input(e: InputEvent) -> void:
 func _down(i: int, p: Vector2) -> void:
 	if _in_gui(p):
 		touches[i] = "gui"
+		return
+	# tocar fora da mochila fecha ela
+	if bag_open and not edit_mode:
+		touches[i] = "btn"
+		set_bag(false)
 		return
 	var b := _hit_button(p)
 	if edit_mode:
@@ -642,26 +861,31 @@ func _process(delta: float) -> void:
 	var s := get_viewport().get_visible_rect().size
 	lbl_center.position = Vector2(0, s.y * 0.24)
 	lbl_center.size = Vector2(s.x, 100)
-	lbl_spec.position = Vector2(0, 64)
+	lbl_spec.position = Vector2(0, 92)
 	lbl_spec.size = Vector2(s.x, 30)
-	lbl_zone.position = Vector2(14, MINI + 20)
+	var under := s.y * 0.345 + 40.0
+	lbl_zone.position = Vector2(14, under)
 	lbl_zone.size = Vector2(320, 30)
-	lbl_fps.position = Vector2(14, MINI + 44)
+	lbl_fps.position = Vector2(14, under + 24)
 	lbl_fps.visible = show_fps
 	lbl_fps.text = "FPS %d" % Engine.get_frames_per_second()
-	feed_box.position = Vector2(14, MINI + 70)
+	feed_box.position = Vector2(14, under + 50)
 	feed_box.size = Vector2(420, 10)
-	var pw := minf(330.0, s.x * 0.28)
-	pick_panel.position = Vector2(s.x - pw - 12, 112)
-	pick_panel.size = Vector2(pw, minf(48.0 * pick_list.get_child_count() + 14.0, s.y * 0.38))
+	# faixa de coleta: proporção 100 x 20, cabem 5 itens
+	var pw := clampf(s.x * 0.4, 360.0, 560.0)
+	var ph := pw * 0.2
+	pick_panel.position = Vector2(s.x * 0.465 - pw * 0.5, s.y - ph - 72.0)
+	pick_panel.size = Vector2(pw, ph)
 	pick_panel.custom_minimum_size = pick_panel.size
-	pick_scroll.custom_minimum_size = Vector2(pw - 14, pick_panel.size.y - 12)
-	if mode != "ground" or bag_open or edit_mode or big_map:
-		pick_panel.visible = false
-	elif pick_list.get_child_count() > 0:
-		pick_panel.visible = true
-	bag_panel.position = Vector2(s.x * 0.08, s.y * 0.1)
-	bag_panel.size = Vector2(s.x * 0.84, s.y * 0.8)
+	pick_scroll.custom_minimum_size = Vector2(pw - 12, ph - 12)
+	var cell := (pw - 12.0 - 4.0 * 4.0) / 5.0
+	for c in pick_list.get_children():
+		(c as Control).custom_minimum_size = Vector2(cell, ph - 12)
+	pick_panel.visible = _pick_n > 0 and mode == "ground" and not bag_open and not edit_mode and not big_map
+	# mochila: no meio, sem ocupar a tela toda
+	var bw := clampf(s.x * 0.62, 560.0, 860.0)
+	bag_panel.size = Vector2(bw, s.y * 0.82)
+	bag_panel.position = Vector2((s.x - bw) / 2.0, s.y * 0.09)
 	bag_panel.custom_minimum_size = bag_panel.size
 	bigmap.visible = big_map
 	mini.visible = not big_map and mode != "end" and not edit_mode
@@ -674,29 +898,137 @@ func _process(delta: float) -> void:
 
 # ---------------- desenho ----------------
 
-func _draw_btn(font: Font, k: String, pos: Vector2, r: float, label: String) -> void:
+func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> void:
 	var held: bool = (k == "fire" or k == "fire2") and fire_held
-	var bg := Color(0, 0, 0, 0.35)
+	var bg := Color(0, 0, 0, 0.32)
+	var ring := Color(1, 1, 1, 0.55)
 	if held:
 		bg = Color(1, 0.4, 0.2, 0.5)
 	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
 		bg = Color(0.85, 0.55, 0.1, 0.6)
+	elif (k == "sprint" and sprinting) or (k == "crouch" and crouched):
+		bg = Color(1, 0.75, 0.2, 0.45)
+		ring = Color(1, 0.85, 0.35, 0.95)
 	if edit_mode and k == edit_sel:
 		bg = Color(0.2, 0.6, 1.0, 0.5)
 	pad.draw_circle(pos, r, bg)
-	pad.draw_arc(pos, r, 0, TAU, 40, Color(1, 1, 1, 0.6), 2.5)
-	var fs := 22 if r >= 54.0 else (16 if label.length() <= 7 else 13)
-	if r < 30.0:
-		fs = mini(fs, 12 if label.length() > 4 else 14)
-	var tw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	var dy := fs * 0.35
+	pad.draw_arc(pos, r, 0, TAU, 40, ring, 2.5)
+	glyph(pad, icon, pos, r * 0.48, Color(1, 1, 1, 0.95))
 	if k == "heal":
-		dy -= 8.0
-	pad.draw_string(font, pos + Vector2(-tw / 2.0, dy), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
-	if k == "heal":
-		var sub := "B%d  K%d" % [heals[0], heals[1]]
+		var sub := "%d" % (heals[0] + heals[1])
+		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.15, 0.6, 0.25))
 		var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-		pad.draw_string(font, pos + Vector2(-sw / 2.0, 16), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 1, 0.7))
+		pad.draw_string(font, pos + Vector2(r * 0.68 - sw / 2.0, -r * 0.68 + 5), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+
+# Ícones vetoriais simples (brancos), usados nos botões e na mochila.
+func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
+	var w := maxf(2.0, r * 0.13)
+	match k:
+		"fire":
+			ci.draw_arc(c, r * 0.62, 0, TAU, 28, col, w)
+			for i in 4:
+				var d := Vector2.RIGHT.rotated(i * PI / 2.0)
+				ci.draw_line(c + d * r * 0.35, c + d * r, col, w)
+			ci.draw_circle(c, w * 0.8, col)
+		"punch":
+			for i in 4:
+				ci.draw_circle(c + Vector2(-r * 0.45 + i * r * 0.3, -r * 0.35), r * 0.17, col)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.62, -r * 0.35), Vector2(r * 1.24, r * 0.75)), col)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.4, r * 0.38), Vector2(r * 0.85, r * 0.45)), col)
+			ci.draw_line(c + Vector2(-r * 0.6, 0.0), c + Vector2(r * 0.1, 0.0), Color(0, 0, 0, 0.45), w * 0.8)
+		"jump":
+			for o in [0.0, 0.45]:
+				ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.6, r * (0.15 + o)), c + Vector2(0, r * (-0.45 + o)), c + Vector2(r * 0.6, r * (0.15 + o))]), col, w * 1.2)
+		"crouch", "stand":
+			var sg := 1.0 if k == "crouch" else -1.0
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.55, -r * 0.35 * sg), c + Vector2(0, r * 0.2 * sg), c + Vector2(r * 0.55, -r * 0.35 * sg)]), col, w * 1.2)
+			ci.draw_line(c + Vector2(-r * 0.7, r * 0.62), c + Vector2(r * 0.7, r * 0.62), col, w)
+		"reload", "reset":
+			ci.draw_arc(c, r * 0.65, -PI * 0.35, PI * 1.45, 28, col, w)
+			var tip := c + Vector2(cos(-PI * 0.35), sin(-PI * 0.35)) * r * 0.65
+			ci.draw_colored_polygon(PackedVector2Array([tip + Vector2(r * 0.35, -r * 0.05), tip + Vector2(-r * 0.2, -r * 0.3), tip + Vector2(-r * 0.05, r * 0.28)]), col)
+		"scope":
+			ci.draw_arc(c, r * 0.75, 0, TAU, 32, col, w)
+			ci.draw_line(c + Vector2(-r, 0), c + Vector2(-r * 0.25, 0), col, w)
+			ci.draw_line(c + Vector2(r, 0), c + Vector2(r * 0.25, 0), col, w)
+			ci.draw_line(c + Vector2(0, -r), c + Vector2(0, -r * 0.25), col, w)
+			ci.draw_line(c + Vector2(0, r), c + Vector2(0, r * 0.25), col, w)
+			ci.draw_circle(c, w * 0.7, Color(1, 0.3, 0.2))
+		"heal":
+			ci.draw_rect(Rect2(c - Vector2(r * 0.8, r * 0.6), Vector2(r * 1.6, r * 1.2)), col, false, w)
+			ci.draw_rect(Rect2(c - Vector2(r * 0.12, r * 0.42), Vector2(r * 0.24, r * 0.84)), Color(1, 0.3, 0.25))
+			ci.draw_rect(Rect2(c - Vector2(r * 0.42, r * 0.12), Vector2(r * 0.84, r * 0.24)), Color(1, 0.3, 0.25))
+		"bag":
+			ci.draw_arc(c + Vector2(0, -r * 0.55), r * 0.28, PI, TAU, 12, col, w)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.6, -r * 0.55), Vector2(r * 1.2, r * 1.35)), col, false, w)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.38, r * 0.15), Vector2(r * 0.76, r * 0.45)), col, false, w * 0.8)
+			ci.draw_line(c + Vector2(-r * 0.6, -r * 0.15), c + Vector2(r * 0.6, -r * 0.15), col, w * 0.8)
+		"sprint":
+			# bonequinho correndo
+			ci.draw_circle(c + Vector2(r * 0.28, -r * 0.72), r * 0.18, col)
+			var hip := c + Vector2(-r * 0.05, r * 0.15)
+			var neck := c + Vector2(r * 0.18, -r * 0.45)
+			ci.draw_line(neck, hip, col, w * 1.2)
+			ci.draw_polyline(PackedVector2Array([neck + Vector2(0, r * 0.1), c + Vector2(-r * 0.3, -r * 0.2), c + Vector2(-r * 0.55, r * 0.05)]), col, w)
+			ci.draw_polyline(PackedVector2Array([neck + Vector2(0, r * 0.1), c + Vector2(r * 0.45, -r * 0.05), c + Vector2(r * 0.7, -r * 0.35)]), col, w)
+			ci.draw_polyline(PackedVector2Array([hip, c + Vector2(r * 0.35, r * 0.45), c + Vector2(r * 0.25, r * 0.9)]), col, w)
+			ci.draw_polyline(PackedVector2Array([hip, c + Vector2(-r * 0.3, r * 0.55), c + Vector2(-r * 0.75, r * 0.6)]), col, w)
+		"gear":
+			for i in 8:
+				var d := Vector2.RIGHT.rotated(i * TAU / 8.0)
+				ci.draw_line(c + d * r * 0.5, c + d * r * 0.95, col, w * 1.8)
+			ci.draw_arc(c, r * 0.58, 0, TAU, 24, col, w * 1.4)
+			ci.draw_arc(c, r * 0.22, 0, TAU, 16, col, w)
+		"exit":
+			ci.draw_polyline(PackedVector2Array([c + Vector2(r * 0.1, -r * 0.8), c + Vector2(-r * 0.7, -r * 0.8), c + Vector2(-r * 0.7, r * 0.8), c + Vector2(r * 0.1, r * 0.8)]), col, w)
+			ci.draw_line(c + Vector2(-r * 0.25, 0), c + Vector2(r * 0.85, 0), col, w)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(r * 0.5, -r * 0.35), c + Vector2(r * 0.85, 0), c + Vector2(r * 0.5, r * 0.35)]), col, w)
+		"close":
+			ci.draw_line(c + Vector2(-r * 0.6, -r * 0.6), c + Vector2(r * 0.6, r * 0.6), col, w * 1.3)
+			ci.draw_line(c + Vector2(r * 0.6, -r * 0.6), c + Vector2(-r * 0.6, r * 0.6), col, w * 1.3)
+		"leave":
+			ci.draw_line(c + Vector2(0, -r * 0.8), c + Vector2(0, r * 0.6), col, w * 1.3)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.5, r * 0.15), c + Vector2(0, r * 0.7), c + Vector2(r * 0.5, r * 0.15)]), col, w * 1.3)
+		"chute":
+			ci.draw_arc(c + Vector2(0, -r * 0.1), r * 0.85, PI, TAU, 20, col, w * 1.3)
+			for x in [-0.85, -0.3, 0.3, 0.85]:
+				ci.draw_line(c + Vector2(r * x, -r * 0.1), c + Vector2(0, r * 0.8), col, w * 0.6)
+			ci.draw_circle(c + Vector2(0, r * 0.8), r * 0.14, col)
+		"next", "play":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.4, -r * 0.65), c + Vector2(r * 0.65, 0), c + Vector2(-r * 0.4, r * 0.65)]), col)
+		"home":
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.8, -r * 0.05), c + Vector2(0, -r * 0.8), c + Vector2(r * 0.8, -r * 0.05)]), col, w * 1.2)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.55, -r * 0.15), Vector2(r * 1.1, r * 0.85)), col, false, w)
+		"minus":
+			ci.draw_line(c + Vector2(-r * 0.6, 0), c + Vector2(r * 0.6, 0), col, w * 1.4)
+		"plus":
+			ci.draw_line(c + Vector2(-r * 0.6, 0), c + Vector2(r * 0.6, 0), col, w * 1.4)
+			ci.draw_line(c + Vector2(0, -r * 0.6), c + Vector2(0, r * 0.6), col, w * 1.4)
+		"check":
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.6, 0), c + Vector2(-r * 0.15, r * 0.5), c + Vector2(r * 0.65, -r * 0.5)]), col, w * 1.4)
+		"drop":
+			# lixeira
+			ci.draw_line(c + Vector2(-r * 0.75, -r * 0.55), c + Vector2(r * 0.75, -r * 0.55), col, w)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.22, -r * 0.8), Vector2(r * 0.44, r * 0.25)), col, false, w * 0.8)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.55, -r * 0.45), c + Vector2(-r * 0.42, r * 0.8), c + Vector2(r * 0.42, r * 0.8), c + Vector2(r * 0.55, -r * 0.45)]), col, w)
+			for x in [-0.18, 0.18]:
+				ci.draw_line(c + Vector2(r * x, -r * 0.25), c + Vector2(r * x, r * 0.55), col, w * 0.7)
+		"equip":
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.75, -r * 0.25), Vector2(r * 1.5, r * 0.55)), col, false, w)
+			ci.draw_line(c + Vector2(0, -r * 0.95), c + Vector2(0, -r * 0.35), col, w)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.25, -r * 0.6), c + Vector2(0, -r * 0.3), c + Vector2(r * 0.25, -r * 0.6)]), col, w)
+		"unequip":
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.75, -r * 0.0), Vector2(r * 1.5, r * 0.55)), col, false, w)
+			ci.draw_line(c + Vector2(0, -r * 0.95), c + Vector2(0, -r * 0.15), col, w)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.25, -r * 0.7), c + Vector2(0, -r * 0.95), c + Vector2(r * 0.25, -r * 0.7)]), col, w)
+		"hand":
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.45, -r * 0.1), Vector2(r * 0.9, r * 0.8)), col)
+			for i in 4:
+				ci.draw_rect(Rect2(c + Vector2(-r * 0.45 + i * r * 0.23, -r * 0.75), Vector2(r * 0.18, r * 0.7)), col)
+			ci.draw_line(c + Vector2(-r * 0.45, r * 0.25), c + Vector2(-r * 0.85, -r * 0.2), col, w * 1.6)
+		_:
+			ci.draw_circle(c, r * 0.3, col)
 
 
 func _draw_face(c: Vector2, r: float, col: Color) -> void:
@@ -717,38 +1049,91 @@ func _draw_skull(c: Vector2, r: float, col: Color) -> void:
 		pad.draw_line(c + Vector2(-r * 0.25 + i * r * 0.25, r * 0.55), c + Vector2(-r * 0.25 + i * r * 0.25, r * 0.85), dark, 1.5)
 
 
+# Painel de armas estilo FF: a da mão grande em cima; as outras pequenas embaixo, lado a lado.
 func _draw_slots(font: Font, s: Vector2) -> void:
 	_slot_rects.clear()
 	if slots.is_empty() or not (mode == "ground" or mode == "lobby"):
 		return
-	var x := s.x - 12.0
-	var y := 12.0
-	for i in range(slots.size() - 1, -1, -1):
-		var e: Dictionary = slots[i]
-		var active := i == sel
-		var w := 150.0 if active else 92.0
-		var h := 70.0 if active else 50.0
-		x -= w
-		var r := Rect2(x, y, w, h)
-		_slot_rects.append([r, i])
-		var has: bool = str(e["id"]) != ""
-		pad.draw_rect(r, Color(0.1, 0.1, 0.08, 0.55 if active else 0.35))
-		pad.draw_rect(r, Color(1, 0.85, 0.3, 0.9) if active else Color(1, 1, 1, 0.35), false, 2.0 if active else 1.0)
-		if has:
-			var tex: Texture2D = icons.get(e["id"])
-			if tex:
-				pad.draw_texture_rect(tex, r.grow(-4), false, Color(1, 1, 1, 1.0 if active else 0.75))
-			else:
-				var nm: String = Weapons.item_name(e["id"])
-				pad.draw_string(font, r.position + Vector2(6, h * 0.6), nm, HORIZONTAL_ALIGNMENT_LEFT, w - 8, 13, Color.WHITE)
-			if active and str(e["id"]) != "fist":
-				var at := "RECARREGANDO" if reloading else "%d / %d" % [e["ammo"], e["max"]]
-				var tw := font.get_string_size(at, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
-				pad.draw_string_outline(font, Vector2(x + w - tw - 6, y + h + 18), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 4, Color(0, 0, 0, 0.8))
-				pad.draw_string(font, Vector2(x + w - tw - 6, y + h + 18), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+	var right := s.x - 14.0
+	var bw := 236.0
+	var bh := 86.0
+	var big := Rect2(right - bw, 12.0, bw, bh)
+	var cur: int = clampi(sel, 0, slots.size() - 1)
+	var others := []
+	for i in slots.size():
+		if i != cur:
+			others.append(i)
+	_slot_cell(font, big, cur, true)
+	var gap := 4.0
+	var sw := (bw - gap * (others.size() - 1)) / others.size()
+	for k in others.size():
+		var r := Rect2(big.position.x + k * (sw + gap), big.end.y + 5.0, sw, 46.0)
+		_slot_cell(font, r, others[k], false)
+
+
+func _slot_cell(font: Font, r: Rect2, i: int, active: bool) -> void:
+	_slot_rects.append([r, i])
+	var e: Dictionary = slots[i]
+	var id: String = str(e["id"])
+	var has := id != ""
+	pad.draw_rect(r, Color(0.03, 0.04, 0.03, 0.55 if active else 0.38))
+	pad.draw_rect(r, Color(1, 0.85, 0.3, 0.95) if active else Color(1, 1, 1, 0.22), false, 2.0 if active else 1.0)
+	if not has:
+		var dash := "—"
+		pad.draw_string(font, r.get_center() + Vector2(-6, 6), dash, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.3))
+		return
+	var tex: Texture2D = icons.get("w_" + id, icons.get(id))
+	var name := "MÃOS" if id == "fist" else Weapons.item_name(id).to_upper()
+	if active:
+		var ir := Rect2(r.position + Vector2(8, 4), Vector2(r.size.x * 0.62, r.size.y - 26))
+		if tex:
+			pad.draw_texture_rect(tex, ir, false)
+		pad.draw_string(font, r.position + Vector2(10, r.size.y - 8), name, HORIZONTAL_ALIGNMENT_LEFT, r.size.x * 0.6, 15, Color.WHITE)
+		if id != "fist":
+			var at := "%d" % e["ammo"]
+			var aw := font.get_string_size(at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x
+			var ax := r.end.x - aw - 10
+			pad.draw_string_outline(font, Vector2(ax, r.position.y + 38), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 4, Color(0, 0, 0, 0.7))
+			pad.draw_string(font, Vector2(ax, r.position.y + 38), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color(1, 0.3, 0.25) if int(e["ammo"]) == 0 else Color.WHITE)
+			var rs := "RECARREG." if reloading else "/ %d" % int(e.get("res", 0))
+			var rw := font.get_string_size(rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+			pad.draw_string(font, Vector2(r.end.x - rw - 10, r.position.y + 60), rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.85, 0.4) if reloading else Color(1, 1, 1, 0.75))
+	else:
+		var ir := Rect2(r.position + Vector2(4, 2), Vector2(r.size.x - 8, r.size.y - 18))
+		if tex:
+			pad.draw_texture_rect(tex, ir, false, Color(1, 1, 1, 0.8))
+		var nw := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		pad.draw_string(font, Vector2(r.get_center().x - minf(nw, r.size.x - 4) / 2.0, r.end.y - 4), name, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 4, 11, Color(1, 1, 1, 0.8))
+
+
+# bússola no topo: gira junto com a câmera
+func _draw_compass(font: Font, s: Vector2) -> void:
+	var yaw: float = game.cam_yaw.rotation.y if game and game.cam_yaw else 0.0
+	var head := fposmod(rad_to_deg(-yaw), 360.0)   # 0 = norte (-Z), 90 = leste (+X)
+	var w := minf(420.0, s.x * 0.34)
+	var cx := s.x * 0.5
+	var y := 14.0
+	pad.draw_rect(Rect2(cx - w / 2.0, y, w, 30), Color(0, 0, 0, 0.28))
+	var span := 100.0
+	var names := {0: "N", 45: "NE", 90: "L", 135: "SE", 180: "S", 225: "SO", 270: "O", 315: "NO"}
+	var d0 := int(floor((head - span / 2.0) / 15.0)) * 15
+	var d := d0
+	while d <= head + span / 2.0:
+		var x := cx + (d - head) / span * w
+		var dd := posmod(d, 360)
+		if names.has(dd):
+			var t: String = names[dd]
+			var fs := 17 if t.length() == 1 else 13
+			var tw := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var cc := Color(1, 0.8, 0.3) if dd == 0 else Color.WHITE
+			pad.draw_string(font, Vector2(x - tw / 2.0, y + 22), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, cc)
 		else:
-			pad.draw_string(font, r.position + Vector2(8, h * 0.6), "—", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.4))
-		x -= 6.0
+			pad.draw_line(Vector2(x, y + 20), Vector2(x, y + 28), Color(1, 1, 1, 0.6), 1.5)
+		d += 15
+	pad.draw_colored_polygon(PackedVector2Array([Vector2(cx, y + 31), Vector2(cx - 6, y + 39), Vector2(cx + 6, y + 39)]), Color(1, 0.85, 0.3))
+	var deg := "%d" % (int(round(head)) % 360)
+	var dw := font.get_string_size(deg, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	pad.draw_string(font, Vector2(cx - dw / 2.0, y + 52), deg, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.8))
 
 
 func _draw_pad() -> void:
@@ -825,13 +1210,14 @@ func _draw_pad() -> void:
 		pad.draw_string(font, c + Vector2(-htw / 2.0, 70), ht, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.6, 1, 0.7))
 	# vivos e abates
 	if mode != "end":
-		var tx := s.x * 0.5 - 70.0
-		_draw_face(Vector2(tx, 30), 13.0, Color(1, 1, 1, 0.95))
-		pad.draw_string_outline(font, Vector2(tx + 20, 39), str(alive_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 5, Color(0, 0, 0, 0.8))
-		pad.draw_string(font, Vector2(tx + 20, 39), str(alive_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color.WHITE)
-		_draw_skull(Vector2(tx + 90, 30), 12.0, Color(0.9, 0.15, 0.12))
-		pad.draw_string_outline(font, Vector2(tx + 108, 39), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 5, Color(0, 0, 0, 0.8))
-		pad.draw_string(font, Vector2(tx + 108, 39), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(1, 0.45, 0.4))
+		_draw_compass(font, s)
+		var tx := s.x * 0.5 - minf(420.0, s.x * 0.34) / 2.0 - 128.0
+		_draw_face(Vector2(tx, 29), 12.0, Color(1, 1, 1, 0.95))
+		pad.draw_string_outline(font, Vector2(tx + 18, 37), str(alive_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 5, Color(0, 0, 0, 0.8))
+		pad.draw_string(font, Vector2(tx + 18, 37), str(alive_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+		_draw_skull(Vector2(tx + 78, 29), 11.0, Color(0.9, 0.15, 0.12))
+		pad.draw_string_outline(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 5, Color(0, 0, 0, 0.8))
+		pad.draw_string(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 0.45, 0.4))
 	# joystick
 	if mode in ["ground", "lobby", "fall", "glide", "plane"] and not bag_open:
 		if joy_active:
@@ -852,7 +1238,7 @@ func _draw_pad() -> void:
 		var bw := 360.0
 		var bx := s.x / 2.0 - bw / 2.0
 		var by := s.y - 40.0
-		var f := clampf(hp / 100.0, 0.0, 1.0)
+		var f := clampf(hp / 200.0, 0.0, 1.0)
 		pad.draw_rect(Rect2(bx - 2, by - 2, bw + 4, 20), Color(0, 0, 0, 0.55))
 		pad.draw_rect(Rect2(bx, by, bw * f, 16), Color(lerpf(0.9, 0.25, f), lerpf(0.2, 0.8, f), 0.2))
 		pad.draw_string(font, Vector2(bx + bw + 10, by + 14), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
@@ -884,14 +1270,14 @@ func _draw_mini() -> void:
 		var al := clampf(float(st[1]), 0.0, 1.0)
 		mini.draw_circle(q, 3.0, Color(1, 0.3, 0.2, al))
 		mini.draw_circle(q + Vector2(3, -4), 2.2, Color(1, 0.3, 0.2, al * 0.8))
-	var yaw: float = game.view_yaw()
-	var fwd := Vector2(-sin(yaw), -cos(yaw))
+	# uma seta só: pra onde a câmera olha
+	var cy: float = game.cam_yaw.rotation.y
+	var fwd := Vector2(-sin(cy), -cos(cy))
 	var rt := Vector2(fwd.y, -fwd.x)
-	# cone de visão
-	var cy: float = game.cam_yaw_v
-	var cf := Vector2(-sin(cy), -cos(cy))
-	mini.draw_colored_polygon(PackedVector2Array([o, o + cf.rotated(-0.5) * 40.0, o + cf.rotated(0.5) * 40.0]), Color(1, 1, 1, 0.12))
-	mini.draw_colored_polygon(PackedVector2Array([o + fwd * 9.0, o - fwd * 5.0 + rt * 5.0, o - fwd * 5.0 - rt * 5.0]), Color(1, 0.85, 0.2))
+	mini.draw_colored_polygon(PackedVector2Array([o, o + fwd.rotated(-0.45) * 34.0, o + fwd.rotated(0.45) * 34.0]), Color(1, 1, 1, 0.1))
+	var tri := PackedVector2Array([o + fwd * 10.0, o - fwd * 6.0 + rt * 6.5, o - fwd * 2.5, o - fwd * 6.0 - rt * 6.5])
+	mini.draw_colored_polygon(tri, Color(1, 0.85, 0.2))
+	mini.draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[3], tri[0]]), Color(0, 0, 0, 0.7), 1.2)
 	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), Color(0, 0, 0, 0.7), false, 2.0)
 
 
