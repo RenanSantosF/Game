@@ -30,7 +30,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Como baixar o APK
 
-Cada vez que você manda alteração pro GitHub (qualquer branch), o próprio GitHub compila o APK sozinho, em uns 5 a 10 minutos.
+Cada vez que você manda alteração pro GitHub (branch `main`), o próprio GitHub compila o APK sozinho, em uns 5 a 10 minutos.
 
 - Acompanhe em **Actions** no repositório
 - Quando terminar, baixe em **Releases → Última versão → confronto.apk**
