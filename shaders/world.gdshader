@@ -5,7 +5,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // UV2.y > 0 = balança com o vento (folhas).
 uniform sampler2DArray tex : source_color, filter_linear_mipmap, repeat_enable;
 
-varying flat float layer;
+varying float layer;
 
 void vertex() {
 	layer = UV2.x;
@@ -19,7 +19,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 t = texture(tex, vec3(UV, layer)).rgb;
+	vec3 t = texture(tex, vec3(UV, floor(layer + 0.5))).rgb;
 	ALBEDO = t * COLOR.rgb;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.25;

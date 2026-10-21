@@ -191,11 +191,94 @@ func _build_menu() -> void:
 	hb.add_child(jb)
 	vb.add_child(hb)
 	vb.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
+	var rep := _last_log()
+	if rep != "":
+		var rb := _menu_btn("RELATÓRIO DA ÚLTIMA VEZ (se fechou sozinho)", func(): _show_report(rep))
+		rb.add_theme_font_size_override("font_size", 16)
+		rb.custom_minimum_size = Vector2(482, 44)
+		vb.add_child(rb)
 	status_lbl = _menu_label(flash_msg, 18)
 	status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	status_lbl.custom_minimum_size = Vector2(440, 44)
 	vb.add_child(status_lbl)
 	flash_msg = ""
+
+
+# fim do arquivo de log da execução anterior (pra descobrir onde o jogo fechou)
+func _last_log() -> String:
+	var dir := DirAccess.open("user://logs")
+	if dir == null:
+		return ""
+	var files := []
+	for f in dir.get_files():
+		if f.ends_with(".log") and f != "godot.log":
+			files.append(f)
+	if files.is_empty():
+		return ""
+	files.sort()
+	var txt := FileAccess.get_file_as_string("user://logs/" + files[-1])
+	var last := txt.rfind("[etapa]")
+	if last < 0 or txt.substr(last).begins_with("[etapa] saiu"):
+		return ""
+	var lines := txt.split("\n")
+	return "\n".join(lines.slice(maxi(0, lines.size() - 60)))
+
+
+func _show_report(txt: String) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 30
+	add_child(layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.05, 0.05, 0.97)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(bg)
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 20
+	vb.offset_right = -20
+	vb.offset_top = 16
+	vb.offset_bottom = -16
+	layer.add_child(vb)
+	var hb := HBoxContainer.new()
+	vb.add_child(hb)
+	var back := _menu_btn("< VOLTAR", func(): layer.queue_free())
+	back.custom_minimum_size = Vector2(200, 52)
+	hb.add_child(back)
+	var cp := _menu_btn("COPIAR", func(): DisplayServer.clipboard_set(txt))
+	cp.custom_minimum_size = Vector2(200, 52)
+	hb.add_child(cp)
+	var te := TextEdit.new()
+	te.text = txt
+	te.editable = false
+	te.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	te.add_theme_font_size_override("font_size", 14)
+	vb.add_child(te)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		# botão voltar do celular: fecha o que estiver aberto, no menu sai do jogo
+		if settings:
+			return
+		if edit_hud:
+			edit_hud.queue_free()
+			edit_hud = null
+			return
+		if hud:
+			if hud.edit_mode:
+				hud.edit_mode = false
+				hud.layout = Cfg.get_v("layout").duplicate()
+			elif hud.bag_open:
+				hud.set_bag(false)
+			elif hud.big_map:
+				hud.big_map = false
+			return
+		_step("saiu")
+		get_tree().quit()
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
+		_step("saiu")
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		_step("voltou")
 
 
 func _menu_label(t: String, fs: int) -> Label:
@@ -293,8 +376,30 @@ func start_dedicated() -> void:
 		phase_t = 1.0
 
 
+func _step(t: String) -> void:
+	print("[etapa] %s  (memória %d MB)" % [t, OS.get_static_memory_usage() / 1048576])
+
+
+# mostra "Carregando..." e espera a tela atualizar antes do trabalho pesado
+func _show_loading() -> void:
+	if menu == null:
+		return
+	var bg := ColorRect.new()
+	bg.color = Color(0.06, 0.07, 0.06, 0.96)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	menu.add_child(bg)
+	var l := _menu_label("Carregando o mapa...", 30)
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	menu.add_child(l)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+
 func start_host(online: bool) -> void:
 	_save_cfg()
+	_step("iniciar partida (online=%s)" % online)
+	await _show_loading()
 	training = not online
 	if online:
 		var peer := ENetMultiplayerPeer.new()
@@ -308,9 +413,11 @@ func start_host(online: bool) -> void:
 	bots_per_match = MAX_PLAYERS - 1
 	local_id = multiplayer.get_unique_id()
 	_build_world()
+	_step("criando tela do jogo")
 	_enter_game()
 	_server_init()
 	_server_add_player(local_id, _nick(), false)
+	_step("partida pronta")
 	if online:
 		phase_t = 120.0
 		hud.can_start = true
@@ -339,6 +446,7 @@ func start_join(addr: String) -> void:
 
 func _on_connected() -> void:
 	local_id = multiplayer.get_unique_id()
+	await _show_loading()
 	_build_world()
 	_enter_game()
 	rpc_id(1, "req_join", _nick())
@@ -360,10 +468,12 @@ func _back_to_menu(msg: String) -> void:
 
 
 func _build_world() -> void:
+	_step("montando o mapa")
 	world = World.new()
 	world.name = "World"
 	add_child(world)
 	world.build(dedicated, int(Cfg.get_v("quality")))
+	_step("mapa pronto")
 	n_static = world.items.size()
 	items_avail = []
 	for i in world.items.size():

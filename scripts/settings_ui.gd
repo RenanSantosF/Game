@@ -31,11 +31,18 @@ func _ready() -> void:
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.add_theme_constant_override("separation", 10)
 	sc.add_child(vb)
+	var top := HBoxContainer.new()
+	vb.add_child(top)
+	var back := _button("< VOLTAR", close)
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	back.custom_minimum_size = Vector2(170, 52)
+	top.add_child(back)
 	var title := Label.new()
 	title.text = "CONFIGURAÇÕES"
 	title.add_theme_font_size_override("font_size", 30)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(title)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(title)
 	_section(vb, "CONTROLES")
 	_cycle(vb, "Mira assistida", "aim_assist", Cfg.AIM_NAMES,
 		"Controle total: sem ajuda. Gruda sem mira: a mira puxa pro inimigo só no tiro sem mirar. Gruda sempre: puxa também mirando. Arrastar pra cima enquanto atira sobe pra cabeça (capa).")
@@ -51,10 +58,19 @@ func _ready() -> void:
 	_toggle(vb, "Mostrar FPS", "show_fps")
 	_section(vb, "SOM")
 	_slider(vb, "Volume", "volume", 0.0, 1.0)
-	var close := _button("FECHAR", func():
-		closed.emit()
-		queue_free())
-	vb.add_child(close)
+	vb.add_child(_button("VOLTAR", close))
+
+
+func close() -> void:
+	Cfg.save()
+	closed.emit()
+	queue_free()
+
+
+# botão "voltar" do celular fecha a tela
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		close()
 
 
 func _process(_d: float) -> void:
