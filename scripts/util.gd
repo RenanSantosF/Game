@@ -1,10 +1,29 @@
 class_name U
 extends RefCounted
 
+# camadas do atlas de texturas (textures/atlas.png, gerado por tools/gen_assets.py)
+const GRASS := 0
+const DIRT := 1
+const ROCK := 2
+const SAND := 3
+const PLASTER := 4
+const BRICK := 5
+const ROOF := 6
+const WOOD := 7
+const METAL := 8
+const CONCRETE := 9
+const ASPHALT := 10
+const BARK := 11
+const PINE := 12
+const LEAVES := 13
+const FABRIC := 14
+const PLAIN := 15
+
 static var _mats := {}
 static var _boxes := {}
-static var _detail: Texture2D
-static var _vmat: StandardMaterial3D
+static var _wmat: ShaderMaterial
+static var _tmat: ShaderMaterial
+static var _atlas: Texture
 
 
 static func mat(c: Color, unshaded := false) -> StandardMaterial3D:
@@ -42,41 +61,37 @@ static func box(parent: Node, size: Vector3, pos: Vector3, c: Color) -> MeshInst
 static func mesh(parent: Node, m: Mesh, pos := Vector3.ZERO) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = m
-	mi.material_override = vmat()
+	mi.material_override = wmat()
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
 
 
-# Textura de ruído em tons de cinza. Multiplica a cor dos vértices e tira a cara de "plástico".
-static func detail_tex() -> Texture2D:
-	if _detail:
-		return _detail
-	var n := FastNoiseLite.new()
-	n.seed = 77
-	n.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	n.frequency = 0.06
-	n.fractal_octaves = 4
-	var src := n.get_seamless_image(128, 128, false, false, 0.1, true)
-	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
-	for y in 128:
-		for x in 128:
-			var v := 0.74 + src.get_pixel(x, y).r * 0.3
-			img.set_pixel(x, y, Color(v, v, v))
-	img.generate_mipmaps()
-	_detail = ImageTexture.create_from_image(img)
-	return _detail
+static func atlas() -> Texture:
+	if _atlas == null:
+		_atlas = load("res://textures/atlas.png")
+	return _atlas
 
 
-# Material único usado por quase tudo: cor no vértice + textura de detalhe.
-static func vmat() -> StandardMaterial3D:
-	if _vmat:
-		return _vmat
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.vertex_color_is_srgb = true
-	m.albedo_texture = detail_tex()
-	m.roughness = 0.92
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	_vmat = m
-	return m
+# Material único usado por quase tudo: textura do atlas + cor do vértice.
+static func wmat() -> ShaderMaterial:
+	if _wmat:
+		return _wmat
+	_wmat = ShaderMaterial.new()
+	_wmat.shader = load("res://shaders/world.gdshader")
+	_wmat.set_shader_parameter("tex", atlas())
+	return _wmat
+
+
+static func tmat() -> ShaderMaterial:
+	if _tmat:
+		return _tmat
+	_tmat = ShaderMaterial.new()
+	_tmat.shader = load("res://shaders/terrain.gdshader")
+	_tmat.set_shader_parameter("tex", atlas())
+	return _tmat
+
+
+# compatibilidade com código antigo
+static func vmat() -> ShaderMaterial:
+	return wmat()

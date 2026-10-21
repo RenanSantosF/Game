@@ -4,33 +4,32 @@ extends Node3D
 # Quem decide dano, morte, loot, zona e vencedor é sempre o servidor.
 
 const PORT := 7777
-const MAX_PLAYERS := 20
+const MAX_PLAYERS := 50
 const LOBBY := 0
 const PLANE := 1
 const MATCH := 2
 const END := 3
-const PLANE_H := 210.0
-const PLANE_DUR := 36.0
-const PLANE_LEN := 720.0
+const PLANE_H := 230.0
+const PLANE_SPEED := 24.0
 const LOBBY_T := 45.0
 # espera, tempo fechando, raio final, dano por segundo
 const ZONES := [
-	[70.0, 50.0, 200.0, 2.0], [50.0, 40.0, 120.0, 4.0], [40.0, 30.0, 65.0, 6.0],
-	[30.0, 25.0, 32.0, 9.0], [20.0, 20.0, 12.0, 13.0], [15.0, 15.0, 0.0, 20.0],
+	[90.0, 60.0, 300.0, 1.5], [60.0, 45.0, 180.0, 3.0], [50.0, 35.0, 105.0, 5.0], [40.0, 30.0, 60.0, 8.0],
+	[30.0, 25.0, 30.0, 11.0], [20.0, 20.0, 12.0, 15.0], [15.0, 15.0, 0.0, 22.0],
 ]
-const ZONE_R0 := 430.0
+const ZONE_R0 := 540.0
 const BOT_NAMES := ["Zé", "Tonho", "Bigode", "Chico", "Juca", "Lelo", "Dudu", "Pedrão", "Tião", "Neno",
 	"Biro", "Cacá", "Dentinho", "Fumaça", "Gordo", "Jacaré", "Kiko", "Mancha", "Nego", "Pitoco",
-	"Russo", "Sapo", "Tatu", "Vovô", "Xexéu"]
-const CFG_PATH := "user://config.cfg"
-const QUALITY_NAMES := ["BAIXA", "MÉDIA", "ALTA"]
-const SENS_NAMES := ["BAIXA", "MÉDIA", "ALTA"]
-const SENS := [0.0038, 0.0055, 0.0078]
+	"Russo", "Sapo", "Tatu", "Vovô", "Xexéu", "Baiano", "Careca", "Dedé", "Ferrugem", "Gaúcho",
+	"Índio", "Jaca", "Lambari", "Magrão", "Nenê", "Paçoca", "Quinzinho", "Rato", "Sabiá", "Tico",
+	"Urubu", "Vadinho", "Zóio", "Bolacha", "Cebola", "Formiga", "Gambá", "Mosquito", "Pipoca", "Tanajura"]
 
 static var flash_msg := ""
+static var WIDS: Array = Weapons.DATA.keys()
 
 var world: World
 var hud: Hud
+var sfxn: Sfx
 var players := {}
 var info := {}
 var items_avail := []
@@ -47,6 +46,8 @@ var cam_yaw: Node3D
 var cam_pitch: Node3D
 var spring: SpringArm3D
 var cam: Camera3D
+var cam_yaw_v := 0.0
+var cam_pitch_v := -0.1
 var plane_node: Node3D
 var zone_wall: MeshInstance3D
 var loop_player: AudioStreamPlayer
@@ -57,8 +58,8 @@ var menu: CanvasLayer
 var status_lbl: Label
 var nick_edit: LineEdit
 var ip_edit: LineEdit
-var quality := 1
-var sens_i := 1
+var settings: SettingsUI
+var edit_hud: Hud
 
 # partida
 var phase := LOBBY
@@ -66,6 +67,7 @@ var phase_t := 0.0
 var plane_a := Vector3.ZERO
 var plane_b := Vector3.ZERO
 var plane_t := 0.0
+var plane_dur := 30.0
 var z_stage := -1
 var z_c0 := Vector2.ZERO
 var z_r0 := ZONE_R0
@@ -80,7 +82,7 @@ var n_static := 0
 var n_start := 0
 var winner := 0
 var spec_id := 0
-var bots_per_match := 16
+var bots_per_match := 30
 var next_bot := 1000
 var match_time := 0.0
 var my_rank := 0
@@ -89,28 +91,36 @@ var snap_t := 0.0
 var send_t := 0.0
 var ui_t := 0.0
 var last_fire := {}
-var sounds := {}
-var near_item := -1
 var auto_tried := {}
+var assist_t := 0.0
+var assist_target := 0
+var up_drag := 0.0
 var test_fire := false
 var quit_after := 0.0
 var shot_path := ""
 var test_town := -1
 var auto_jump := -1.0
+var bots_only := false
 var shot_times := []
 var run_t := 0.0
-var bots_only := false
+var _seen_guns := ["", "", "glock"]
+var _seen_inv := {}
+var _seen_gear := [0.0, false, false]
 
 
 func _ready() -> void:
 	rng.randomize()
+	Cfg.load_cfg()
 	players_root = Node3D.new()
 	players_root.name = "Players"
 	add_child(players_root)
 	items_root = Node3D.new()
 	items_root.name = "Items"
 	add_child(items_root)
-	_load_cfg()
+	sfxn = Sfx.new()
+	add_child(sfxn)
+	sfxn.volume = float(Cfg.get_v("volume"))
+	Engine.max_fps = int(Cfg.get_v("fps"))
 	var args := OS.get_cmdline_user_args()
 	for a in args:
 		if a.begins_with("--bots="):
@@ -132,11 +142,10 @@ func _ready() -> void:
 		elif a.begins_with("--autojump="):
 			auto_jump = float(a.get_slice("=", 1))
 		elif a.begins_with("--quality="):
-			quality = int(a.get_slice("=", 1))
+			Cfg.v["quality"] = int(a.get_slice("=", 1))
 	if "--server" in args:
 		start_dedicated()
 		return
-	_make_sounds()
 	_build_menu()
 	for a in args:
 		if a.begins_with("--autojoin="):
@@ -146,13 +155,6 @@ func _ready() -> void:
 
 
 # ---------------- menu ----------------
-
-func _load_cfg() -> void:
-	var cfg := ConfigFile.new()
-	if cfg.load(CFG_PATH) == OK:
-		quality = int(cfg.get_value("jogo", "qualidade", 1))
-		sens_i = int(cfg.get_value("jogo", "sens", 1))
-
 
 func _build_menu() -> void:
 	menu = CanvasLayer.new()
@@ -168,16 +170,12 @@ func _build_menu() -> void:
 	vb.add_theme_constant_override("separation", 10)
 	cc.add_child(vb)
 	vb.add_child(_menu_label("CONFRONTO", 60))
-	var sub := _menu_label("BATTLE ROYALE · 20 JOGADORES · ÚLTIMO DE PÉ VENCE", 18)
+	var sub := _menu_label("BATTLE ROYALE · 50 JOGADORES · ÚLTIMO DE PÉ VENCE", 18)
 	sub.modulate = Color(0.85, 0.75, 0.5)
 	vb.add_child(sub)
 	nick_edit = _menu_edit("Seu apelido")
 	vb.add_child(nick_edit)
-	var cfg := ConfigFile.new()
-	var ip := ""
-	if cfg.load(CFG_PATH) == OK:
-		nick_edit.text = cfg.get_value("jogo", "nick", "")
-		ip = cfg.get_value("jogo", "ip", "")
+	nick_edit.text = Cfg.get_v("nick")
 	if nick_edit.text == "":
 		nick_edit.text = "Jogador%d" % rng.randi_range(100, 999)
 	vb.add_child(_menu_btn("JOGAR (TREINO CONTRA BOTS)", func(): start_host(false)))
@@ -186,33 +184,13 @@ func _build_menu() -> void:
 	hb.add_theme_constant_override("separation", 8)
 	ip_edit = _menu_edit("IP do servidor (ex: 192.168.0.10)")
 	ip_edit.custom_minimum_size = Vector2(284, 56)
-	ip_edit.text = ip
+	ip_edit.text = Cfg.get_v("ip")
 	hb.add_child(ip_edit)
 	var jb := _menu_btn("ENTRAR", func(): start_join(ip_edit.text.strip_edges()))
 	jb.custom_minimum_size = Vector2(190, 56)
 	hb.add_child(jb)
 	vb.add_child(hb)
-	var hb2 := HBoxContainer.new()
-	hb2.add_theme_constant_override("separation", 8)
-	var qb := _menu_btn("", Callable())
-	qb.custom_minimum_size = Vector2(237, 50)
-	qb.add_theme_font_size_override("font_size", 17)
-	qb.text = "GRÁFICOS: " + QUALITY_NAMES[quality]
-	qb.pressed.connect(func():
-		quality = (quality + 1) % 3
-		qb.text = "GRÁFICOS: " + QUALITY_NAMES[quality]
-		_save_cfg())
-	hb2.add_child(qb)
-	var sb := _menu_btn("", Callable())
-	sb.custom_minimum_size = Vector2(237, 50)
-	sb.add_theme_font_size_override("font_size", 17)
-	sb.text = "SENSIB.: " + SENS_NAMES[sens_i]
-	sb.pressed.connect(func():
-		sens_i = (sens_i + 1) % 3
-		sb.text = "SENSIB.: " + SENS_NAMES[sens_i]
-		_save_cfg())
-	hb2.add_child(sb)
-	vb.add_child(hb2)
+	vb.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
 	status_lbl = _menu_label(flash_msg, 18)
 	status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	status_lbl.custom_minimum_size = Vector2(440, 44)
@@ -254,12 +232,45 @@ func _nick() -> String:
 func _save_cfg() -> void:
 	if nick_edit == null:
 		return
-	var cfg := ConfigFile.new()
-	cfg.set_value("jogo", "nick", nick_edit.text.strip_edges())
-	cfg.set_value("jogo", "ip", ip_edit.text.strip_edges())
-	cfg.set_value("jogo", "qualidade", quality)
-	cfg.set_value("jogo", "sens", sens_i)
-	cfg.save(CFG_PATH)
+	Cfg.v["nick"] = nick_edit.text.strip_edges()
+	Cfg.v["ip"] = ip_edit.text.strip_edges()
+	Cfg.save()
+
+
+func open_settings() -> void:
+	if settings:
+		return
+	settings = SettingsUI.new()
+	add_child(settings)
+	settings.closed.connect(func(): settings = null)
+	settings.changed.connect(_on_setting)
+	settings.edit_buttons.connect(func():
+		settings.queue_free()
+		settings = null
+		if hud:
+			hud.edit_mode = true
+		else:
+			edit_hud = Hud.new()
+			add_child(edit_hud)
+			edit_hud.edit_mode = true
+			edit_hud.action.connect(func(a: String):
+				if a == "edit_done":
+					edit_hud.queue_free()
+					edit_hud = null))
+
+
+func _on_setting(key: String) -> void:
+	match key:
+		"volume":
+			sfxn.volume = float(Cfg.get_v("volume"))
+		"fps":
+			Engine.max_fps = int(Cfg.get_v("fps"))
+		"quality":
+			if in_game and not dedicated:
+				_apply_quality()
+		"show_fps":
+			if hud:
+				hud.show_fps = bool(Cfg.get_v("show_fps"))
 
 
 # ---------------- iniciar ----------------
@@ -267,7 +278,7 @@ func _save_cfg() -> void:
 func start_dedicated() -> void:
 	dedicated = true
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(PORT, 32)
+	var err := peer.create_server(PORT, 64)
 	if err != OK:
 		printerr("[servidor] não abriu a porta %d (erro %d)" % [PORT, err])
 		get_tree().quit(1)
@@ -287,7 +298,7 @@ func start_host(online: bool) -> void:
 	training = not online
 	if online:
 		var peer := ENetMultiplayerPeer.new()
-		var err := peer.create_server(PORT, 16)
+		var err := peer.create_server(PORT, 32)
 		if err != OK:
 			status_lbl.text = "Não deu pra criar a sala (erro %d)." % err
 			return
@@ -352,7 +363,7 @@ func _build_world() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
-	world.build(dedicated, quality)
+	world.build(dedicated, int(Cfg.get_v("quality")))
 	n_static = world.items.size()
 	items_avail = []
 	for i in world.items.size():
@@ -370,6 +381,16 @@ func _make_item_node(i: int) -> void:
 	var n := Weapons.build_item(it["kind"])
 	n.position = it["pos"]
 	n.rotation.y = float(i) * 2.39
+	if it["kind"] == "box":
+		var l := Label3D.new()
+		l.text = str(it.get("name", ""))
+		l.position = Vector3(0, 1.0, 0)
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.pixel_size = 0.003
+		l.font_size = 36
+		l.outline_size = 8
+		l.visibility_range_end = 25.0
+		n.add_child(l)
 	items_root.add_child(n)
 	item_nodes[i] = n
 
@@ -381,14 +402,17 @@ func _enter_game() -> void:
 	hud = Hud.new()
 	hud.game = self
 	add_child(hud)
+	hud.show_fps = bool(Cfg.get_v("show_fps"))
 	hud.action.connect(_on_action)
+	hud.pick.connect(_on_pick)
+	hud.inv_action.connect(_on_inv_action)
 	cam_yaw = Node3D.new()
 	add_child(cam_yaw)
 	cam_pitch = Node3D.new()
 	cam_yaw.add_child(cam_pitch)
 	spring = SpringArm3D.new()
 	spring.spring_length = 3.2
-	spring.position = Vector3(0.6, 0.1, 0)
+	spring.position = Vector3(0.55, 0.15, 0)
 	spring.collision_mask = 1
 	spring.margin = 0.2
 	var sh := SphereShape3D.new()
@@ -433,8 +457,8 @@ void fragment() {
 	zone_wall.visible = false
 	add_child(zone_wall)
 	loop_player = AudioStreamPlayer.new()
-	loop_player.volume_db = -10.0
 	add_child(loop_player)
+	_make_loops()
 	_apply_quality()
 	in_game = true
 
@@ -445,7 +469,7 @@ func _apply_quality() -> void:
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	var far := 380.0
-	match quality:
+	match int(Cfg.get_v("quality")):
 		0:
 			vp.scaling_3d_scale = 0.6
 			vp.msaa_3d = Viewport.MSAA_DISABLED
@@ -472,24 +496,26 @@ func _apply_quality() -> void:
 	fog_base = 2.2 / far * 0.38
 	if env:
 		env.environment.fog_density = fog_base
-	Engine.max_fps = 60
 
 
 func _build_plane() -> Node3D:
 	var m := MB.new()
-	var g := Color(0.4, 0.43, 0.4)
-	var dark := Color(0.2, 0.22, 0.21)
+	m.tex(U.METAL, 0.15)
+	var g := Color(0.65, 0.7, 0.66)
+	var dark := Color(0.35, 0.37, 0.36)
 	var along := Basis(Vector3.RIGHT, -PI / 2.0)   # cilindro deitado apontando pra -Z
-	m.cyl(Transform3D(along, Vector3(0, 0, 12)), 2.2, 2.2, 22.0, 12, g, false)
-	m.cyl(Transform3D(along, Vector3(0, 0, -10)), 2.2, 0.6, 4.0, 12, g, true)
-	m.cyl(Transform3D(along, Vector3(0, 0.6, 15.5)), 1.2, 2.2, 3.5, 12, g, true)
+	m.cyl(Transform3D(along, Vector3(0, 0, 12)), 2.2, 2.2, 22.0, 14, g, false)
+	m.cyl(Transform3D(along, Vector3(0, 0, -10)), 2.2, 0.6, 4.0, 14, g, true)
+	m.cyl(Transform3D(along, Vector3(0, 0.6, 15.5)), 1.2, 2.2, 3.5, 14, g, true)
 	m.boxp(Vector3(0, 1.9, -1), Vector3(36, 0.45, 4.6), g)
 	m.boxp(Vector3(0, 4.0, 15.5), Vector3(0.4, 5.0, 3.6), g)
 	m.boxp(Vector3(0, 2.2, 16.0), Vector3(12, 0.3, 2.8), g)
-	m.boxp(Vector3(0, 0.9, -10.5), Vector3(2.2, 0.8, 1.4), Color(0.1, 0.12, 0.14))
+	m.tex(U.PLAIN, 1.0)
+	m.boxp(Vector3(0, 0.9, -10.5), Vector3(2.2, 0.8, 1.4), Color(0.15, 0.18, 0.2))
+	m.tex(U.METAL, 0.3)
 	for x in [-11.0, -5.5, 5.5, 11.0]:
-		m.cyl(Transform3D(along, Vector3(x, 1.2, 1.5)), 0.65, 0.55, 4.0, 8, dark, true)
-		m.boxp(Vector3(x, 1.2, -2.6), Vector3(3.4, 0.15, 0.2), Color(0.1, 0.1, 0.1))
+		m.cyl(Transform3D(along, Vector3(x, 1.2, 1.5)), 0.65, 0.55, 4.0, 10, dark, true)
+		m.boxp(Vector3(x, 1.2, -2.6), Vector3(3.4, 0.15, 0.2), Color(0.2, 0.2, 0.2))
 	var root := Node3D.new()
 	U.mesh(root, m.commit())
 	return root
@@ -505,7 +531,7 @@ func _lan_ip() -> String:
 # ---------------- estado compartilhado (todos calculam igual) ----------------
 
 func plane_frac() -> float:
-	return clampf(plane_t / PLANE_DUR, 0.0, 1.0)
+	return clampf(plane_t / plane_dur, 0.0, 1.0)
 
 
 func plane_pos() -> Vector3:
@@ -530,7 +556,7 @@ func zone_goal_c() -> Vector2:
 
 
 func zone_goal_r() -> float:
-	return maxf(z_r1, 8.0) if z_stage >= 0 else 300.0
+	return maxf(z_r1, 8.0) if z_stage >= 0 else 340.0
 
 
 func _alive_count() -> int:
@@ -564,6 +590,73 @@ func view_pos() -> Vector3:
 func view_yaw() -> float:
 	var t := _view_target()
 	return t.yaw if t else 0.0
+
+
+func near_cam(p: Vector3, d: float) -> bool:
+	if cam == null:
+		return true
+	return cam.global_position.distance_squared_to(p) < d * d
+
+
+# ---------------- sons ----------------
+
+func sfx(n: String, vol := 0.0) -> void:
+	if sfxn and not dedicated:
+		sfxn.play(n, vol)
+
+
+func sfx_at(n: String, pos: Vector3, local: bool, vol := 0.0, max_d := 50.0) -> void:
+	if sfxn == null or dedicated:
+		return
+	if local:
+		sfxn.play(n, vol - 3.0)
+	else:
+		sfxn.play_at(n, pos, vol, max_d)
+
+
+func on_step(p: Player, quiet: bool) -> void:
+	if dedicated or sfxn == null:
+		return
+	var hard := p.position.y - world.height(p.position.x, p.position.z) > 0.04
+	var n := ("step_hard%d" if hard else "step_grass%d") % randi_range(0, 2)
+	if p.is_local:
+		sfxn.play(n, -14.0 if quiet else -9.0)
+		return
+	var d := 16.0 if quiet else 45.0
+	sfxn.play_at(n, p.position, -6.0 if quiet else 0.0, d, 1.0, 4.0)
+	var lp: Player = players.get(local_id)
+	if hud and lp and lp.alive and lp.position.distance_to(p.position) < d:
+		hud.add_step(p.position)
+
+
+func _make_loops() -> void:
+	sfxn.streams["plane"] = _gen_loop(1.0, 0.04, 0.6, 38.0)
+	sfxn.streams["wind"] = _gen_loop(1.0, 0.12, 0.5, 0.0)
+
+
+# ruído contínuo (motor do avião / vento); hum = frequência de ronco
+func _gen_loop(dur: float, smooth: float, vol: float, hum: float) -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(dur * rate)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var v := 0.0
+	for i in n:
+		var t := float(i) / rate
+		v = lerpf(v, randf() * 2.0 - 1.0, smooth)
+		var s := v * 3.0
+		if hum > 0.0:
+			s = s * 0.6 + sin(TAU * hum * t) * 0.35 + sin(TAU * hum * 2.0 * t) * 0.15
+		data.encode_s16(i * 2, clampi(int(s * vol * 20000.0), -32768, 32767))
+	var st := AudioStreamWAV.new()
+	st.format = AudioStreamWAV.FORMAT_16_BITS
+	st.mix_rate = rate
+	st.stereo = false
+	st.data = data
+	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	st.loop_begin = 0
+	st.loop_end = n
+	return st
 
 
 # ---------------- loop ----------------
@@ -605,24 +698,25 @@ func _process(delta: float) -> void:
 		var p := Vector2(c.x + float(world.towns[test_town]["r"]) + 8.0, c.y + 10.0)
 		lp.position = Vector3(p.x, world.height(p.x, p.y) + 0.2, p.y)
 		lp.air = 0
-		lp.yaw = atan2(-(c.x - p.x), -(c.y - p.y))
-		lp.pitch = -0.08
+		cam_yaw_v = atan2(-(c.x - p.x), -(c.y - p.y))
+		cam_pitch_v = -0.08
 		lp.hp = 100.0
 	_local_update(lp, delta)
 	_update_world_fx(delta)
 
 
-func _update_world_fx(delta: float) -> void:
-	plane_node.visible = phase == PLANE and plane_t < PLANE_DUR + 3.0
+func _update_world_fx(_delta: float) -> void:
+	plane_node.visible = phase == PLANE and plane_t < plane_dur + 3.0
 	if plane_node.visible:
 		var dir := (plane_b - plane_a).normalized()
-		var pp := plane_a.lerp(plane_b, plane_t / PLANE_DUR)
+		var pp := plane_a.lerp(plane_b, plane_t / plane_dur)
 		plane_node.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), pp + Vector3(0, 3, 0))
 	# de cima a névoa diminui, pra enxergar onde vai cair
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	if env:
 		var alt := cam.global_position.y - world.height(cam.global_position.x, cam.global_position.z)
 		env.environment.fog_density = fog_base * clampf(1.0 - (alt - 25.0) / 160.0, 0.3, 1.0)
+	sfxn.listener_pos = cam.global_position
 	var z := zone_now()
 	zone_wall.visible = float(z[1]) < 1000.0
 	if zone_wall.visible:
@@ -641,8 +735,8 @@ func _update_world_fx(delta: float) -> void:
 		if want == "":
 			loop_player.stop()
 		else:
-			loop_player.stream = sounds[want]
-			loop_player.volume_db = -12.0 if want == "plane" else -14.0
+			loop_player.stream = sfxn.streams[want]
+			loop_player.volume_db = sfxn.db(-12.0 if want == "plane" else -14.0)
 			loop_player.play()
 
 
@@ -652,14 +746,20 @@ func _print_debug_state() -> void:
 		var p: Player = players.get(id)
 		if p == null:
 			continue
-		parts.append("%s k%d hp%d ar%d %s %s%s" % [info[id]["name"], info[id]["kills"], p.hp, p.armor, p.cur_wid(), "VIVO" if p.alive else "morto", "" if p.air == 0 else " ar%d" % p.air])
+		parts.append("%s k%d hp%d ar%d %s %s%s inv%s" % [info[id]["name"], info[id]["kills"], p.hp, p.armor, p.cur_wid(), "VIVO" if p.alive else "morto", "" if p.air == 0 else " ar%d" % p.air, str(p.inv)])
 	print("[estado] fase=%d zona=%d tempo=%.0f vivos=%d itens=%d livres=%d vencedor=%s" % [phase, z_stage, match_time, _alive_count(), items_avail.size(), items_avail.count(true), info[winner]["name"] if info.has(winner) else "-"])
-	print("   " + "\n   ".join(parts))
+	print("   " + "\n   ".join(parts.slice(0, 12)))
+	if not dedicated:
+		print("[render] chamadas=%d triangulos=%d objetos=%d fps=%d" % [
+			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME),
+			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+			Engine.get_frames_per_second()])
 
 
 func _local_update(lp: Player, delta: float) -> void:
 	var wid := lp.cur_wid()
-	var w := Weapons.get_w(wid)
+	var w := lp.cur_stat()
 	var playing := lp.alive and not lp.spect
 	# modo da tela
 	var mode := "ground"
@@ -680,40 +780,56 @@ func _local_update(lp: Player, delta: float) -> void:
 	hud.can_start = phase == LOBBY and multiplayer.is_server() and not training
 	var zoom: float = float(w["zoom"]) if lp.scoped else 1.0
 	var look := hud.take_look()
-	var sens: float = SENS[sens_i] / zoom
+	if hud.bag_open or hud.edit_mode:
+		look = Vector2.ZERO
+	var sens: float = 0.0055 * float(Cfg.get_v("sens")) / zoom
+	if lp.scoped:
+		sens *= float(Cfg.get_v("sens_ads"))
+	var inv_y := -1.0 if bool(Cfg.get_v("invert")) else 1.0
+	var firing: bool = (hud.fire_held or test_fire) and playing and lp.air == 0 and not hud.bag_open
+	if firing and look.y < 0.0:
+		up_drag += -look.y
+	elif not firing:
+		up_drag = maxf(up_drag - delta * 120.0, 0.0)
 	if playing:
-		lp.yaw -= look.x * sens
-		lp.pitch = clampf(lp.pitch - look.y * sens, -1.3, 1.25)
-		lp.move_in = hud.move_vec if lp.air != 3 else Vector2.ZERO
-		if (hud.fire_held or test_fire) and lp.air == 0:
+		cam_yaw_v -= look.x * sens
+		cam_pitch_v = clampf(cam_pitch_v - look.y * sens * inv_y, -1.3, 1.25)
+		var mv := hud.move_vec if not hud.bag_open else Vector2.ZERO
+		lp.wish = Basis(Vector3.UP, cam_yaw_v) * Vector3(mv.x, 0, mv.y) if lp.air != 3 else Vector3.ZERO
+		lp.pitch = cam_pitch_v
+		if firing:
+			_aim_assist(lp, w, delta)
 			_local_fire(lp)
-		if lp.air == 3 and (plane_t >= PLANE_DUR or (auto_jump >= 0.0 and plane_frac() >= auto_jump)):
+		if lp.air == 3 and (plane_t >= plane_dur or (auto_jump >= 0.0 and plane_frac() >= auto_jump)):
 			_on_action("leave")
 	else:
-		lp.move_in = Vector2.ZERO
+		lp.wish = Vector3.ZERO
 	# câmera
 	var t := _view_target()
-	var target_len := 3.2
+	var target_len := 3.0
 	var fov := 75.0
 	var base := t.position if t else Vector3.ZERO
-	var cy := t.yaw if t else 0.0
-	var cp := t.pitch if t else 0.0
+	var cy := cam_yaw_v
+	var cp := cam_pitch_v
+	if t and t != lp:
+		cy = t.yaw
+		cp = t.pitch * 0.5 - 0.15
 	if t and t.air == 3:
 		base = plane_pos() + Vector3(0, 6, 0)
 		target_len = 34.0
-		cp = minf(cp, -0.25) if t == lp else -0.35
+		if t == lp:
+			cp = minf(cp, -0.25)
 	elif t and (t.air == 1 or t.air == 2):
 		target_len = 7.0
 	elif t != lp:
 		target_len = 4.5
-		cp = t.pitch * 0.5 - 0.15
 	if t == lp and lp.scoped:
 		target_len = 0.9
 		fov = 75.0 / zoom
 	if not playing and t == lp:
 		target_len = 5.0
 	cam_yaw.position = base + Vector3(0, 1.55 if not (t and t.crouch) else 1.1, 0)
-	cam_yaw.rotation.y = lerp_angle(cam_yaw.rotation.y, cy, 1.0 if t == lp else minf(1.0, 6.0 * delta))
+	cam_yaw.rotation.y = cy if t == lp else lerp_angle(cam_yaw.rotation.y, cy, minf(1.0, 6.0 * delta))
 	cam_pitch.rotation.x = cp
 	spring.spring_length = lerpf(spring.spring_length, target_len, minf(1.0, 8.0 * delta))
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, 12.0 * delta))
@@ -722,48 +838,107 @@ func _local_update(lp: Player, delta: float) -> void:
 	if send_t >= 0.05 and not multiplayer.is_server() and playing:
 		send_t = 0.0
 		rpc_id(1, "st", lp.position, lp.yaw, lp.pitch, wid, lp.flags())
-	hud.heal_k = 1.0 - lp.heal_t / Player.HEAL_TIME if lp.heal_t > 0.0 else -1.0
+	hud.heal_k = 1.0 - lp.heal_t / float(Weapons.ITEMS[lp.heal_kind]["time"]) if lp.heal_t > 0.0 and lp.heal_kind != "" else -1.0
 	var zn := zone_now()
 	hud.out_zone = playing and lp.air == 0 and Vector2(lp.position.x, lp.position.z).distance_to(zn[0]) > float(zn[1])
 	ui_t += delta
 	if ui_t > 0.2:
 		ui_t = 0.0
 		_ui_slow(lp, playing)
-	hud.set_status(lp.hp, lp.armor, lp.kits, w["name"], lp.mag[wid], w["mag"], lp.reload_t > 0.0, lp.scoped and wid in Weapons.SCOPES)
+	hud.hp = lp.hp
+	hud.armor = lp.armor
+	hud.heals = [lp.count("bandage"), lp.count("med")]
+	hud.overlay = lp.scoped and bool(w["overlay"])
+	hud.red_dot = lp.scoped and not bool(w["overlay"]) and ("holo" in lp.cur_att())
+	hud.reloading = lp.reload_t > 0.0
+	var sl := [{"id": "fist", "att": [], "ammo": 0, "max": 0}]
+	for g in lp.guns:
+		var gid: String = g["id"]
+		sl.append({"id": gid, "att": g["att"], "ammo": int(lp.mag.get(gid, 0)) if gid != "" else 0, "max": int(Weapons.stat(gid, g["att"])["mag"]) if gid != "" else 0})
+	hud.slots = sl
+	hud.sel = lp.sel + 1
+	hud.refresh_bag(lp)
+
+
+func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
+	var mode: int = int(Cfg.get_v("aim_assist"))
+	if mode == 0 or (mode == 1 and lp.scoped) or lp.cur_wid() == "fist":
+		return
+	assist_t -= delta
+	var from := cam.global_position
+	var fwd := -cam.global_transform.basis.z
+	if assist_t <= 0.0:
+		assist_t = 0.1
+		assist_target = 0
+		var best := 9.0
+		var space := get_world_3d().direct_space_state
+		for id in players:
+			var o: Player = players[id]
+			if o == lp or not o.alive or o.spect or o.air != 0:
+				continue
+			var tp := o.position + Vector3(0, o.head_y() - 0.35, 0)
+			var d := tp - from
+			var dist := d.length()
+			if dist > minf(float(w["range"]), 120.0) or dist < 0.5:
+				continue
+			var ang := fwd.angle_to(d / dist)
+			var lim := clampf(atan2(2.0, dist), 0.025, 0.2)
+			if ang > lim or ang > best:
+				continue
+			var q := PhysicsRayQueryParameters3D.create(from, tp, 1)
+			if not space.intersect_ray(q).is_empty():
+				continue
+			best = ang
+			assist_target = id
+	var t: Player = players.get(assist_target)
+	if t == null or not t.alive:
+		return
+	# arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
+	var aimp := t.position + Vector3(0, t.head_y() + 0.12 if up_drag > 18.0 else t.head_y() - 0.4, 0)
+	var dir := (aimp - from).normalized()
+	var wy := atan2(-dir.x, -dir.z)
+	var wp := asin(clampf(dir.y, -1.0, 1.0))
+	var k := minf(1.0, (9.0 if up_drag > 18.0 else 5.0) * delta)
+	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
+	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
 
 func _ui_slow(lp: Player, playing: bool) -> void:
-	near_item = -1
+	# itens por perto (lista do canto direito)
+	var list := []
 	if playing and lp.air == 0 and phase != LOBBY:
-		var bd := 2.4
 		var now := Time.get_ticks_msec()
 		for i in world.items.size():
 			if not items_avail[i]:
 				continue
-			var kind: String = world.items[i]["kind"]
-			var dd := lp.position.distance_to(world.items[i]["pos"])
-			if Weapons.is_gun(kind):
-				if kind == lp.primary or kind == lp.secondary:
-					continue
-				if dd < bd:
-					bd = dd
-					near_item = i
-			elif dd < 1.8 and lp._wants(kind) and now - int(auto_tried.get(i, 0)) > 1500:
+			var it: Dictionary = world.items[i]
+			var dd := lp.position.distance_to(it["pos"])
+			if dd > 2.6:
+				continue
+			var kind: String = it["kind"]
+			if kind == "box":
+				var bl: Array = it.get("list", [])
+				for j in bl.size():
+					var e: Array = bl[j]
+					list.append({"key": [i, j], "kind": e[0], "n": e[1], "label": Weapons.item_name(e[0])})
+				continue
+			# colete, capacete e mochila pegam sozinhos quando servem
+			if (kind == "vest" or kind == "helmet" or kind == "bag") and lp.wants(kind) and dd < 1.8 and now - int(auto_tried.get(i, 0)) > 1500:
 				auto_tried[i] = now
-				_to_server("req_pickup", [i])
-	hud.set_pickup(Weapons.item_name(world.items[near_item]["kind"]) if near_item >= 0 else "")
+				_to_server("req_pickup", [i, -1])
+				continue
+			list.append({"key": [i, -1], "kind": kind, "n": it.get("n", 1), "label": Weapons.item_name(kind)})
+	hud.set_pickups(list)
 	var me = info.get(local_id)
-	var kills: int = me["kills"] if me else 0
+	hud.alive_n = _alive_count()
+	hud.kills_n = me["kills"] if me else 0
+	var t := _view_target()
 	if phase == LOBBY:
-		hud.set_top("Partida começa em %d s   ·   %d na sala" % [ceili(phase_t), players.size()])
-	elif phase == END:
-		hud.set_top("")
+		hud.set_spec("Partida começa em %d s   ·   %d na sala" % [ceili(phase_t), players.size()])
+	elif t and t != lp and phase != END:
+		hud.set_spec("Assistindo: %s" % t.nick)
 	else:
-		var top := "VIVOS %d      ABATES %d" % [_alive_count(), kills]
-		var t := _view_target()
-		if t and t != lp:
-			top += "      Assistindo: %s" % t.nick
-		hud.set_top(top)
+		hud.set_spec("")
 	var zt := ""
 	if phase == PLANE:
 		zt = "Salte do avião!" if lp.air == 3 else ""
@@ -795,6 +970,12 @@ func _on_action(act: String) -> void:
 		"exit", "menu":
 			_back_to_menu("")
 			return
+		"settings":
+			open_settings()
+			return
+		"edit_done":
+			hud.layout = Cfg.get_v("layout").duplicate()
+			return
 		"map":
 			hud.big_map = not hud.big_map
 			return
@@ -809,18 +990,24 @@ func _on_action(act: String) -> void:
 			if multiplayer.is_server() and phase == LOBBY:
 				phase_t = 0.0
 			return
+		"bag":
+			hud.set_bag(not hud.bag_open)
+			sfx("click")
+			return
 	var lp: Player = players.get(local_id)
 	if lp == null or not lp.alive or lp.spect:
 		return
-	var w := Weapons.get_w(lp.cur_wid())
+	var w := lp.cur_stat()
 	match act:
 		"leave":
 			if lp.air == 3 and phase == PLANE:
 				lp.leave_plane(plane_pos() + Vector3(0, -4, 0))
 				lp.velocity = Vector3.ZERO
+				sfx("jump")
 		"chute":
 			if lp.air == 1:
 				lp.air = 2
+				sfx("chute")
 		"jump":
 			lp.want_jump = true
 		"crouch":
@@ -828,27 +1015,76 @@ func _on_action(act: String) -> void:
 				lp.set_crouch(not lp.crouch)
 		"reload":
 			_start_reload(lp)
-		"switch":
-			if lp.primary != "":
-				lp.slot = 1 - lp.slot
-				lp.reload_t = 0.0
-				lp.scoped = false
-				lp.update_gun()
 		"scope":
 			if float(w["zoom"]) > 1.0 and lp.heal_t <= 0.0:
 				lp.scoped = not lp.scoped
+				lp.aim_t = 0.5
+				sfx("click", -6.0)
 		"heal":
-			if lp.heal_t > 0.0:
-				lp.heal_t = 0.0
-			elif lp.kits > 0 and lp.hp < 100.0 and lp.air == 0:
-				lp.heal_t = Player.HEAL_TIME
-				lp.scoped = false
-				lp.reload_t = 0.0
-			elif lp.kits == 0:
-				hud.center("Sem kit médico", 1.2)
+			_start_heal(lp, "")
 		"pickup":
-			if near_item >= 0:
-				_to_server("req_pickup", [near_item])
+			var l: Array = []
+			for c in hud.pick_list.get_children():
+				l.append(c)
+			if not l.is_empty():
+				(l[0] as Button).pressed.emit()
+		"slot0", "slot1", "slot2", "slot3":
+			_select(lp, int(act.substr(4)) - 1)
+
+
+# muda a arma na mão; tocar na que já está na mão guarda (mãos livres, corre mais)
+func _select(lp: Player, s: int) -> void:
+	if s >= 0 and lp.guns[s]["id"] == "":
+		return
+	if s == lp.sel and s >= 0:
+		s = -1
+	if s == lp.sel:
+		return
+	lp.sel = s
+	lp.reload_t = 0.0
+	lp.scoped = false
+	lp.update_gun()
+	sfx("switch")
+
+
+func _start_heal(lp: Player, kind: String) -> void:
+	if lp.heal_t > 0.0:
+		lp.heal_t = 0.0
+		return
+	if lp.hp >= 100.0 or lp.air != 0:
+		return
+	if kind == "":
+		kind = "med" if (lp.count("med") > 0 and (lp.hp < 55.0 or lp.count("bandage") == 0)) else "bandage"
+	if lp.count(kind) <= 0:
+		hud.center("Sem bandagem nem kit médico", 1.2)
+		return
+	lp.heal_kind = kind
+	lp.heal_t = float(Weapons.ITEMS[kind]["time"])
+	lp.scoped = false
+	lp.reload_t = 0.0
+	sfx("heal")
+
+
+func _on_pick(key: Array) -> void:
+	_to_server("req_pickup", [int(key[0]), int(key[1])])
+
+
+func _on_inv_action(act: String, a: String, b: int) -> void:
+	var lp: Player = players.get(local_id)
+	if lp == null or not lp.alive:
+		return
+	match act:
+		"use":
+			hud.set_bag(false)
+			_start_heal(lp, a)
+		"drop":
+			_to_server("req_drop", [a, b])
+		"drop_gun":
+			_to_server("req_drop_gun", [b])
+		"equip":
+			_to_server("req_equip", [a, b])
+		"unequip":
+			_to_server("req_unequip", [a, b])
 
 
 func _spec_next() -> void:
@@ -868,36 +1104,46 @@ func on_landed() -> void:
 	var lp: Player = players.get(local_id)
 	if lp == null:
 		return
+	sfx("land")
 	var t := world.nearest_town(Vector2(lp.position.x, lp.position.z))
 	if Vector2(lp.position.x, lp.position.z).distance_to(t["pos"]) < float(t["r"]) + 40.0:
 		hud.center(t["name"], 2.5)
 
 
-func heal_done(p: Player) -> void:
+func heal_done(p: Player, kind: String) -> void:
 	if multiplayer.is_server():
-		_server_heal(p.pid)
+		_server_heal(p.pid, kind)
 	else:
-		rpc_id(1, "req_heal")
+		rpc_id(1, "req_heal", kind)
 
 
 func _start_reload(lp: Player) -> void:
 	var wid := lp.cur_wid()
-	var w := Weapons.get_w(wid)
+	if wid == "fist":
+		return
+	var w := lp.cur_stat()
 	if lp.reload_t <= 0.0 and lp.mag[wid] < int(w["mag"]):
 		lp.reload_t = w["reload"]
 		lp.scoped = false
+		sfx("reload_out")
 
 
 func _local_fire(lp: Player) -> void:
-	if lp.cool > 0.0 or lp.reload_t > 0.0 or lp.heal_t > 0.0:
+	if lp.cool > 0.0 or lp.reload_t > 0.0 or lp.heal_t > 0.0 or lp.vault_t >= 0.0:
 		return
 	var wid := lp.cur_wid()
-	var w := Weapons.get_w(wid)
-	if lp.mag[wid] <= 0:
+	var w := lp.cur_stat()
+	var melee := wid == "fist"
+	if not melee and lp.mag[wid] <= 0:
+		sfx("empty")
 		_start_reload(lp)
 		return
-	lp.mag[wid] -= 1
+	if not melee:
+		lp.mag[wid] -= 1
 	lp.cool = 1.0 / float(w["rate"])
+	lp.aim_t = 0.7
+	if melee:
+		lp.punch_t = 0.3
 	var xf := cam.global_transform
 	var fwd := -xf.basis.z
 	var right := xf.basis.x
@@ -906,7 +1152,7 @@ func _local_fire(lp: Player) -> void:
 	var origin := xf.origin + fwd * maxf(0.0, (head - xf.origin).dot(fwd))
 	var spread: float = w["spread"]
 	if lp.scoped:
-		spread *= 0.0 if wid in Weapons.SCOPES else 0.4
+		spread *= float(w["ads"])
 	if lp.crouch:
 		spread *= 0.7
 	if Vector2(lp.velocity.x, lp.velocity.z).length() > 1.0:
@@ -935,148 +1181,47 @@ func _local_fire(lp: Player) -> void:
 		else:
 			hits.append(-1)
 	_to_server("req_fire", [origin, ends, hits, wid])
+	if melee:
+		sfx("punch_swing")
+		if hits.size() > 0 and hits[0] is Array:
+			sfx("punch_hit")
+		return
 	_shot_fx(lp, ends, wid, true)
-	lp.pitch = minf(lp.pitch + float(w["recoil"]), 1.25)
-	lp.yaw += randf_range(-0.3, 0.3) * float(w["recoil"])
+	cam_pitch_v = minf(cam_pitch_v + float(w["recoil"]), 1.25)
+	cam_yaw_v += randf_range(-0.3, 0.3) * float(w["recoil"])
+	if w["type"] == "bolt" or w["type"] == "sniper":
+		get_tree().create_timer(0.35).timeout.connect(func(): sfx("bolt", -4.0))
 	if lp.mag[wid] <= 0:
 		_start_reload(lp)
 
 
 # ---------------- efeitos ----------------
 
-func _make_sounds() -> void:
-	sounds["pistol"] = _gen_shot(0.18, 28.0, 0.5)
-	sounds["auto"] = _gen_shot(0.22, 22.0, 0.35)
-	sounds["heavy"] = _gen_shot(0.45, 11.0, 0.22)
-	sounds["hit"] = _gen_tone(0.05, 1800.0, 0.35)
-	sounds["kill"] = _gen_tone(0.16, 900.0, 0.4)
-	sounds["plane"] = _gen_loop(1.0, 0.04, 0.6, 38.0)
-	sounds["wind"] = _gen_loop(1.0, 0.12, 0.5, 0.0)
-
-
-func _gen_shot(dur: float, decay: float, smooth: float) -> AudioStreamWAV:
-	var rate := 22050
-	var n := int(dur * rate)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var v := 0.0
-	for i in n:
-		var t := float(i) / rate
-		v = lerpf(v, randf() * 2.0 - 1.0, smooth)
-		var env := exp(-t * decay)
-		if t < 0.003:
-			env *= t / 0.003
-		data.encode_s16(i * 2, clampi(int(v * env * 30000.0), -32768, 32767))
-	return _wav(data, rate)
-
-
-func _gen_tone(dur: float, freq: float, vol: float) -> AudioStreamWAV:
-	var rate := 22050
-	var n := int(dur * rate)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	for i in n:
-		var t := float(i) / rate
-		var env := exp(-t * 30.0) * minf(1.0, t / 0.002)
-		data.encode_s16(i * 2, int(sin(TAU * freq * t) * env * vol * 32000.0))
-	return _wav(data, rate)
-
-
-# ruído contínuo (motor do avião / vento); hum = frequência de ronco
-func _gen_loop(dur: float, smooth: float, vol: float, hum: float) -> AudioStreamWAV:
-	var rate := 22050
-	var n := int(dur * rate)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var v := 0.0
-	for i in n:
-		var t := float(i) / rate
-		v = lerpf(v, randf() * 2.0 - 1.0, smooth)
-		var s := v * 3.0
-		if hum > 0.0:
-			s = s * 0.6 + sin(TAU * hum * t) * 0.35 + sin(TAU * hum * 2.0 * t) * 0.15
-		data.encode_s16(i * 2, clampi(int(s * vol * 20000.0), -32768, 32767))
-	var st := _wav(data, rate)
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_begin = 0
-	st.loop_end = n
-	return st
-
-
-func _wav(data: PackedByteArray, rate: int) -> AudioStreamWAV:
-	var st := AudioStreamWAV.new()
-	st.format = AudioStreamWAV.FORMAT_16_BITS
-	st.mix_rate = rate
-	st.stereo = false
-	st.data = data
-	return st
-
-
-func _beep(key: String, vol := -6.0) -> void:
-	if not sounds.has(key):
-		return
-	var ap := AudioStreamPlayer.new()
-	ap.stream = sounds[key]
-	ap.volume_db = vol
-	add_child(ap)
-	ap.play()
-	ap.finished.connect(ap.queue_free)
-
-
-func _play_shot(wid: String, pos: Vector3, local: bool) -> void:
-	var t: String = Weapons.get_w(wid)["type"]
-	var key := "auto"
-	var pt := 1.0
-	match t:
-		"pistol":
-			key = "pistol"
-			pt = 1.1 if wid == "glock" else 0.8
-		"smg":
-			key = "pistol"
-			pt = 0.95
-		"ak":
-			pt = 0.85
-		"scar":
-			pt = 0.92
-		"shotgun":
-			key = "heavy"
-			pt = 1.15
-		"sniper", "bolt":
-			key = "heavy"
-			pt = 0.8
+func _play_shot(wid: String, att: Array, pos: Vector3, local: bool) -> void:
+	var sil := "silencer" in att
+	var n := sfxn.shot_name(wid, sil)
 	if local:
-		var ap := AudioStreamPlayer.new()
-		ap.stream = sounds[key]
-		ap.pitch_scale = pt * randf_range(0.95, 1.05)
-		ap.volume_db = -4.0
-		add_child(ap)
-		ap.play()
-		ap.finished.connect(ap.queue_free)
+		sfxn.play(n, -3.0)
 	else:
-		if cam and cam.global_position.distance_to(pos) > 260.0:
-			return
-		var ap3 := AudioStreamPlayer3D.new()
-		ap3.stream = sounds[key]
-		ap3.pitch_scale = pt * randf_range(0.95, 1.05)
-		ap3.unit_size = 12.0
-		ap3.max_distance = 260.0
-		add_child(ap3)
-		ap3.global_position = pos + Vector3(0, 1.5, 0)
-		ap3.play()
-		ap3.finished.connect(ap3.queue_free)
+		sfxn.play_at(n, pos + Vector3(0, 1.5, 0), 0.0, 45.0 if sil else 280.0, 1.0, 14.0 if not sil else 5.0)
 
 
 func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> void:
 	if dedicated:
 		return
+	if wid == "fist":
+		sfx_at("punch_swing", p.position, local)
+		return
+	var att := p.att_of(wid)
 	var far := cam != null and cam.global_position.distance_to(p.position) > 200.0
 	var from := p.muzzle_pos()
 	if not far:
 		for e in ends:
 			_tracer(from, e)
-			_temp_box(e, 0.12, Color(0.5, 0.47, 0.4), 0.3)
-		_temp_box(from, 0.12, Color(1.0, 0.85, 0.3), 0.04, true)
-	_play_shot(wid, p.position, local)
+			_temp_box(e, 0.1, Color(0.5, 0.47, 0.4), 0.3)
+		if not ("silencer" in att):
+			_temp_box(from, 0.12, Color(1.0, 0.85, 0.3), 0.04, true)
+	_play_shot(wid, att, p.position, local)
 
 
 func _tracer(a: Vector3, b: Vector3) -> void:
@@ -1125,6 +1270,13 @@ func _all(method: String, args: Array) -> void:
 		callv("rpc", [method] + args)
 
 
+func _guns_net(p: Player) -> Array:
+	var a := []
+	for g in p.guns:
+		a.append([g["id"], g["att"].duplicate()])
+	return a
+
+
 # ---------------- servidor ----------------
 
 func _server_init() -> void:
@@ -1145,10 +1297,13 @@ func _server_add_player(id: int, nick: String, bot: bool) -> void:
 	var pos := world.random_spawn(rng)
 	var spect := phase != LOBBY and not bot
 	if not bot and id != local_id:
-		rpc_id(id, "welcome", _snapshot(), items_avail, _dyn_items(), [phase, phase_t, plane_a, plane_b, plane_t],
+		var ns := PackedInt32Array()
+		for i in n_static:
+			ns.append(int(world.items[i]["n"]))
+		rpc_id(id, "welcome", _snapshot(), items_avail, _dyn_items(), ns, [phase, phase_t, plane_a, plane_b, plane_t, plane_dur],
 			[z_stage, z_c0, z_r0, z_c1, z_r1, z_wait, z_shrink, z_dmg, z_t])
 	_all("add_player", [id, nick, pos, bot, spect])
-	if dedicated:
+	if dedicated and not bot:
 		print("[servidor] entrou: %s (%d)%s" % [nick, id, " (assistindo)" if spect else ""])
 
 
@@ -1158,8 +1313,8 @@ func _snapshot() -> Array:
 		var p: Player = players[id]
 		arr.append({
 			"id": id, "name": info[id]["name"], "bot": info[id]["bot"], "kills": info[id]["kills"],
-			"pos": p.position, "alive": p.alive, "spect": p.spect, "hp": p.hp, "primary": p.primary,
-			"secondary": p.secondary, "armor": p.armor, "helmet": p.helmet, "air": p.air,
+			"pos": p.position, "alive": p.alive, "spect": p.spect, "hp": p.hp, "guns": _guns_net(p),
+			"armor": p.armor, "helmet": p.helmet, "bag": p.bag, "air": p.air,
 		})
 	return arr
 
@@ -1167,7 +1322,8 @@ func _snapshot() -> Array:
 func _dyn_items() -> Array:
 	var arr := []
 	for i in range(n_static, world.items.size()):
-		arr.append([i, world.items[i]["pos"], world.items[i]["kind"]])
+		var it: Dictionary = world.items[i]
+		arr.append([i, it["pos"], it["kind"], it.get("n", 1), it.get("extra", null), it.get("list", []), it.get("name", "")])
 	return arr
 
 
@@ -1186,12 +1342,12 @@ func _server_tick(delta: float) -> void:
 			elif phase_t <= 0.0:
 				_server_board()
 		PLANE:
-			if plane_t >= PLANE_DUR + 0.5:
+			if plane_t >= plane_dur + 0.5:
 				for id in players:
 					var p: Player = players[id]
 					if p.is_bot and p.air == 3:
 						server_bot_jump(p)
-			if plane_t >= PLANE_DUR + 2.0:
+			if plane_t >= plane_dur + 2.0:
 				_all("phase_set", [MATCH, 0.0])
 				_zone_next()
 		MATCH:
@@ -1213,32 +1369,62 @@ func _server_tick(delta: float) -> void:
 	if snap_t >= 0.05:
 		snap_t = 0.0
 		if multiplayer.get_peers().size() > 0:
-			var arr := []
+			# pacote compacto: 22 bytes por jogador (cabe num pacote mesmo com 50)
+			var ids := []
 			for id in players:
 				var p: Player = players[id]
-				if p.spect:
-					continue
-				arr.append([id, p.position, p.yaw, p.pitch, p.shown_wid, p.flags()])
-			rpc("snap", arr)
+				if not p.spect and p.alive:
+					ids.append(id)
+			var buf := PackedByteArray()
+			buf.resize(ids.size() * 22)
+			var o := 0
+			for id in ids:
+				var p: Player = players[id]
+				buf.encode_s32(o, id)
+				buf.encode_float(o + 4, p.position.x)
+				buf.encode_float(o + 8, p.position.y)
+				buf.encode_float(o + 12, p.position.z)
+				buf.encode_s16(o + 16, int(wrapf(p.yaw, -PI, PI) * 10000.0))
+				buf.encode_s16(o + 18, int(clampf(p.pitch, -1.6, 1.6) * 20000.0))
+				buf.encode_u8(o + 20, WIDS.find(p.shown_wid))
+				buf.encode_u8(o + 21, p.flags() & 255)
+				o += 22
+			rpc("snap", buf)
 
 
 func _server_board() -> void:
 	var humans := _human_count()
 	var nb := clampi(bots_per_match, 0, MAX_PLAYERS - humans)
 	for i in nb:
-		_server_add_player(next_bot, "Bot " + BOT_NAMES[(next_bot - 1000) % BOT_NAMES.size()], true)
+		var k := next_bot - 1000
+		var nm: String = BOT_NAMES[k % BOT_NAMES.size()]
+		_server_add_player(next_bot, "Bot " + nm, true)
 		next_bot += 1
 	for id in players:
 		var p: Player = players[id]
 		if p.is_bot:
-			p.b_jump_at = clampf(randf_range(0.08, 0.95) * 0.6 + randf() * 0.4, 0.05, 0.97)
+			p.b_jump_at = clampf(randf_range(0.05, 0.95) * 0.6 + randf() * 0.4, 0.04, 0.97)
+	# rota do avião sempre dentro do mapa
+	var lim := World.PLAY - 30.0
 	var ang := rng.randf() * TAU
-	var dir := Vector3(cos(ang), 0, sin(ang))
-	var c := Vector3(rng.randf_range(-90, 90), 0, rng.randf_range(-90, 90))
-	var a := c - dir * PLANE_LEN / 2.0 + Vector3(0, PLANE_H, 0)
-	var b := c + dir * PLANE_LEN / 2.0 + Vector3(0, PLANE_H, 0)
+	var dir := Vector2(cos(ang), sin(ang))
+	var perp := Vector2(-dir.y, dir.x)
+	var c := perp * rng.randf_range(-120.0, 120.0)
+	var t0 := -1e9
+	var t1 := 1e9
+	for axis in 2:
+		var dv: float = dir[axis]
+		var cv: float = c[axis]
+		if absf(dv) < 1e-4:
+			continue
+		var ta := (-lim - cv) / dv
+		var tb := (lim - cv) / dv
+		t0 = maxf(t0, minf(ta, tb))
+		t1 = minf(t1, maxf(ta, tb))
+	var a2 := c + dir * t0
+	var b2 := c + dir * t1
 	n_start = _alive_count()
-	_all("plane_set", [a, b])
+	_all("plane_set", [Vector3(a2.x, PLANE_H, a2.y), Vector3(b2.x, PLANE_H, b2.y), a2.distance_to(b2) / PLANE_SPEED])
 	_all("phase_set", [PLANE, 0.0])
 	if dedicated:
 		print("[servidor] partida começou com %d jogadores (%d bots)" % [n_start, nb])
@@ -1248,7 +1434,7 @@ func server_bot_jump(p: Player) -> void:
 	if p.air != 3:
 		return
 	p.leave_plane(plane_pos() + Vector3(0, -4, 0))
-	# escolhe uma cidade perto de onde pulou (às vezes um ponto qualquer)
+	# escolhe uma localidade perto de onde pulou (às vezes um ponto qualquer)
 	var here := Vector2(p.position.x, p.position.z)
 	var opts := []
 	for t in world.towns:
@@ -1274,6 +1460,9 @@ func _zone_next() -> void:
 	var c1 := c0 + Vector2(cos(a), sin(a)) * sqrt(rng.randf()) * maxoff
 	var lim := maxf(World.PLAY - zr - 15.0, 0.0)
 	c1 = c1.clamp(Vector2(-lim, -lim), Vector2(lim, lim))
+	# o centro final não fica dentro da lagoa
+	if c1.distance_to(World.LAKE_C) < World.LAKE_R:
+		c1 = World.LAKE_C + (c1 - World.LAKE_C).normalized() * (World.LAKE_R + 5.0)
 	_all("zone_set", [ns, c0, r0, c1, zr, ZONES[ns][0], ZONES[ns][1], ZONES[ns][3], 0.0])
 
 
@@ -1310,7 +1499,7 @@ func server_bot_shot(id: int, origin: Vector3, dirs: Array, wid: String) -> void
 	var p: Player = players.get(id)
 	if p == null or not p.alive:
 		return
-	var w := Weapons.get_w(wid)
+	var w := p.cur_stat()
 	var space := get_world_3d().direct_space_state
 	var ends := PackedVector3Array()
 	var dmg := {}
@@ -1367,83 +1556,176 @@ func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, 
 	var hp := v.hp - amount
 	if hp <= 0.0:
 		var rank := _alive_count()
-		_server_drop_loot(v)
-		_all("on_died", [vid, aid, wid, head, rank])
+		_server_death_box(v)
+		_all("on_died", [vid, aid, wid, head, rank, amount])
 		_check_end()
 	else:
-		_all("on_hp", [vid, hp, v.armor, aid, head])
+		_all("on_hp", [vid, hp, v.armor, aid, head, amount])
 
 
-func _server_drop_loot(v: Player) -> void:
-	var kinds := []
-	if v.primary != "":
-		kinds.append(v.primary)
-	if v.secondary != "glock":
-		kinds.append(v.secondary)
-	for k in mini(v.kits, 3):
-		kinds.append("med")
-	if v.armor >= 40.0:
-		kinds.append("vest")
+# Quem morre vira uma caixinha com tudo o que tinha
+func _server_death_box(v: Player) -> void:
+	var list := []
+	for g in v.guns:
+		if g["id"] != "" and g["id"] != "glock":
+			list.append([g["id"], 1, g["att"].duplicate()])
+	for k in v.inv:
+		if int(v.inv[k]) > 0:
+			list.append([k, int(v.inv[k]), null])
+	if v.armor > 0.0:
+		list.append(["vest", 1, v.armor])
 	if v.helmet:
-		kinds.append("helmet")
-	for k in kinds.size():
-		var a := TAU * k / maxf(kinds.size(), 1.0) + rng.randf() * 0.5
-		_server_drop(kinds[k], v.position + Vector3(cos(a), 0, sin(a)) * 1.1)
+		list.append(["helmet", 1, null])
+	if v.bag:
+		list.append(["bag", 1, null])
+	if list.is_empty():
+		return
+	var at := v.position
+	var pos := Vector3(at.x, world.height(at.x, at.z) + 0.02, at.z)
+	if at.y > pos.y + 0.03 and at.y - pos.y < 7.0:
+		pos.y = at.y + 0.02
+	_all("spawn_item", [world.items.size(), pos, "box", 1, null, list, v.nick])
 
 
-func _server_drop(kind: String, at: Vector3) -> void:
-	var pos := Vector3(at.x, world.height(at.x, at.z) + 0.06, at.z)
+func _server_drop(kind: String, at: Vector3, n := 1, extra = null) -> void:
+	var a := rng.randf() * TAU
+	at += Vector3(cos(a), 0, sin(a)) * 0.9
+	var pos := Vector3(at.x, world.height(at.x, at.z) + 0.07, at.z)
 	# no chão de casa: usa a altura de onde a pessoa estava
-	if at.y > pos.y + 0.03 and at.y - pos.y < 1.2:
-		pos.y = at.y + 0.06
-	_all("spawn_item", [world.items.size(), pos, kind])
+	if at.y > pos.y + 0.03 and at.y - pos.y < 7.0:
+		pos.y = at.y + 0.07
+	_all("spawn_item", [world.items.size(), pos, kind, n, extra, [], ""])
 
 
-func server_pickup(id: int, i: int) -> void:
+func _p_inv(p: Player) -> void:
+	for k in p.inv.keys():
+		if int(p.inv[k]) <= 0:
+			p.inv.erase(k)
+	_all("on_inv", [p.pid, p.inv.duplicate(), p.armor, p.helmet, p.bag])
+
+
+func _p_guns(p: Player, sel: int) -> void:
+	_all("on_loadout", [p.pid, _guns_net(p), sel])
+
+
+# Dá um item pro jogador. Devolve quantos ele conseguiu pegar.
+func _give(p: Player, kind: String, n: int, extra) -> int:
+	if Weapons.is_gun(kind):
+		var w := Weapons.get_w(kind)
+		var slot := 2
+		if int(w["slot"]) != 1:
+			if p.guns[0]["id"] == "":
+				slot = 0
+			elif p.guns[1]["id"] == "":
+				slot = 1
+			else:
+				slot = p.sel if (p.sel == 0 or p.sel == 1) else 0
+		var old: Dictionary = p.guns[slot]
+		if old["id"] != "" and old["id"] != "glock":
+			_server_drop(old["id"], p.position, 1, old["att"].duplicate())
+		var att: Array = (extra as Array).duplicate() if extra is Array else []
+		for a in Weapons.ATTS:
+			if not (a in att) and p.count(a) > 0 and Weapons.fits(a, kind):
+				att.append(a)
+				p.inv[a] = p.count(a) - 1
+		p.guns[slot] = {"id": kind, "att": att}
+		p.mag[kind] = Weapons.stat(kind, att)["mag"]
+		_p_guns(p, slot)
+		_p_inv(p)
+		return 1
+	if Weapons.is_att(kind):
+		for s in [p.sel, 0, 1, 2]:
+			if s < 0:
+				continue
+			var g: Dictionary = p.guns[s]
+			if Weapons.fits(kind, g["id"]) and not (kind in g["att"]):
+				g["att"].append(kind)
+				_p_guns(p, p.sel)
+				return 1
+		if p.free_slots() > 0:
+			p.inv[kind] = p.count(kind) + 1
+			_p_inv(p)
+			return 1
+		return 0
+	match kind:
+		"vest":
+			if p.armor >= 100.0:
+				return 0
+			p.armor = float(extra) if (extra is float or extra is int) and float(extra) > 0.0 else 100.0
+			_p_inv(p)
+			return 1
+		"helmet":
+			if p.helmet:
+				return 0
+			p.helmet = true
+			_p_inv(p)
+			return 1
+		"bag":
+			if p.bag:
+				return 0
+			p.bag = true
+			_p_inv(p)
+			return 1
+	if not Weapons.ITEMS.has(kind):
+		return 0
+	# itens que empilham (bandagem, kit)
+	var st := Weapons.stack_of(kind)
+	var others := {}
+	for k in p.inv:
+		if k != kind:
+			others[k] = p.inv[k]
+	var room := (p.capacity() - Weapons.slots_used(others)) * st - p.count(kind)
+	var take := clampi(room, 0, n)
+	if take <= 0:
+		return 0
+	p.inv[kind] = p.count(kind) + take
+	_p_inv(p)
+	return take
+
+
+func server_pickup(id: int, i: int, sub: int) -> void:
 	if phase == LOBBY or phase == END or i < 0 or i >= items_avail.size() or not items_avail[i]:
 		return
 	var p: Player = players.get(id)
 	if p == null or not p.alive or p.spect:
 		return
-	var kind: String = world.items[i]["kind"]
-	if Weapons.is_gun(kind):
-		var w := Weapons.get_w(kind)
-		_all("on_item", [i, false])
-		if int(w["slot"]) == 1:
-			if p.secondary != "glock":
-				_server_drop(p.secondary, p.position)
-			_all("on_loadout", [id, p.primary, kind, 1 if p.primary == "" else p.slot])
+	var it: Dictionary = world.items[i]
+	if it["kind"] == "box":
+		var list: Array = it.get("list", [])
+		var idxs: Array = range(list.size() - 1, -1, -1) if sub < 0 else [sub]
+		for j in idxs:
+			if j < 0 or j >= list.size():
+				continue
+			var e: Array = list[j]
+			if p.is_bot and not p.wants(e[0]):
+				continue
+			var got := _give(p, e[0], int(e[1]), e[2])
+			if got >= int(e[1]):
+				list.remove_at(j)
+			elif got > 0:
+				e[1] = int(e[1]) - got
+		if list.is_empty():
+			_all("on_item", [i, false])
 		else:
-			if p.primary != "":
-				_server_drop(p.primary, p.position)
-			_all("on_loadout", [id, kind, p.secondary, 0])
+			_all("on_box", [i, list])
 		return
-	match kind:
-		"med":
-			if p.kits >= Player.MAX_KITS:
-				return
-			p.kits += 1
-		"vest":
-			if p.armor >= 100.0:
-				return
-			p.armor = 100.0
-		"helmet":
-			if p.helmet:
-				return
-			p.helmet = true
-		_:
-			return
-	_all("on_item", [i, false])
-	_all("on_inv", [id, p.kits, p.armor, p.helmet])
+	var n: int = it.get("n", 1)
+	var got := _give(p, it["kind"], n, it.get("extra", null))
+	if got <= 0:
+		return
+	if got >= n:
+		_all("on_item", [i, false])
+	else:
+		_all("on_item_n", [i, n - got])
 
 
-func _server_heal(id: int) -> void:
+func _server_heal(id: int, kind: String) -> void:
 	var p: Player = players.get(id)
-	if p == null or not p.alive or p.kits <= 0 or p.hp >= 100.0:
+	if p == null or not p.alive or not Weapons.ITEMS.has(kind) or p.count(kind) <= 0 or p.hp >= 100.0:
 		return
-	p.kits -= 1
-	_all("on_inv", [id, p.kits, p.armor, p.helmet])
-	_all("on_hp", [id, minf(100.0, p.hp + Player.HEAL_AMOUNT), p.armor, 0, false])
+	p.inv[kind] = p.count(kind) - 1
+	_p_inv(p)
+	_all("on_hp", [id, minf(100.0, p.hp + float(Weapons.ITEMS[kind]["heal"])), p.armor, 0, false, 0.0])
 
 
 # ---------------- RPCs: cliente -> servidor ----------------
@@ -1466,8 +1748,8 @@ func st(pos: Vector3, yw: float, pt: float, wid: String, fl: int) -> void:
 	var p: Player = players.get(_sender())
 	if p == null or not p.alive or p.spect:
 		return
-	if wid != p.secondary and wid != p.primary:
-		wid = p.secondary
+	if not p.has_gun(wid):
+		wid = "fist"
 	# só dá pra estar no avião enquanto ele voa
 	if (fl & 3) == 3 and phase != PLANE:
 		fl = fl & ~3
@@ -1482,9 +1764,9 @@ func req_fire(origin: Vector3, ends: PackedVector3Array, hits: Array, wid: Strin
 	var p: Player = players.get(id)
 	if p == null or not p.alive or p.spect or p.air != 0:
 		return
-	if wid != p.secondary and wid != p.primary:
+	if not p.has_gun(wid):
 		return
-	var w := Weapons.get_w(wid)
+	var w := Weapons.stat(wid, p.att_of(wid))
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(last_fire.get(id, -10.0)) < 0.7 / float(w["rate"]):
 		return
@@ -1520,7 +1802,7 @@ func req_fire(origin: Vector3, ends: PackedVector3Array, hits: Array, wid: Strin
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func req_pickup(i: int) -> void:
+func req_pickup(i: int, sub: int) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender()
@@ -1529,30 +1811,107 @@ func req_pickup(i: int) -> void:
 		return
 	if p.position.distance_to(world.items[i]["pos"]) > 4.0:
 		return
-	server_pickup(id, i)
+	server_pickup(id, i, sub)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func req_heal() -> void:
+func req_heal(kind: String) -> void:
 	if multiplayer.is_server():
-		_server_heal(_sender())
+		_server_heal(_sender(), kind)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_drop(kind: String, n: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var p: Player = players.get(_sender())
+	if p == null or not p.alive:
+		return
+	match kind:
+		"vest":
+			if p.armor <= 0.0:
+				return
+			_server_drop("vest", p.position, 1, p.armor)
+			p.armor = 0.0
+		"helmet":
+			if not p.helmet:
+				return
+			_server_drop("helmet", p.position)
+			p.helmet = false
+		_:
+			var c := mini(p.count(kind), maxi(n, 1))
+			if c <= 0:
+				return
+			p.inv[kind] = p.count(kind) - c
+			_server_drop(kind, p.position, c)
+	_p_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_drop_gun(slot: int) -> void:
+	if not multiplayer.is_server() or slot < 0 or slot > 2:
+		return
+	var p: Player = players.get(_sender())
+	if p == null or not p.alive or p.guns[slot]["id"] == "":
+		return
+	var g: Dictionary = p.guns[slot]
+	_server_drop(g["id"], p.position, 1, g["att"].duplicate())
+	p.guns[slot] = {"id": "", "att": []}
+	_p_guns(p, -1 if p.sel == slot else p.sel)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_equip(att: String, slot: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var p: Player = players.get(_sender())
+	if p == null or not p.alive or p.count(att) <= 0:
+		return
+	for s in [slot, 0, 1, 2]:
+		if s < 0 or s > 2:
+			continue
+		var g: Dictionary = p.guns[s]
+		if Weapons.fits(att, g["id"]) and not (att in g["att"]):
+			g["att"].append(att)
+			p.inv[att] = p.count(att) - 1
+			_p_guns(p, p.sel)
+			_p_inv(p)
+			return
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_unequip(att: String, slot: int) -> void:
+	if not multiplayer.is_server() or slot < 0 or slot > 2:
+		return
+	var p: Player = players.get(_sender())
+	if p == null or not p.alive or not (att in p.guns[slot]["att"]):
+		return
+	p.guns[slot]["att"].erase(att)
+	if p.free_slots() > 0:
+		p.inv[att] = p.count(att) + 1
+	else:
+		_server_drop(att, p.position)
+	_p_guns(p, p.sel)
+	_p_inv(p)
 
 
 # ---------------- RPCs: servidor -> todos ----------------
 
 @rpc("authority", "call_remote", "reliable")
-func welcome(list: Array, avail: Array, dyn: Array, ph: Array, zn: Array) -> void:
+func welcome(list: Array, avail: Array, dyn: Array, ns: PackedInt32Array, ph: Array, zn: Array) -> void:
 	for d in dyn:
-		spawn_item(d[0], d[1], d[2])
+		spawn_item(d[0], d[1], d[2], d[3], d[4], d[5], d[6])
+	for i in mini(ns.size(), n_static):
+		world.items[i]["n"] = ns[i]
 	for e in list:
 		add_player(e["id"], e["name"], e["pos"], e["bot"], e["spect"])
 		info[e["id"]]["kills"] = e["kills"]
 		var p: Player = players[e["id"]]
-		p.primary = e["primary"]
-		p.secondary = e["secondary"]
+		on_loadout(e["id"], e["guns"], 0)
 		p.hp = e["hp"]
 		p.armor = e["armor"]
 		p.helmet = e["helmet"]
+		p.bag = e["bag"]
 		p.air = e["air"]
 		p.refresh_gear()
 		if not e["alive"]:
@@ -1562,6 +1921,7 @@ func welcome(list: Array, avail: Array, dyn: Array, ph: Array, zn: Array) -> voi
 	plane_a = ph[2]
 	plane_b = ph[3]
 	plane_t = ph[4]
+	plane_dur = ph[5]
 	phase_set(ph[0], ph[1])
 	if ph[0] == PLANE:
 		plane_t = ph[4]
@@ -1603,14 +1963,17 @@ func remove_player(id: int) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func snap(arr: Array) -> void:
-	for e in arr:
-		var id: int = e[0]
-		if id == local_id:
-			continue
-		var p: Player = players.get(id)
-		if p:
-			p.net_target(e[1], e[2], e[3], e[4], e[5])
+func snap(buf: PackedByteArray) -> void:
+	var o := 0
+	while o + 22 <= buf.size():
+		var id := buf.decode_s32(o)
+		if id != local_id:
+			var p: Player = players.get(id)
+			if p:
+				var pos := Vector3(buf.decode_float(o + 4), buf.decode_float(o + 8), buf.decode_float(o + 12))
+				var wi := buf.decode_u8(o + 20)
+				p.net_target(pos, buf.decode_s16(o + 16) / 10000.0, buf.decode_s16(o + 18) / 20000.0, WIDS[wi] if wi < WIDS.size() else "fist", buf.decode_u8(o + 21))
+		o += 22
 
 
 @rpc("authority", "call_remote", "unreliable")
@@ -1639,13 +2002,15 @@ func phase_set(ph: int, t: float) -> void:
 				hud.center("Nova partida!\nAqui ninguém se machuca. Aquece a mira.", 4.0)
 		PLANE:
 			hud.big_map = false
+			hud.set_bag(false)
 			hud.center("No avião! Escolha onde saltar.\nToque no mapa (canto) pra ver a rota.", 4.0)
 
 
 @rpc("authority", "call_remote", "reliable")
-func plane_set(a: Vector3, b: Vector3) -> void:
+func plane_set(a: Vector3, b: Vector3, dur: float) -> void:
 	plane_a = a
 	plane_b = b
+	plane_dur = dur
 	plane_t = 0.0
 	var d := b - a
 	for id in players:
@@ -1653,8 +2018,8 @@ func plane_set(a: Vector3, b: Vector3) -> void:
 		if p.alive and not p.spect:
 			p.board()
 			if id == local_id:
-				p.yaw = atan2(-d.x, -d.z)
-				p.pitch = -0.3
+				cam_yaw_v = atan2(-d.x, -d.z)
+				cam_pitch_v = -0.3
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1670,10 +2035,11 @@ func zone_set(stage: int, c0: Vector2, r0: float, c1: Vector2, r1: float, wait: 
 	z_t = t
 	if hud and stage > 0:
 		hud.center("A zona vai fechar! Veja o círculo branco no mapa.", 3.0)
+		sfx("zone")
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool) -> void:
+func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: float) -> void:
 	var v: Player = players.get(vid)
 	var old := 100.0
 	if v:
@@ -1681,23 +2047,33 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool) -> void:
 		v.hp = hp
 		v.armor = armor
 		v.refresh_gear()
-	if hud and hp < old:
+	if hud == null:
+		return
+	if hp > old and vid == local_id:
+		sfx("heal_done")
+	if hp < old:
 		if aid == local_id and vid != local_id:
 			hud.hit(head, false)
-			_beep("hit", -8.0)
+			sfx("headshot" if head else "hit", -6.0)
+			if v:
+				hud.dmg_number(v.position, amount, head, false)
 		if vid == local_id:
+			sfx("hurt", -4.0)
 			var a: Player = players.get(aid)
 			if a and v:
 				var d := a.position - v.position
 				var wy := atan2(-d.x, -d.z)
-				hud.hurt(-angle_difference(cam_yaw.rotation.y, wy))
+				hud.hurt(-angle_difference(cam_yaw_v, wy))
 			else:
 				hud.hurt()
+				if aid == 0:
+					sfx("zone", -8.0)
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_died(vid: int, aid: int, wid: String, head: bool, rank: int) -> void:
+func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: float) -> void:
 	var v: Player = players.get(vid)
+	var vpos := v.position if v else Vector3.ZERO
 	if v:
 		v.die()
 	if info.has(aid) and aid != vid:
@@ -1714,12 +2090,14 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int) -> void:
 		hud.feed("%s  [%s%s]  %s" % [kn, Weapons.get_w(wid)["name"], " · cabeça" if head else "", vn], col)
 	if aid == local_id and vid != local_id:
 		hud.hit(head, true)
-		_beep("kill", -4.0)
+		sfx("kill", -2.0)
+		hud.dmg_number(vpos, amount, head, true)
 		hud.center("Você eliminou %s" % vn, 2.0)
 	if vid == local_id:
 		my_rank = rank
 		hud.hurt()
 		hud.big_map = false
+		hud.set_bag(false)
 		spec_id = aid if players.has(aid) and aid != vid else 0
 		if spec_id == 0:
 			_spec_next()
@@ -1743,12 +2121,13 @@ func on_winner(id: int) -> void:
 		return
 	hud.can_retry = training
 	hud.big_map = false
+	hud.set_bag(false)
 	var me = info.get(local_id)
 	var k: int = me["kills"] if me else 0
 	var dmg: int = int(me["dmg"]) if me else 0
 	if id == local_id:
 		hud.center("VITÓRIA!\nVocê é o último de pé!\nAbates: %d    Dano: %d" % [k, dmg], 999.0)
-		_beep("kill", 0.0)
+		sfx("kill")
 	else:
 		var wn: String = info[id]["name"] if info.has(id) else "Ninguém"
 		var lp: Player = players.get(local_id)
@@ -1776,6 +2155,7 @@ func match_reset() -> void:
 	items_avail.resize(n_static)
 	item_nodes.resize(mini(item_nodes.size(), n_static))
 	for i in n_static:
+		world.items[i]["n"] = Weapons.default_count(world.items[i]["kind"])
 		on_item(i, true)
 	for id in info:
 		info[id]["kills"] = 0
@@ -1791,46 +2171,67 @@ func on_respawn(id: int, pos: Vector3) -> void:
 	var p: Player = players.get(id)
 	if p:
 		p.reset_state(pos)
+	if id == local_id:
+		_seen_guns = ["", "", "glock"]
+		_seen_inv = {}
+		_seen_gear = [0.0, false, false]
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_loadout(id: int, prim: String, sec: String, sel: int) -> void:
+func on_loadout(id: int, g: Array, sel: int) -> void:
 	var p: Player = players.get(id)
 	if p == null:
 		return
-	var changed := ""
-	if prim != p.primary and prim != "":
-		changed = prim
-	elif sec != p.secondary:
-		changed = sec
-	p.primary = prim
-	p.secondary = sec
-	if changed != "":
-		p.mag[changed] = Weapons.get_w(changed)["mag"]
+	var new_ids := []
+	for i in 3:
+		var gid: String = g[i][0]
+		if gid != "" and gid != p.guns[i]["id"]:
+			new_ids.append(gid)
+		p.guns[i] = {"id": gid, "att": (g[i][1] as Array).duplicate()}
+	for gid in new_ids:
+		p.mag[gid] = Weapons.stat(gid, p.att_of(gid))["mag"]
 	if id == local_id or p.is_bot:
-		p.slot = sel if prim != "" else 1
+		if sel >= -1 and sel <= 2:
+			p.sel = sel if (sel < 0 or p.guns[sel]["id"] != "") else -1
+		if p.sel >= 0 and p.guns[p.sel]["id"] == "":
+			p.sel = -1
 		p.reload_t = 0.0
 		p.scoped = false
-		p.update_gun()
-	if id == local_id and hud and changed != "":
-		hud.center(Weapons.item_name(changed), 1.2)
+	p.update_gun()
+	if id == local_id and hud:
+		# compara com o que eu já tinha visto (no treino o servidor muda o jogador antes)
+		for i in 3:
+			var gid: String = g[i][0]
+			if gid != "" and gid != _seen_guns[i]:
+				hud.center(Weapons.item_name(gid), 1.2)
+			_seen_guns[i] = gid
+		sfx("equip", -4.0)
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_inv(id: int, kits: int, armor: float, helmet: bool) -> void:
+func on_inv(id: int, inv: Dictionary, armor: float, helmet: bool, bag: bool) -> void:
 	var p: Player = players.get(id)
 	if p == null:
 		return
 	if id == local_id and hud:
-		if kits > p.kits:
-			hud.center("+ Kit médico", 1.0)
-		elif armor > p.armor:
+		var gained: bool = (armor > float(_seen_gear[0]) + 1.0) or (helmet and not _seen_gear[1]) or (bag and not _seen_gear[2])
+		for k in inv:
+			if int(inv[k]) > int(_seen_inv.get(k, 0)):
+				gained = true
+		if gained:
+			sfx("pickup", -3.0)
+		if armor >= 99.0 and float(_seen_gear[0]) < 99.0:
 			hud.center("Colete equipado", 1.2)
-		elif helmet and not p.helmet:
+		elif helmet and not _seen_gear[1]:
 			hud.center("Capacete equipado", 1.2)
-	p.kits = kits
+		elif bag and not _seen_gear[2]:
+			hud.center("Mochila grande: 16 vagas", 1.5)
+		_seen_inv = inv.duplicate()
+		_seen_gear = [armor, helmet, bag]
+	p.inv = inv
 	p.armor = armor
 	p.helmet = helmet
+	p.bag = bag
 	p.refresh_gear()
 
 
@@ -1844,15 +2245,28 @@ func on_item(i: int, avail: bool) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func spawn_item(i: int, pos: Vector3, kind: String) -> void:
+func on_item_n(i: int, n: int) -> void:
+	if i >= 0 and i < world.items.size():
+		world.items[i]["n"] = n
+
+
+@rpc("authority", "call_remote", "reliable")
+func on_box(i: int, list: Array) -> void:
+	if i >= 0 and i < world.items.size():
+		world.items[i]["list"] = list
+
+
+@rpc("authority", "call_remote", "reliable")
+func spawn_item(i: int, pos: Vector3, kind: String, n: int, extra, list: Array, nm: String) -> void:
+	var it := {"pos": pos, "kind": kind, "n": n, "extra": extra, "list": list.duplicate(true), "name": nm, "door_out": null, "door_in": null, "up": false}
 	while world.items.size() < i:
-		world.items.append({"pos": Vector3(0, -500, 0), "kind": "med", "door_out": null, "door_in": null})
+		world.items.append({"pos": Vector3(0, -500, 0), "kind": "med", "n": 0, "door_out": null, "door_in": null})
 		items_avail.append(false)
 	if i < world.items.size():
-		world.items[i] = {"pos": pos, "kind": kind, "door_out": null, "door_in": null}
+		world.items[i] = it
 		items_avail[i] = true
 	else:
-		world.items.append({"pos": pos, "kind": kind, "door_out": null, "door_in": null})
+		world.items.append(it)
 		items_avail.append(true)
 	if not dedicated:
 		_make_item_node(i)
