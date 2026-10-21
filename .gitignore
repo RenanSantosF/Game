@@ -1,0 +1,4 @@
+.godot/
+build/
+server/Godot_*
+*.tmp

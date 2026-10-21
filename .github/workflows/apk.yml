@@ -1,0 +1,65 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixar Godot e os modelos de exportação
+        run: |
+          cd "$RUNNER_TEMP"
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mv templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Configurar Android SDK, Java e chave
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-${GODOT_VERSION}.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_SDK_ROOT}"
+          export/android/java_sdk_path = "${JAVA_HOME_17_X64}"
+          export/android/debug_keystore = "${GITHUB_WORKSPACE}/android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+          cat "$HOME/.config/godot/editor_settings-${GODOT_VERSION}.tres"
+
+      - name: Exportar APK
+        run: |
+          mkdir -p build
+          godot --headless --import || true
+          godot --headless --export-debug "Android" build/confronto.apk
+          ls -la build
+
+      - name: Publicar na página de Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima --yes --cleanup-tag || true
+          gh release create ultima build/confronto.apk \
+            --title "Última versão (build ${{ github.run_number }})" \
+            --notes "APK gerado automaticamente a partir do commit ${{ github.sha }}."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: confronto-apk
+          path: build/confronto.apk
