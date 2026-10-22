@@ -57,9 +57,13 @@ var regen_t := 0.0
 var vehicles: Array = []
 var _veh_send_t := 0.0
 var _shake := 0.0
+var grenades: Array = []
 var _runover_t := {}
 var _snap_q: Array = []
 var menu_stage: Node3D
+var join_box: PanelContainer
+var menu_cubes: Array = []
+var menu_t := 0.0
 var load_bar: ProgressBar
 var load_lbl: Label
 const LOAD_TIPS := ["Dica: arraste pra cima enquanto atira pra subir a mira pra cabeça.",
@@ -183,11 +187,12 @@ func _ready() -> void:
 
 # ---------------- menu ----------------
 
+# Menu no estilo dos battle royale de celular: boneco no meio de um palco, menu à esquerda,
+# perfil em cima e o botão INICIAR grande embaixo à direita
 func _build_menu() -> void:
 	_build_menu_stage()
 	menu = CanvasLayer.new()
 	add_child(menu)
-	# área livre pra girar o boneco arrastando
 	var drag := Control.new()
 	drag.set_anchors_preset(Control.PRESET_FULL_RECT)
 	drag.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -199,103 +204,198 @@ func _build_menu() -> void:
 			menu_rot_v = ev.relative.x * 0.012
 			menu_hold = 1.5)
 	menu.add_child(drag)
-	# faixa escura em cima e embaixo (cinema)
-	for top in [true, false]:
-		var band := ColorRect.new()
-		band.color = Color(0, 0, 0, 0.35)
-		band.set_anchors_preset(Control.PRESET_TOP_WIDE if top else Control.PRESET_BOTTOM_WIDE)
-		band.custom_minimum_size = Vector2(0, 74)
-		band.offset_bottom = 74 if top else 0
-		band.offset_top = 0 if top else -74
-		band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		menu.add_child(band)
-	# título
-	var title := _menu_label("CONFRONTO", 46)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title.position = Vector2(26, 10)
-	title.add_theme_constant_override("outline_size", 10)
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	title.add_theme_color_override("font_color", Color(1, 0.86, 0.45))
-	menu.add_child(title)
-	var sub := _menu_label("BATTLE ROYALE · 50 JOGADORES · ÚLTIMO DE PÉ VENCE", 15)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	sub.position = Vector2(30, 70)
-	sub.modulate = Color(1, 1, 1, 0.8)
-	menu.add_child(sub)
-	# apelido embaixo do boneco
+	# perfil (canto superior esquerdo)
+	var prof := PanelContainer.new()
+	prof.add_theme_stylebox_override("panel", _menu_box(Color(0.02, 0.05, 0.12, 0.7), 8))
+	prof.position = Vector2(14, 12)
+	menu.add_child(prof)
+	var ph := HBoxContainer.new()
+	ph.add_theme_constant_override("separation", 10)
+	prof.add_child(ph)
+	var av := Control.new()
+	av.custom_minimum_size = Vector2(54, 54)
+	av.draw.connect(func():
+		av.draw_rect(Rect2(Vector2.ZERO, av.size), Color(1, 0.72, 0.2))
+		Hud.glyph(av, "sprint", av.size / 2.0, 20.0, Color(0.1, 0.08, 0.05)))
+	ph.add_child(av)
+	var pv := VBoxContainer.new()
+	pv.add_theme_constant_override("separation", 2)
+	ph.add_child(pv)
 	nick_edit = _menu_edit("Seu apelido")
-	nick_edit.custom_minimum_size = Vector2(300, 50)
-	nick_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nick_edit.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	nick_edit.position = Vector2(-310, -64)
-	nick_edit.anchor_left = 0.36
-	nick_edit.anchor_right = 0.36
-	nick_edit.offset_left = -150
-	nick_edit.offset_right = 150
-	nick_edit.offset_top = -64
-	nick_edit.offset_bottom = -14
-	menu.add_child(nick_edit)
+	nick_edit.custom_minimum_size = Vector2(220, 34)
+	nick_edit.add_theme_font_size_override("font_size", 18)
+	nick_edit.add_theme_stylebox_override("normal", _menu_box(Color(1, 1, 1, 0.06), 4))
+	nick_edit.add_theme_stylebox_override("focus", _menu_box(Color(1, 1, 1, 0.12), 4))
+	pv.add_child(nick_edit)
 	nick_edit.text = Cfg.get_v("nick")
 	if nick_edit.text == "":
 		nick_edit.text = "Jogador%d" % rng.randi_range(100, 999)
-	var hint := _menu_label("arraste pra girar", 13)
-	hint.modulate = Color(1, 1, 1, 0.55)
-	hint.anchor_left = 0.36
-	hint.anchor_right = 0.36
-	hint.anchor_top = 1.0
-	hint.anchor_bottom = 1.0
-	hint.offset_left = -100
-	hint.offset_right = 100
-	hint.offset_top = -92
-	hint.offset_bottom = -70
-	menu.add_child(hint)
-	# painel da direita
-	var panel := VBoxContainer.new()
-	panel.add_theme_constant_override("separation", 10)
-	panel.anchor_left = 1.0
-	panel.anchor_right = 1.0
-	panel.anchor_top = 0.0
-	panel.anchor_bottom = 1.0
-	panel.offset_left = -440
-	panel.offset_right = -26
-	panel.offset_top = 96
-	panel.offset_bottom = -20
-	panel.alignment = BoxContainer.ALIGNMENT_END
-	menu.add_child(panel)
-	var play := _menu_btn("JOGAR", func(): start_host(false))
-	play.custom_minimum_size = Vector2(414, 92)
-	play.add_theme_font_size_override("font_size", 38)
-	_style_btn(play, Color(0.95, 0.55, 0.1), Color(1, 0.7, 0.25))
-	var pl := _menu_label("treino contra 49 bots", 14)
-	pl.modulate = Color(1, 1, 1, 0.7)
-	panel.add_child(_menu_btn("CRIAR SALA NO WI-FI", func(): start_host(true)))
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 8)
-	ip_edit = _menu_edit("IP do servidor")
-	ip_edit.custom_minimum_size = Vector2(270, 54)
-	ip_edit.text = Cfg.get_v("ip")
-	hb.add_child(ip_edit)
-	var jb := _menu_btn("ENTRAR", func(): start_join(ip_edit.text.strip_edges()))
-	jb.custom_minimum_size = Vector2(136, 54)
-	hb.add_child(jb)
-	panel.add_child(hb)
-	panel.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
+	var lv := _menu_label("toque no nome pra mudar", 12)
+	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	lv.modulate = Color(1, 1, 1, 0.6)
+	pv.add_child(lv)
+	# logo (canto superior direito)
+	var title := _menu_label("CONFRONTO", 40)
+	title.add_theme_constant_override("outline_size", 10)
+	title.add_theme_color_override("font_outline_color", Color(0.02, 0.05, 0.15, 0.8))
+	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	title.anchor_left = 1.0
+	title.anchor_right = 1.0
+	title.offset_left = -420
+	title.offset_right = -80
+	title.offset_top = 10
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	menu.add_child(title)
+	var gear := _menu_icon_btn("gear", func(): open_settings())
+	gear.anchor_left = 1.0
+	gear.anchor_right = 1.0
+	gear.offset_left = -66
+	gear.offset_right = -14
+	gear.offset_top = 14
+	gear.offset_bottom = 66
+	menu.add_child(gear)
+	# menu da esquerda
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 8)
+	left.position = Vector2(14, 104)
+	menu.add_child(left)
+	left.add_child(_menu_side("play", "TREINO", func(): start_host(false)))
+	left.add_child(_menu_side("home", "SALA NO WI-FI", func(): start_host(true)))
+	left.add_child(_menu_side("next", "ENTRAR NA SALA", func(): join_box.visible = not join_box.visible))
+	left.add_child(_menu_side("hand", "CONTROLES", func():
+		open_settings()
+		settings.edit_buttons.emit()))
+	left.add_child(_menu_side("gear", "CONFIGURAÇÕES", func(): open_settings()))
 	var rep := _last_log()
 	if rep != "" and _crashed_loading(rep) and int(Cfg.get_v("quality")) > 0:
 		Cfg.set_v("quality", 0)
 		flash_msg = "Da última vez o jogo fechou ao carregar o mapa. Mudei os gráficos para BAIXA."
 	if rep != "":
-		var rb := _menu_btn("RELATÓRIO (se fechou sozinho)", func(): _show_report(rep))
-		rb.add_theme_font_size_override("font_size", 15)
-		rb.custom_minimum_size = Vector2(414, 40)
-		panel.add_child(rb)
-	status_lbl = _menu_label(flash_msg, 16)
+		left.add_child(_menu_side("reset", "RELATÓRIO", func(): _show_report(rep)))
+	# caixinha de IP (abre pelo "ENTRAR NA SALA")
+	join_box = PanelContainer.new()
+	join_box.add_theme_stylebox_override("panel", _menu_box(Color(0.02, 0.05, 0.12, 0.85), 8))
+	join_box.position = Vector2(250, 214)
+	join_box.visible = false
+	menu.add_child(join_box)
+	var jh := HBoxContainer.new()
+	jh.add_theme_constant_override("separation", 8)
+	join_box.add_child(jh)
+	ip_edit = _menu_edit("IP do servidor")
+	ip_edit.custom_minimum_size = Vector2(240, 48)
+	ip_edit.text = Cfg.get_v("ip")
+	jh.add_child(ip_edit)
+	var jb := _menu_btn("ENTRAR", func(): start_join(ip_edit.text.strip_edges()))
+	jb.custom_minimum_size = Vector2(120, 48)
+	jh.add_child(jb)
+	# modo + INICIAR (canto inferior direito)
+	var mode := PanelContainer.new()
+	mode.add_theme_stylebox_override("panel", _menu_box(Color(0.02, 0.06, 0.16, 0.8), 8))
+	mode.anchor_left = 1.0
+	mode.anchor_right = 1.0
+	mode.anchor_top = 1.0
+	mode.anchor_bottom = 1.0
+	mode.offset_left = -364
+	mode.offset_right = -14
+	mode.offset_top = -190
+	mode.offset_bottom = -120
+	menu.add_child(mode)
+	var mv := VBoxContainer.new()
+	mode.add_child(mv)
+	var m1 := _menu_label("BATTLE ROYALE", 22)
+	m1.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	m1.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	mv.add_child(m1)
+	var m2 := _menu_label("Treino · você + 49 bots · último de pé vence", 14)
+	m2.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	m2.modulate = Color(1, 1, 1, 0.75)
+	mv.add_child(m2)
+	var play := _menu_btn("INICIAR", func(): start_host(false))
+	play.custom_minimum_size = Vector2(350, 96)
+	play.add_theme_font_size_override("font_size", 42)
+	_style_btn(play, Color(1.0, 0.78, 0.1), Color(1.0, 0.9, 0.4))
+	play.anchor_left = 1.0
+	play.anchor_right = 1.0
+	play.anchor_top = 1.0
+	play.anchor_bottom = 1.0
+	play.offset_left = -364
+	play.offset_right = -14
+	play.offset_top = -112
+	play.offset_bottom = -16
+	menu.add_child(play)
+	status_lbl = _menu_label(flash_msg, 15)
 	status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	status_lbl.custom_minimum_size = Vector2(414, 36)
-	panel.add_child(status_lbl)
-	panel.add_child(play)
-	panel.add_child(pl)
+	status_lbl.anchor_top = 1.0
+	status_lbl.anchor_bottom = 1.0
+	status_lbl.offset_left = 14
+	status_lbl.offset_right = 520
+	status_lbl.offset_top = -70
+	status_lbl.offset_bottom = -16
+	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	menu.add_child(status_lbl)
+	var hint := _menu_label("arraste pra girar o personagem", 13)
+	hint.modulate = Color(1, 1, 1, 0.6)
+	hint.anchor_left = 0.5
+	hint.anchor_right = 0.5
+	hint.anchor_top = 1.0
+	hint.anchor_bottom = 1.0
+	hint.offset_left = -150
+	hint.offset_right = 150
+	hint.offset_top = -34
+	hint.offset_bottom = -12
+	menu.add_child(hint)
 	flash_msg = ""
+
+
+func _menu_box(c: Color, rad: int) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(rad)
+	sb.set_content_margin_all(8)
+	sb.border_color = Color(0.4, 0.7, 1.0, 0.35)
+	sb.set_border_width_all(1)
+	return sb
+
+
+func _menu_side(icon: String, t: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = "        " + t
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(220, 52)
+	b.add_theme_font_size_override("font_size", 19)
+	b.add_theme_color_override("font_color", Color(1, 0.88, 0.5))
+	b.focus_mode = Control.FOCUS_NONE
+	var n := _menu_box(Color(0.02, 0.05, 0.12, 0.72), 6)
+	n.border_width_left = 4
+	n.border_color = Color(1, 0.72, 0.2, 0.9)
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("hover", n)
+	var pr := _menu_box(Color(1, 0.72, 0.2, 0.35), 6)
+	b.add_theme_stylebox_override("pressed", pr)
+	var g := Control.new()
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	g.position = Vector2(10, 10)
+	g.size = Vector2(32, 32)
+	g.draw.connect(func(): Hud.glyph(g, icon, Vector2(16, 16), 11.0, Color(1, 0.85, 0.45)))
+	b.add_child(g)
+	b.pressed.connect(cb)
+	return b
+
+
+func _menu_icon_btn(icon: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	var n := _menu_box(Color(0.02, 0.05, 0.12, 0.72), 26)
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("hover", n)
+	b.add_theme_stylebox_override("pressed", _menu_box(Color(1, 0.72, 0.2, 0.35), 26))
+	var g := Control.new()
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	g.set_anchors_preset(Control.PRESET_FULL_RECT)
+	g.draw.connect(func(): Hud.glyph(g, icon, g.size / 2.0, 13.0, Color.WHITE))
+	b.add_child(g)
+	b.pressed.connect(cb)
+	return b
 
 
 func _style_btn(b: Button, c: Color, hc: Color) -> void:
@@ -313,106 +413,116 @@ func _style_btn(b: Button, c: Color, hc: Color) -> void:
 	b.add_theme_color_override("font_hover_color", Color(0.12, 0.08, 0.02))
 
 
-# Cenário 3D do menu: pátio militar no fim de tarde, com o boneco segurando um fuzil
+# Cenário do menu: palco de piso quadriculado, céu claro e cubos flutuando
 func _build_menu_stage() -> void:
 	menu_stage = Node3D.new()
 	add_child(menu_stage)
 	var env := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.32, 0.42, 0.62)
-	sm.sky_horizon_color = Color(0.95, 0.7, 0.45)
-	sm.ground_horizon_color = Color(0.6, 0.5, 0.4)
-	sm.ground_bottom_color = Color(0.3, 0.28, 0.25)
+	sm.sky_top_color = Color(0.18, 0.45, 0.9)
+	sm.sky_horizon_color = Color(0.7, 0.88, 1.0)
+	sm.ground_horizon_color = Color(0.55, 0.75, 0.95)
+	sm.ground_bottom_color = Color(0.2, 0.35, 0.6)
+	sm.sky_curve = 0.12
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.62, 0.6, 0.65)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_color = Color(0.7, 0.8, 0.95)
+	env.ambient_light_energy = 0.75
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.85, 0.7, 0.55)
-	env.fog_density = 0.012
 	var we := WorldEnvironment.new()
 	we.environment = env
 	menu_stage.add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-24, -50, 0)
-	sun.light_color = Color(1.0, 0.85, 0.65)
-	sun.light_energy = 1.25
+	sun.rotation_degrees = Vector3(-35, -25, 0)
+	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.light_energy = 1.1
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 25.0
+	sun.directional_shadow_max_distance = 20.0
 	menu_stage.add_child(sun)
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-10, 160, 0)
+	rim.light_color = Color(0.5, 0.8, 1.0)
+	rim.light_energy = 0.8
+	menu_stage.add_child(rim)
+	# piso de placas com bordas acesas
 	var m := MB.new()
-	m.tex(U.GRASS, 0.3)
-	m.quad(Vector3(-60, 0, -60), Vector3(60, 0, -60), Vector3(60, 0, 60), Vector3(-60, 0, 60), Color(0.9, 0.85, 0.7), Vector3.UP)
-	m.tex(U.CONCRETE, 0.4)
-	m.box(Transform3D(Basis(), Vector3(0, 0.05, 0)), Vector3(5.5, 0.1, 5.5), Color(0.85, 0.83, 0.8))
-	m.tex(U.WOOD, 0.6)
-	for c in [[Vector3(-2.3, 0.45, -1.8), 0.3], [Vector3(-2.4, 1.33, -1.75), 0.1], [Vector3(-1.4, 0.45, -2.2), -0.2]]:
-		m.box(Transform3D(Basis(Vector3.UP, c[1]), c[0]), Vector3(0.9, 0.9, 0.9), Color(0.85, 0.75, 0.6))
-	m.tex(U.FABRIC, 1.5)
-	for i in 5:
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.38, 0.17, 0.22)), Vector3(1.4 + i * 0.5, 0.17, -2.0)), 6, 3, Color(0.7, 0.62, 0.45))
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.38, 0.17, 0.22)), Vector3(1.65 + i * 0.5, 0.48, -2.0)), 6, 3, Color(0.66, 0.58, 0.42))
-	var ground := MeshInstance3D.new()
-	ground.mesh = m.commit()
-	ground.material_override = U.wmat()
-	menu_stage.add_child(ground)
-	var car := MeshInstance3D.new()
-	car.mesh = Build.car_mesh(1, Color(0.3, 0.33, 0.25), false)
-	car.material_override = U.wmat()
-	car.position = Vector3(4.2, 0, -4.5)
-	car.rotation.y = 0.9
-	menu_stage.add_child(car)
-	var tw := World.new()
-	var tm: Dictionary = tw._tree_meshes()
-	tw.free()
-	for t in [[Vector3(-7, 0, -9), "oak", 1.1], [Vector3(6, 0, -12), "pine", 1.0], [Vector3(-12, 0, -6), "tall", 1.0], [Vector3(10, 0, -7), "oak", 0.9], [Vector3(-3, 0, -15), "oak", 1.2]]:
-		var tr := MeshInstance3D.new()
-		tr.mesh = tm[t[1]]
-		tr.material_override = U.wmat()
-		tr.position = t[0]
-		tr.scale = Vector3.ONE * float(t[2])
-		menu_stage.add_child(tr)
+	m.tex(U.PLAIN, 1.0)
+	var r := RandomNumberGenerator.new()
+	r.seed = 7
+	for gx in range(-6, 7):
+		for gz in range(-8, 4):
+			var h := 0.0 if (absi(gx) <= 1 and gz >= -1 and gz <= 1) else r.randf_range(-0.25, 0.05)
+			var c := Color(0.07, 0.17, 0.32).lerp(Color(0.12, 0.28, 0.48), r.randf())
+			m.box(Transform3D(Basis(), Vector3(gx * 1.6, h - 0.2, gz * 1.6)), Vector3(1.52, 0.4, 1.52), c)
+			m.box(Transform3D(Basis(), Vector3(gx * 1.6, h + 0.005, gz * 1.6 - 0.76)), Vector3(1.52, 0.01, 0.04), Color(0.35, 0.8, 1.0))
+			m.box(Transform3D(Basis(), Vector3(gx * 1.6 - 0.76, h + 0.005, gz * 1.6)), Vector3(0.04, 0.01, 1.52), Color(0.35, 0.8, 1.0))
+	# disco de destaque embaixo do boneco
+	m.cyl(Transform3D(Basis(), Vector3(0, 0.0, 0)), 1.1, 1.1, 0.03, 32, Color(1.0, 0.75, 0.25))
+	m.cyl(Transform3D(Basis(), Vector3(0, 0.02, 0)), 0.95, 0.95, 0.03, 32, Color(0.1, 0.2, 0.35))
+	var floor_mi := MeshInstance3D.new()
+	floor_mi.mesh = m.commit()
+	floor_mi.material_override = U.wmat()
+	menu_stage.add_child(floor_mi)
+	# cubos flutuando (vidro colorido e caixas)
+	menu_cubes.clear()
+	var cubes := [[Vector3(-5.5, 2.8, -6), 2.6, Color(0.2, 0.9, 0.8, 0.35)], [Vector3(6.0, 3.6, -7), 3.2, Color(1.0, 0.45, 0.8, 0.35)],
+		[Vector3(-3.2, 1.2, -3.5), 0.7, Color(0.85, 0.65, 0.4, 1.0)], [Vector3(3.6, 0.9, -2.8), 0.5, Color(0.6, 0.4, 0.95, 0.8)],
+		[Vector3(-8.0, 5.5, -10), 3.8, Color(0.4, 0.75, 1.0, 0.3)], [Vector3(2.4, 4.2, -5), 0.6, Color(0.85, 0.65, 0.4, 1.0)]]
+	for cb in cubes:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3.ONE * float(cb[1])
+		mi.mesh = bm
+		var mat := StandardMaterial3D.new()
+		var col: Color = cb[2]
+		mat.albedo_color = col
+		if col.a < 1.0:
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.emission_enabled = true
+			mat.emission = Color(col.r, col.g, col.b) * 0.35
+		mi.material_override = mat
+		mi.position = cb[0]
+		mi.rotation = Vector3(r.randf() * TAU, r.randf() * TAU, 0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		menu_stage.add_child(mi)
+		menu_cubes.append([mi, cb[0], r.randf() * TAU])
+	# boneco
 	menu_sol = Soldier.new()
 	menu_stage.add_child(menu_sol)
-	var r := RandomNumberGenerator.new()
-	r.seed = hash(Cfg.get_v("nick"))
-	menu_sol.setup(Player.SKINS[r.randi() % Player.SKINS.size()], Player.SHIRTS[r.randi() % Player.SHIRTS.size()], Player.PANTS[r.randi() % Player.PANTS.size()], Player.BOOTS[0], Player.HAIRS[r.randi() % Player.HAIRS.size()])
-	var vest := MeshInstance3D.new()
-	vest.mesh = Player._gear("vest2")
-	vest.material_override = U.wmat()
-	menu_sol.attach("Spine2", vest)
-	menu_aim = Node3D.new()
-	menu_aim.position = Vector3(0, 1.36, 0)
-	menu_aim.rotation.x = -0.35
-	menu_sol.add_child(menu_aim)
-	menu_gun = Weapons.build_model("ak47")
-	menu_gun.position = Vector3(0.13, -0.02, -0.36)
-	menu_aim.add_child(menu_gun)
+	var rr := RandomNumberGenerator.new()
+	rr.seed = hash(Cfg.get_v("nick"))
+	menu_sol.setup(Player.SKINS[rr.randi() % Player.SKINS.size()], Player.SHIRTS[rr.randi() % Player.SHIRTS.size()], Player.PANTS[rr.randi() % Player.PANTS.size()], Player.BOOTS[0], Player.HAIRS[rr.randi() % Player.HAIRS.size()])
 	var cam := Camera3D.new()
-	cam.fov = 42.0
-	cam.position = Vector3(1.15, 1.25, 4.6)
+	cam.fov = 38.0
+	cam.position = Vector3(0, 1.15, 5.2)
 	menu_stage.add_child(cam)
-	cam.look_at(Vector3(1.0, 0.95, 0), Vector3.UP)
+	cam.look_at(Vector3(0, 0.95, 0), Vector3.UP)
 	cam.current = true
-	menu_sol.rotation.y = 0.5
+	menu_sol.rotation.y = PI
 
 
 func _menu_tick(delta: float) -> void:
 	if menu_stage == null or menu_sol == null:
 		return
+	menu_t += delta
+	# solta o dedo: volta devagar a ficar de frente
 	menu_hold -= delta
 	if menu_hold <= 0.0:
-		menu_rot_v = lerpf(menu_rot_v, 0.25 * delta, minf(1.0, 2.0 * delta))
-	menu_sol.rotation.y += menu_rot_v
-	if menu_hold > 0.0:
-		menu_rot_v = lerpf(menu_rot_v, 0.0, minf(1.0, 8.0 * delta))
-	var grip := menu_aim.global_transform * (menu_gun.position + Vector3(0, -0.05, 0.03))
-	var fore := menu_aim.global_transform * (menu_gun.position + Vector3(-0.02, -0.03, -0.26))
-	menu_sol.tick(delta, false, 0.0, 0.0, [fore, grip])
+		menu_sol.rotation.y = lerp_angle(menu_sol.rotation.y, PI, minf(1.0, 1.5 * delta))
+	else:
+		menu_sol.rotation.y += menu_rot_v
+		menu_rot_v = lerpf(menu_rot_v, 0.0, minf(1.0, 6.0 * delta))
+	for c in menu_cubes:
+		var mi: MeshInstance3D = c[0]
+		mi.position = (c[1] as Vector3) + Vector3(0, sin(menu_t * 0.6 + float(c[2])) * 0.25, 0)
+		mi.rotation.y += delta * 0.15
+	# parado à vontade: braços soltos, respirando
+	var br := sin(menu_t * 1.8) * 0.008
+	var g := menu_sol.global_transform
+	menu_sol.tick(delta, false, 0.0, 0.0, [g * Vector3(-0.27, 0.86 + br, 0.03), g * Vector3(0.27, 0.86 + br, 0.03)])
 
 
 # fim do arquivo de log da execução anterior (pra descobrir onde o jogo fechou)
@@ -570,7 +680,7 @@ func _on_setting(key: String) -> void:
 			sfxn.volume = float(Cfg.get_v("volume"))
 		"fps":
 			Engine.max_fps = int(Cfg.get_v("fps"))
-		"quality":
+		"quality", "shadows", "tex_detail", "grass", "view":
 			if in_game and not dedicated:
 				_apply_quality()
 		"show_fps":
@@ -882,17 +992,23 @@ func on_explode(i: int) -> void:
 	v.explode_visual()
 	if dedicated:
 		return
-	sfx_at("explosion", v.global_position, false, 0.0, 220.0)
+	_explosion_fx(v.global_position + Vector3(0, 0.8, 0), 1.3)
+
+
+func _explosion_fx(at: Vector3, size: float) -> void:
+	if dedicated:
+		return
+	sfx_at("explosion", at, false, 0.0, 220.0)
 	var fl := OmniLight3D.new()
 	fl.light_color = Color(1.0, 0.55, 0.2)
 	fl.light_energy = 6.0
-	fl.omni_range = 14.0
+	fl.omni_range = 12.0 * size
 	add_child(fl)
-	fl.global_position = v.global_position + Vector3(0, 1.5, 0)
+	fl.global_position = at + Vector3(0, 0.8, 0)
 	var tw := create_tween()
 	tw.tween_property(fl, "light_energy", 0.0, 0.8)
 	tw.tween_callback(fl.queue_free)
-	for k in 14:
+	for k in 12:
 		var mi := MeshInstance3D.new()
 		var sm := SphereMesh.new()
 		sm.radius = 0.5
@@ -900,18 +1016,105 @@ func on_explode(i: int) -> void:
 		sm.radial_segments = 8
 		sm.rings = 4
 		mi.mesh = sm
-		var fire := k < 7
+		var fire := k < 6
 		mi.material_override = U.mat(Color(1.0, 0.5, 0.15) if fire else Color(0.15, 0.14, 0.13), fire)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
-		mi.global_position = v.global_position + Vector3(randf_range(-1, 1), 1.0 + randf() * 0.5, randf_range(-1.5, 1.5))
+		mi.global_position = at + Vector3(randf_range(-0.8, 0.8), randf() * 0.5, randf_range(-0.8, 0.8)) * size
 		var t2 := create_tween()
-		var dur := randf_range(0.5, 0.9) if fire else randf_range(1.8, 3.0)
-		t2.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-2, 2), randf_range(2, 6), randf_range(-2, 2)), dur)
-		t2.parallel().tween_property(mi, "scale", Vector3.ONE * (randf_range(2.0, 3.5) if fire else randf_range(3.0, 5.0)), dur)
+		var dur := randf_range(0.4, 0.8) if fire else randf_range(1.6, 2.8)
+		t2.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-2, 2), randf_range(2, 5), randf_range(-2, 2)) * size, dur)
+		t2.parallel().tween_property(mi, "scale", Vector3.ONE * (randf_range(1.8, 3.0) if fire else randf_range(2.5, 4.5)) * size, dur)
 		t2.tween_callback(mi.queue_free)
-	if cam and cam.global_position.distance_to(v.global_position) < 30.0:
+	if cam and cam.global_position.distance_to(at) < 30.0:
 		_shake = 0.6
+
+
+# ---------------- granada ----------------
+
+func _throw_grenade(lp: Player) -> void:
+	if lp.count("grenade") <= 0 or lp.air != 0 or lp.car >= 0:
+		return
+	var fwd := -cam.global_transform.basis.z
+	var from := lp.global_position + Vector3(0, 1.6, 0) + Vector3(fwd.x, 0, fwd.z).normalized() * 0.5
+	var vel := (fwd + Vector3(0, 0.35, 0)).normalized() * 17.0
+	lp.punch_t = 0.3
+	sfx("punch_swing", -4.0)
+	_to_server("req_grenade", [from, vel])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_grenade(from: Vector3, vel: Vector3) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := _sender()
+	var p: Player = players.get(id)
+	if p == null or not p.alive or p.count("grenade") <= 0:
+		return
+	if from.distance_to(p.global_position) > 3.0:
+		return
+	p.inv["grenade"] = p.count("grenade") - 1
+	_p_inv(p)
+	_all("on_grenade", [from, vel.limit_length(20.0), id])
+
+
+@rpc("authority", "call_remote", "reliable")
+func on_grenade(from: Vector3, vel: Vector3, owner_id: int) -> void:
+	var g := {"pos": from, "vel": vel, "t": 2.6, "owner": owner_id, "node": null}
+	if not dedicated:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Weapons.item_mesh("grenade")
+		mi.material_override = U.wmat()
+		add_child(mi)
+		mi.global_position = from
+		g["node"] = mi
+	grenades.append(g)
+
+
+func _grenades_tick(delta: float) -> void:
+	if grenades.is_empty():
+		return
+	var space := get_world_3d().direct_space_state
+	for g in grenades.duplicate():
+		g["t"] = float(g["t"]) - delta
+		var v: Vector3 = g["vel"]
+		v.y -= 18.0 * delta
+		var p0: Vector3 = g["pos"]
+		var p1 := p0 + v * delta
+		var q := PhysicsRayQueryParameters3D.create(p0, p1, 1)
+		var r := space.intersect_ray(q)
+		if not r.is_empty():
+			var nrm: Vector3 = r["normal"]
+			v = v.bounce(nrm) * 0.42
+			p1 = r["position"] + nrm * 0.06
+			if v.length() > 2.0:
+				sfx_at("impact", p1, false, -6.0, 30.0)
+		g["vel"] = v
+		g["pos"] = p1
+		if g["node"]:
+			(g["node"] as Node3D).global_position = p1 - Vector3(0, 0.06, 0)
+			(g["node"] as Node3D).rotation.x += v.length() * delta * 3.0
+		if float(g["t"]) <= 0.0:
+			grenades.erase(g)
+			if g["node"]:
+				(g["node"] as Node3D).queue_free()
+			_explosion_fx(p1, 1.0)
+			if multiplayer.is_server():
+				for id in players.keys():
+					var pl: Player = players.get(id)
+					if pl == null or not pl.alive or pl.air != 0:
+						continue
+					var c := pl.global_position + Vector3(0, 1.0, 0)
+					var d := c.distance_to(p1)
+					if d > 6.5:
+						continue
+					var lq := PhysicsRayQueryParameters3D.create(p1 + Vector3(0, 0.3, 0), c, 1)
+					if not space.intersect_ray(lq).is_empty():
+						continue
+					_server_damage(id, int(g["owner"]), 170.0 * (1.0 - d / 6.5) + 10.0, false, "granada", true)
+				for vc: Vehicle in vehicles:
+					if not vc.dead and vc.global_position.distance_to(p1) < 5.0:
+						_server_car_damage(vc, 260.0, int(g["owner"]))
 
 
 # atropelou: o servidor confere a distância
@@ -1106,6 +1309,14 @@ func _apply_quality() -> void:
 				sun.directional_shadow_max_distance = 55.0
 			far = 460.0
 			world.set_view(380.0)
+	# ajustes finos das configurações
+	if sun and not bool(Cfg.get_v("shadows")):
+		sun.shadow_enabled = false
+	U.tmat().set_shader_parameter("detail", 1.0 if bool(Cfg.get_v("tex_detail")) else 0.0)
+	world.show_grass(bool(Cfg.get_v("grass")))
+	var vk: float = [0.75, 1.0, 1.25][clampi(int(Cfg.get_v("view")), 0, 2)]
+	far *= vk
+	world.set_view(far * 0.8)
 	cam.far = far
 	fog_base = 2.2 / far * 0.38
 	if env:
@@ -1285,6 +1496,7 @@ func _process(delta: float) -> void:
 	if not in_game:
 		return
 	_snap_items()
+	_grenades_tick(delta)
 	# carros dos outros: seguem a posição recebida; o motorista vai junto no banco
 	for v: Vehicle in vehicles:
 		if not v.settled and Engine.get_physics_frames() > 4:
@@ -1523,7 +1735,8 @@ func _local_update(lp: Player, delta: float) -> void:
 		_ui_slow(lp, playing)
 	hud.hp = lp.hp
 	hud.armor = lp.armor
-	hud.heals = [lp.count("bandage"), lp.count("med")]
+	hud.heals = [lp.count("bandage") + lp.count("drink"), lp.count("med")]
+	hud.grenades = lp.count("grenade")
 	hud.overlay = lp.scoped and bool(w["overlay"])
 	hud.red_dot = lp.scoped and not bool(w["overlay"]) and ("holo" in lp.cur_att() or "scope2" in lp.cur_att())
 	hud.can_scope = float(w["zoom"]) > 1.0
@@ -1731,6 +1944,8 @@ func _on_action(act: String) -> void:
 			_select(lp, int(act.substr(4)) - 1)
 		"car":
 			_car_toggle(lp)
+		"grenade":
+			_throw_grenade(lp)
 		"sprint":
 			lp.sprint = not lp.sprint
 			if lp.sprint and lp.crouch:
@@ -1762,7 +1977,19 @@ func _start_heal(lp: Player, kind: String) -> void:
 	if lp.hp >= 200.0 or lp.air != 0:
 		return
 	if kind == "":
-		kind = "med" if (lp.count("med") > 0 and (lp.hp < 55.0 or lp.count("bandage") == 0)) else "bandage"
+		# escolhe o que faz mais sentido pra vida que falta
+		var opts := []
+		if lp.hp < 110.0:
+			opts = ["med", "drink", "bandage"]
+		elif lp.hp < 160.0:
+			opts = ["drink", "bandage", "med"]
+		else:
+			opts = ["bandage", "drink", "med"]
+		kind = "bandage"
+		for o in opts:
+			if lp.count(o) > 0:
+				kind = o
+				break
 	if lp.count(kind) <= 0:
 		hud.center("Sem bandagem nem kit médico", 1.2)
 		return
@@ -2978,6 +3205,8 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		hud.feed("%s caiu de muito alto" % vn, col)
 	elif wid == "carro":
 		hud.feed("%s atropelou %s" % [kn, vn], col)
+	elif wid == "granada":
+		hud.feed("%s  [Granada]  %s" % [kn, vn], col)
 	elif wid == "explosão":
 		hud.feed("%s explodiu %s" % [kn, vn] if kn != vn else "%s explodiu" % vn, col)
 	elif wid == "zona" or aid == 0:

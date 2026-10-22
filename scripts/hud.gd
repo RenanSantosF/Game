@@ -56,6 +56,7 @@ var hp := 200.0
 var sprinting := false
 var can_scope := true
 var can_leave := true
+var grenades := 0
 var car_near := false
 var driving := false
 var armor := 0.0
@@ -682,8 +683,8 @@ func _buttons() -> Dictionary:
 		b["e_save"] = [Vector2(s.x * 0.5 + 70, 60), 30.0, "check"]
 		b["e_cancel"] = [Vector2(s.x * 0.5 + 160, 60), 30.0, "close"]
 		return b
-	b["exit"] = [Vector2(s.x - 400, 34), 22.0, "exit"]
-	b["settings"] = [Vector2(s.x - 450, 34), 22.0, "gear"]
+	b["exit"] = [Vector2(s.x - 300, 34), 22.0, "exit"]
+	b["settings"] = [Vector2(s.x - 352, 34), 22.0, "gear"]
 	if big_map:
 		b["map"] = [Vector2(s.x - 70, s.y - 60), 34.0, "close"]
 		return b
@@ -701,6 +702,8 @@ func _buttons() -> Dictionary:
 				b["car"] = [Vector2(s.x * 0.66, s.y * 0.68), 40.0, "car"]
 			if driving:
 				return b
+			if grenades > 0:
+				b["grenade"] = [Vector2(s.x * 0.66, s.y * 0.88), 34.0, "grenade"]
 			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
 				if k == "scope" and not can_scope:
 					continue
@@ -990,6 +993,11 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 	pad.draw_circle(pos, r, bg)
 	pad.draw_arc(pos, r, 0, TAU, 40, ring, 2.5)
 	glyph(pad, icon, pos, r * 0.48, Color(1, 1, 1, 0.95))
+	if k == "grenade":
+		var gs := "%d" % grenades
+		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.5, 0.45, 0.2))
+		var gw := font.get_string_size(gs, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		pad.draw_string(font, pos + Vector2(r * 0.68 - gw / 2.0, -r * 0.68 + 5), gs, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 	if k == "heal":
 		var sub := "%d" % (heals[0] + heals[1])
 		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.15, 0.6, 0.25))
@@ -998,7 +1006,7 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 
 
 # Ícones vetoriais simples (brancos), usados nos botões e na mochila.
-func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
+static func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
 	var w := maxf(2.0, r * 0.13)
 	match k:
 		"fire":
@@ -1122,6 +1130,11 @@ func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
 			ci.draw_line(c + Vector2(-r, r * 0.35), c + Vector2(r, r * 0.35), col, w * 1.5)
 		"slot_bag":
 			glyph(ci, "bag", c, r, col)
+		"grenade":
+			ci.draw_circle(c + Vector2(0, r * 0.15), r * 0.55, col)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.18, -r * 0.6), Vector2(r * 0.36, r * 0.25)), col)
+			ci.draw_line(c + Vector2(r * 0.2, -r * 0.5), c + Vector2(r * 0.55, -r * 0.1), col, w)
+			ci.draw_arc(c + Vector2(-r * 0.35, -r * 0.6), r * 0.18, 0, TAU, 10, col, w * 0.7)
 		"car":
 			# carrinho visto de lado
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.9, r * 0.25), c + Vector2(-r * 0.9, -r * 0.05), c + Vector2(-r * 0.45, -r * 0.1), c + Vector2(-r * 0.2, -r * 0.5), c + Vector2(r * 0.4, -r * 0.5), c + Vector2(r * 0.65, -r * 0.1), c + Vector2(r * 0.9, -r * 0.05), c + Vector2(r * 0.9, r * 0.25)]), col)

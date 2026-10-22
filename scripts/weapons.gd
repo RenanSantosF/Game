@@ -28,6 +28,8 @@ const ITEMS := {
 	"a12": {"name": "Cartucho 12", "stack": 30, "count": 12, "kind": "ammo"},
 	"bandage": {"name": "Bandagem", "stack": 10, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
 	"med": {"name": "Kit médico", "stack": 4, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
+	"drink": {"name": "Energético", "stack": 5, "count": 2, "kind": "heal", "heal": 50.0, "time": 2.5},
+	"grenade": {"name": "Granada", "stack": 3, "count": 1, "kind": "throw"},
 	"vest1": {"name": "Colete nível 1", "kind": "gear", "level": 1},
 	"vest2": {"name": "Colete nível 2", "kind": "gear", "level": 2},
 	"vest3": {"name": "Colete nível 3", "kind": "gear", "level": 3},
@@ -71,7 +73,8 @@ const RARITY := [Color(0.9, 0.9, 0.9), Color(0.85, 0.85, 0.85), Color(0.3, 0.6, 
 # Loot espalhado pelo mapa (repetido = mais comum)
 const LOOT := [
 	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
-	"bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med",
+	"bandage", "bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med", "med", "med",
+	"drink", "drink", "drink", "grenade", "grenade",
 	"a9", "a9", "a9", "a556", "a556", "a556", "a762", "a762", "a762", "a12", "a12",
 	"vest1", "vest1", "vest2", "vest3", "helmet1", "helmet1", "helmet2", "helmet3", "bag1", "bag1", "bag2", "bag3",
 	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "holo", "holo", "scope2", "scope4", "scope8", "silencer",
@@ -372,6 +375,14 @@ static func item_mesh(kind: String) -> Mesh:
 			m.boxp(Vector3(0, 0.201, 0), Vector3(0.22, 0.005, 0.06), Color(0.8, 0.1, 0.1))
 			m.boxp(Vector3(0, 0.201, 0), Vector3(0.06, 0.005, 0.2), Color(0.8, 0.1, 0.1))
 			m.boxp(Vector3(0, 0.23, 0), Vector3(0.14, 0.03, 0.03), Color(0.2, 0.2, 0.2))
+		"drink":
+			for k in 2:
+				m.cyl(Transform3D(Basis(), Vector3(k * 0.1 - 0.05, 0, 0)), 0.035, 0.035, 0.13, 10, Color(0.15, 0.45, 0.85))
+				m.cyl(Transform3D(Basis(), Vector3(k * 0.1 - 0.05, 0.13, 0)), 0.035, 0.03, 0.01, 10, Color(0.8, 0.8, 0.82))
+		"grenade":
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.05, 0.065, 0.05)), Vector3(0, 0.065, 0)), 8, 5, Color(0.28, 0.32, 0.2))
+			m.boxp(Vector3(0, 0.135, 0), Vector3(0.025, 0.03, 0.025), Color(0.5, 0.5, 0.5))
+			m.boxp(Vector3(0.025, 0.12, 0), Vector3(0.01, 0.06, 0.02), Color(0.5, 0.5, 0.5))
 		"bandage":
 			m.tex(U.FABRIC, 6.0)
 			for k in 3:

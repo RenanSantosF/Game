@@ -4,7 +4,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Como é a partida
 
-0. **Menu**: cenário 3D com o seu boneco segurando um fuzil; arraste pra girar.
+0. **Menu**: palco 3D com o seu boneco no meio (arraste pra girar), menu à esquerda e botão INICIAR. O carregamento mostra uma barra com as etapas.
 1. **Sala de espera (lobby)**: um pátio cercado fora do mapa, com todo mundo junto (bots também). Ninguém leva dano; você recebe uma M4A1 e uma Glock só pra aquecer a mira (somem ao entrar no avião).
 2. **Avião**: o avião cruza o mapa por uma rota sorteada (sempre por cima do mapa). Toque em **SALTAR** quando quiser.
 3. **Queda**: queda livre guiada pelo joystick; o paraquedas abre sozinho perto do chão (ou toque em **PARAQUEDAS**).
@@ -18,7 +18,9 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 - Boneco animado (modelo feito no Meshy, reduzido pra celular): anda, corre, pula, agacha, morre; braços seguram a arma
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
-- Carros: sedã (rápido) e picape (mais lenta) espalhados perto das cidades; botão do carro pra entrar e sair; dá pra atropelar
+- Granada (botão aparece quando você tem), energético, mais kits e bandagens
+- Duas cidades com chão de cimento; casas de laje com escada por fora pra subir no teto
+- Carros: esportivo (rápido) e picape (mais lenta), com rodas girando que acompanham o terreno; explodem com tiro ou granada espalhados perto das cidades; botão do carro pra entrar e sair; dá pra atropelar
 - Cada arma com coice e dispersão própria: os primeiros tiros são precisos e, segurando o dedo, o tiro abre (a AK abre muito)
 - Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com rua asfaltada, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
@@ -42,7 +44,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - **Mira assistida**: CONTROLE TOTAL (sem ajuda), GRUDA SEM MIRA (puxa só no tiro sem mirar) ou GRUDA SEMPRE (padrão). Arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
 - Sensibilidade geral e mirando, inverter vertical
 - **Editar posição dos botões**: arraste cada botão e mude o tamanho
-- Gráficos BAIXA/MÉDIA/ALTA, limite de FPS (30/45/60), mostrar FPS, volume
+- Gráficos BAIXA/MÉDIA/ALTA, sombras, texturas detalhadas, grama, distância de visão, limite de FPS (30/45/60), mostrar FPS, mostrar sangue, volume
 
 ## Desempenho em celular fraco
 

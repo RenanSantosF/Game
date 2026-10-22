@@ -20,7 +20,8 @@ static var v := {
 	"invert": false,
 	"blood": true,       # respingo de sangue no acerto
 	"shadows": true,     # sombras
-	"tex_detail": 1,     # 0 = textura simples, 1 = detalhada
+	"tex_detail": true,  # textura do chão com mais detalhe
+	"view": 1,           # distância de visão: 0 perto, 1 média, 2 longe
 	"grass": true,       # tufos de grama
 	"ver": 2,            # versão das configurações (migra padrões novos)
 }

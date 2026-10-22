@@ -210,7 +210,10 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 		var side := [_win(0.0)] if dp < 9.0 else [_win(-dp * 0.25), _win(dp * 0.25)]
 		wall(root, false, -wd / 2.0, dp, lh, y0, side, col, lay, uvs)
 		# do lado da escada não tem janela no térreo
-		wall(root, false, wd / 2.0, dp, lh, y0, [] if (floors > 1 and f == 0) else [_win(-dp * 0.2)], col, lay, uvs)
+		var rh := [] if (floors > 1 and f == 0) else [_win(-dp * 0.2)]
+		if spec.get("ext_stairs", false) and f == floors - 1 and roof == "flat":
+			rh.append([-dp / 2.0 + 0.95, 1.1, fh - 0.02, lh + 0.1])
+		wall(root, false, wd / 2.0, dp, lh, y0, rh, col, lay, uvs)
 		if rooms > 1 and f == 0:
 			wall(root, false, -wd * 0.1, dp - WALL_T, fh, 0.0, [_door(-dp * 0.2, 1.1)], col.lightened(0.1), U.PLASTER, 0.3, false)
 		# piso
@@ -229,6 +232,8 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 			_gable(root, wd, dp, top, 0.9, U.METAL, Color(0.9, 0.92, 0.95), col, lay)
 		_:
 			piece(root, Vector3(wd + 0.1, 0.2, dp + 0.1), Vector3(0, top + 0.1, 0), Color(0.85, 0.85, 0.85), U.CONCRETE, 0.3)
+			if spec.get("ext_stairs", false):
+				_ext_stairs(root, wd, dp, top, col, lay, uvs)
 	if balcony:
 		var bw := 3.2
 		var bd := 1.5
@@ -251,6 +256,8 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var door_in := pos + bs * Vector3(door_c, 0.3, -dp / 2.0 + 1.3)
 	w.houses[-1]["din"] = door_in
 	w.houses[-1]["dout"] = door_out
+	if spec.get("ext_stairs", false):
+		w.add_item(pos + bs * Vector3(-wd * 0.2, floors * fc_h(spec) + 0.22, 0.5), w.loot_kind(rng, true), null, null, true)
 	var n_items := 2 + int(rng.randf() < 0.5) + int(wd * dp > 70.0)
 	for k in n_items:
 		var lx := rng.randf_range(-wd / 2.0 + 1.0, wd / 2.0 - 1.6)
@@ -261,6 +268,36 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	for f in range(1, floors):
 		var local := Vector3(rng.randf_range(-wd / 2.0 + 1.0, wd / 2.0 - 2.0), f * fh + 0.12, rng.randf_range(-dp / 2.0 + 1.0, dp / 2.0 - 1.5))
 		w.add_item(pos + bs * local, w.loot_kind(rng, rng.randf() < 0.5), null, null, true)
+
+
+# escada por fora, encostada na parede do lado, subindo pra laje (com patamar e corrimão)
+static func fc_h(spec: Dictionary) -> float:
+	return float(spec.get("fh", FH))
+
+
+func _ext_stairs(root: Node3D, wd: float, dp: float, top: float, col: Color, lay: int, uvs: float) -> void:
+	var x := wd / 2.0 + 0.7
+	var zb := dp / 2.0 - 0.2
+	var zt := -dp / 2.0 + 1.6
+	var H := top + 0.2
+	var L := zb - zt
+	var ang := atan2(H, L)
+	var ramp := sqrt(L * L + H * H)
+	var conc := Color(0.82, 0.8, 0.76)
+	col_box(root, Vector3(1.2, 0.15, ramp), Vector3(x, H / 2.0, (zb + zt) / 2.0), Basis(Vector3.RIGHT, ang))
+	# patamar na altura da laje, na frente da abertura do parapeito
+	piece(root, Vector3(1.3, 0.2, 1.5), Vector3(x, H - 0.1, -dp / 2.0 + 0.85), conc, U.CONCRETE, 0.4)
+	piece(root, Vector3(0.08, 1.0, 1.5), Vector3(x + 0.62, H + 0.5, -dp / 2.0 + 0.85), Color(0.3, 0.3, 0.3), U.METAL, 0.5)
+	if headless:
+		return
+	var n := int(H / 0.2)
+	for i in n:
+		var k := (i + 0.5) / n
+		vis(root, Vector3(1.2, 0.2, L / n + 0.02), Vector3(x, k * H - 0.1, zb - k * L), conc, U.CONCRETE, 0.4)
+		# parede embaixo do degrau (escada maciça)
+		vis(root, Vector3(0.15, k * H, L / n + 0.02), Vector3(x + 0.55, k * H / 2.0, zb - k * L), col, lay, uvs)
+	# corrimão
+	vis(root, Vector3(0.05, 0.05, ramp), Vector3(x + 0.6, H / 2.0 + 0.9, (zb + zt) / 2.0), Color(0.25, 0.25, 0.25), U.METAL, 0.5, Basis(Vector3.RIGHT, ang))
 
 
 func _upper_floor(root: Node3D, wd: float, dp: float, y0: float, stair_x: float) -> void:

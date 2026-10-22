@@ -40,6 +40,9 @@ const MOUNTS := [
 	[Vector2(305, -170), 42.0, 75.0], [Vector2(-335, 135), 26.0, 85.0], [Vector2(235, -315), 34.0, 70.0],
 	[Vector2(-60, -340), 28.0, 60.0], [Vector2(-330, -330), 30.0, 70.0], [Vector2(330, 340), 22.0, 60.0],
 	[Vector2(110, 60), 14.0, 55.0], [Vector2(-160, -70), 18.0, 55.0],
+	# algumas cidades em cima de morro
+	[Vector2(-250, -245), 17.0, 75.0], [Vector2(-205, 205), 15.0, 70.0], [Vector2(250, 205), 16.0, 70.0],
+	[Vector2(-125, -285), 12.0, 65.0], [Vector2(295, 300), 13.0, 60.0],
 ]
 # rodovias asfaltadas que cruzam o mapa (passam do lado das cidades e do posto)
 const HIGHWAYS := [
@@ -237,7 +240,7 @@ func _line_grid(polys: Array, d_arr: PackedFloat32Array, h_arr: PackedFloat32Arr
 	h_arr.fill(0.0)
 	var lines := []
 	for poly in polys:
-		var pts := _catmull(poly, 6.0)
+		var pts := _catmull(poly, 3.0)
 		var hs := []
 		for q in pts:
 			hs.append(_pre(q.x, q.y))
@@ -296,6 +299,14 @@ func _build_highway_mesh() -> void:
 			var b1 := p1 - sd * half
 			m.tex(U.ASPHALT, 0.22)
 			m.quad(Vector3(a0.x, y0, a0.y), Vector3(a1.x, y1, a1.y), Vector3(b1.x, y1, b1.y), Vector3(b0.x, y0, b0.y), Color(1, 1, 1), Vector3.UP)
+			# acostamento descendo até o chão (a pista nunca aparece flutuando)
+			for e in [[a0, a1, sd], [b0, b1, -sd]]:
+				var e0: Vector2 = e[0]
+				var e1: Vector2 = e[1]
+				var nn: Vector2 = e[2]
+				var g0 := height(e0.x + nn.x * 0.8, e0.y + nn.y * 0.8) - 0.4
+				var g1 := height(e1.x + nn.x * 0.8, e1.y + nn.y * 0.8) - 0.4
+				m.quad(Vector3(e0.x, y0, e0.y), Vector3(e1.x, y1, e1.y), Vector3(e1.x + nn.x * 0.8, g1, e1.y + nn.y * 0.8), Vector3(e0.x + nn.x * 0.8, g0, e0.y + nn.y * 0.8), Color(0.85, 0.82, 0.75), Vector3(nn.x, 1.0, nn.y).normalized())
 			# faixa branca nas bordas e amarela tracejada no meio
 			m.tex(U.PLAIN, 1.0)
 			for sgn in [-1.0, 1.0]:
@@ -617,6 +628,10 @@ func _house_spec(rng: RandomNumberGenerator, big := false) -> Dictionary:
 	var r := rng.randf()
 	var styles := ["plaster", "plaster", "plaster", "brick", "wood"]
 	var st: String = styles[rng.randi() % styles.size()]
+	if r > 0.8:
+		# casa de laje com escada por fora pra subir no teto
+		return {"w": rng.randf_range(8.0, 9.5), "d": rng.randf_range(7.0, 8.0), "style": "plaster" if st == "wood" else st,
+			"roof": "flat", "ext_stairs": true}
 	if r < (0.15 if big else 0.07):
 		return {"w": rng.randf_range(8.5, 10.5), "d": rng.randf_range(8.0, 9.0), "floors": 2, "style": "plaster" if st == "wood" else st,
 			"roof": "tile" if rng.randf() < 0.75 else "flat", "balcony": rng.randf() < 0.7}
@@ -637,8 +652,11 @@ func _build_loc(ti: int) -> void:
 		"igreja":
 			_vila(c, y, r, true)
 		"bairro":
+			if t["name"] == "Vale do Corvo":
+				_plaza(c, y, r)
 			_bairro(c, y, r, false)
 		"centro":
+			_plaza(c, y, r)
 			_bairro(c, y, r, true)
 		"esparso":
 			_esparso(c, y, r)
@@ -732,25 +750,62 @@ func _yard(p: Vector2, yaw: float, spec: Dictionary, y: float) -> void:
 		b.fence_ring(pts, [0, 2])
 
 
+# rua em pedaços que acompanham o chão (com "saia" pra baixo: nunca fica flutuando)
 func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
 	if headless:
 		return
 	var d := c - a
 	var yaw := -atan2(d.y, d.x)
-	var mid := (a + c) / 2.0
-	b.mb.tex(U.ASPHALT, 0.25)
-	b.mb.box(Transform3D(Basis(Vector3.UP, yaw), Vector3(mid.x, y + 0.02, mid.y)), Vector3(d.length(), 0.04, width), Color(1, 1, 1))
+	var bs := Basis(Vector3.UP, yaw)
 	var side := Vector2(-d.normalized().y, d.normalized().x)
-	for s in [-1.0, 1.0]:
-		var q: Vector2 = mid + side * s * (width / 2.0 + 0.8)
-		b.mb.tex(U.CONCRETE, 0.4)
-		b.mb.box(Transform3D(Basis(Vector3.UP, yaw), Vector3(q.x, y + 0.05, q.y)), Vector3(d.length(), 0.1, 1.6), Color(0.95, 0.95, 0.92))
-	# faixa
-	b.mb.tex(U.PLAIN, 1.0)
-	var n := int(d.length() / 6.0)
+	var n := maxi(1, int(d.length() / 4.0))
+	var seg := d.length() / n
 	for i in n:
 		var q := a + d * ((i + 0.5) / n)
-		b.mb.box(Transform3D(Basis(Vector3.UP, yaw), Vector3(q.x, y + 0.045, q.y)), Vector3(2.0, 0.01, 0.14), Color(0.9, 0.85, 0.5))
+		var gy := minf(y, low_h(q, width * 0.5))
+		# dentro da cidade fica no nível dela; fora, segue o chão
+		var ty := y if town_factor(q.x, q.y) > 0.9 else height(q.x, q.y)
+		var top := ty + 0.04
+		var dep := top - gy + 0.3
+		b.mb.tex(U.ASPHALT, 0.25)
+		b.mb.box(Transform3D(bs, Vector3(q.x, top - dep / 2.0, q.y)), Vector3(seg + 0.05, dep, width), Color(1, 1, 1))
+		for sgn in [-1.0, 1.0]:
+			var w: Vector2 = q + side * sgn * (width / 2.0 + 0.8)
+			var wy := ty if town_factor(w.x, w.y) > 0.9 else maxf(ty, height(w.x, w.y))
+			var wd := wy + 0.12 - gy + 0.3
+			b.mb.tex(U.CONCRETE, 0.4)
+			b.mb.box(Transform3D(bs, Vector3(w.x, wy + 0.12 - wd / 2.0, w.y)), Vector3(seg + 0.05, wd, 1.6), Color(0.95, 0.95, 0.92))
+		# faixa
+		if i % 2 == 0:
+			b.mb.tex(U.PLAIN, 1.0)
+			b.mb.box(Transform3D(bs, Vector3(q.x, top + 0.005, q.y)), Vector3(2.0, 0.01, 0.14), Color(0.9, 0.85, 0.5))
+
+
+# chão de cimento em toda a cidade (plano)
+func _plaza(c: Vector2, y: float, r: float) -> void:
+	if headless:
+		return
+	var seg := 36
+	var rr := r - 1.0
+	b.mb.tex(U.CONCRETE, 0.22)
+	for i in seg:
+		var a0 := TAU * i / seg
+		var a1 := TAU * (i + 1) / seg
+		var p0 := Vector3(c.x, y + 0.025, c.y)
+		var p1 := Vector3(c.x + cos(a0) * rr, y + 0.025, c.y + sin(a0) * rr)
+		var p2 := Vector3(c.x + cos(a1) * rr, y + 0.025, c.y + sin(a1) * rr)
+		b.mb.tri(p0, p1, p2, Color(0.82, 0.81, 0.78), Vector3.UP)
+		# guia na borda, descendo até o chão
+		var e1 := Vector3(p1.x, minf(y, height(p1.x, p1.z)) - 0.3, p1.z)
+		var e2 := Vector3(p2.x, minf(y, height(p2.x, p2.z)) - 0.3, p2.z)
+		b.mb.quad(p1, p2, e2, e1, Color(0.7, 0.7, 0.68), Vector3(cos((a0 + a1) / 2.0), 0, sin((a0 + a1) / 2.0)))
+	# juntas da calçada
+	b.mb.tex(U.PLAIN, 1.0)
+	var k := int(rr / 6.0)
+	for gx in range(-k, k + 1):
+		var hl := sqrt(maxf(rr * rr - pow(gx * 6.0, 2), 0.0))
+		b.mb.box(Transform3D(Basis(), Vector3(c.x + gx * 6.0, y + 0.03, c.y)), Vector3(0.06, 0.005, hl * 2.0), Color(0.55, 0.55, 0.53))
+		b.mb.box(Transform3D(Basis(), Vector3(c.x, y + 0.03, c.y + gx * 6.0)), Vector3(hl * 2.0, 0.005, 0.06), Color(0.55, 0.55, 0.53))
 
 
 func _bairro(c: Vector2, y: float, r: float, big: bool) -> void:
@@ -1207,9 +1262,9 @@ func _tree_meshes() -> Dictionary:
 	# e escuros embaixo, com galhos aparecendo e buracos por onde se vê; "_lo" = mesma silhueta, leve.
 	var specs := {
 		# [altura do tronco, raio do tronco, tufos, raio da copa, altura da copa, tamanho do tufo, cor]
-		"oak": [4.2, 0.24, 11, 2.1, 2.0, 0.85, Color(1.0, 1.0, 0.95)],
-		"pine": [6.6, 0.19, 9, 1.5, 1.2, 0.8, Color(0.85, 0.95, 0.85)],
-		"tall": [7.5, 0.16, 10, 1.1, 3.4, 0.62, Color(1.05, 1.05, 0.9)],
+		"oak": [4.2, 0.4, 11, 2.2, 2.0, 0.88, Color(1.0, 1.0, 0.95)],
+		"pine": [6.6, 0.32, 9, 1.6, 1.2, 0.82, Color(0.85, 0.95, 0.85)],
+		"tall": [7.5, 0.28, 10, 1.2, 3.4, 0.66, Color(1.05, 1.05, 0.9)],
 	}
 	for kind in specs:
 		var sp: Array = specs[kind]
@@ -1323,7 +1378,7 @@ func _build_nature() -> void:
 		_rock_col(body, sc, e[2], gp)
 	var tries := 0
 	var trees := 0
-	while trees < 1700 and tries < 30000:
+	while trees < 950 and tries < 30000:
 		tries += 1
 		var x := rng.randf_range(-lim, lim)
 		var z := rng.randf_range(-lim, lim)
@@ -1349,7 +1404,7 @@ func _build_nature() -> void:
 		claim(p, 1.2)
 		var cs := CollisionShape3D.new()
 		var cyl := CylinderShape3D.new()
-		cyl.radius = 0.32 * s
+		cyl.radius = 0.5 * s
 		cyl.height = 6.0 * s
 		cs.shape = cyl
 		cs.position = Vector3(x, gy + 3.0 * s, z)
@@ -1487,6 +1542,12 @@ func _scatter(kind: String, mesh: Mesh, xfs: Array, chunk: float, rng: RandomNum
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mmi)
 			_scatter_nodes.append([mmi, kind if variant == mesh else kind + "_lo", lo != null])
+
+
+func show_grass(on: bool) -> void:
+	for e in _scatter_nodes:
+		if e[1] == "grass":
+			(e[0] as Node3D).visible = on
 
 
 # Distância de visão da vegetação (depende da qualidade gráfica)

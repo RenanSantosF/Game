@@ -110,6 +110,10 @@ var _vault_drop := false
 var bloom := 0.0
 var car := -1             # carro que está dirigindo (-1 = a pé)
 var _remote_car := false
+
+
+func sim_local() -> bool:
+	return is_local or (is_bot and multiplayer.is_server())
 var regen := 0.0
 var _breath := 0.0
 var _crouch_k := 0.0
@@ -208,7 +212,7 @@ func count(kind: String) -> int:
 
 
 func flags() -> int:
-	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7)
+	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8)
 
 
 func set_flags(f: int) -> void:
@@ -220,6 +224,8 @@ func set_flags(f: int) -> void:
 		punch_t = 0.3
 	_remote_air = ((f >> 6) & 1) == 1
 	_remote_car = ((f >> 7) & 1) == 1
+	if not sim_local():
+		stun_t = 0.3 if ((f >> 8) & 1) == 1 else 0.0
 
 
 var _remote_air := false
@@ -821,6 +827,12 @@ func _animate(delta: float, sim: bool) -> void:
 	aim.rotation.x = pitch * 0.85 * (1.0 - low) - 1.1 * low
 	aim.position = Vector3(0, 1.36 - (1.0 - _ready_k) * 0.12, (1.0 - _ready_k) * 0.06)
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
+	if stun_t > 0.0 and not airborne:
+		# caiu de alto: aterrissa agachado com a mão no chão
+		sol.play("Idle", 0.08)
+		var gp2 := model.global_transform
+		sol.tick(delta, far, 0.0, 1.0, [gp2 * Vector3(-0.22, 0.75, -0.25), gp2 * Vector3(0.18, 0.05, -0.45)])
+		return
 	if vault_t >= 0.0 or airborne:
 		sol.play("Air", 0.12)
 	elif sp < 0.35:
@@ -1061,6 +1073,8 @@ func _bot_try_heal(moving: bool) -> bool:
 		return true
 	if hp < 120.0 and count("med") > 0:
 		heal_kind = "med"
+	elif hp < 160.0 and count("drink") > 0:
+		heal_kind = "drink"
 	elif hp < 170.0 and count("bandage") > 0:
 		heal_kind = "bandage"
 	else:
@@ -1157,6 +1171,8 @@ func wants(kind: String) -> bool:
 			return count("bandage") < 10 and free_slots() > 0
 		"med":
 			return count("med") < 4 and free_slots() > 0
+		"drink":
+			return count("drink") < 5 and free_slots() > 0
 		"vest1", "vest2", "vest3":
 			return Weapons.level_of(kind) > vest_lv or armor < 40.0
 		"helmet1", "helmet2", "helmet3":
