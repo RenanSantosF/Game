@@ -1507,14 +1507,14 @@ func _make_item_node(i: int) -> void:
 	_snap_q.append(i)
 
 
-# música do lobby (tools/compose_music.py), em loop enquanto está no menu
+# música do lobby: rock/metal (faixas CC0, ver sounds/CREDITOS.txt), uma sorteada, em loop no menu
 func _menu_music_on() -> void:
 	if menu_music == null:
 		menu_music = AudioStreamPlayer.new()
-		menu_music.stream = load("res://sounds/lobby_music.ogg")
+		menu_music.stream = load("res://sounds/lobby_rock%d.ogg" % (randi() % 2 + 1))
 		add_child(menu_music)
 	var want := bool(Cfg.get_v("music")) and float(Cfg.get_v("volume")) > 0.0
-	menu_music.volume_db = linear_to_db(maxf(float(Cfg.get_v("volume")), 0.001)) - 7.0
+	menu_music.volume_db = linear_to_db(maxf(float(Cfg.get_v("volume")), 0.001)) - 6.0
 	if want and not menu_music.playing:
 		menu_music.play()
 	elif not want and menu_music.playing:

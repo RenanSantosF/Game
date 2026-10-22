@@ -256,32 +256,9 @@ static func _gear(kind: String) -> Mesh:
 		return _shared[kind]
 	var m := MB.new()
 	match kind:
-		"vest1", "vest2", "vest3":
-			var lv := int(kind.substr(4))
-			var vc: Color = [OLIVE, Color(0.62, 0.55, 0.4), Color(0.13, 0.13, 0.14)][lv - 1]
-			m.tex(U.FABRIC, 3.0)
-			m.box(Transform3D(Basis(), Vector3(0, 1.27, 0.0)), Vector3(0.35, 0.33, 0.23), vc)
-			m.box(Transform3D(Basis(), Vector3(0, 1.17, -0.12)), Vector3(0.3, 0.1, 0.03), vc.darkened(0.2))
-			for sx in [-0.1, 0.1]:
-				m.box(Transform3D(Basis(), Vector3(sx, 1.45, 0.0)), Vector3(0.06, 0.05, 0.21), vc.darkened(0.1))
-			if lv >= 2:
-				m.box(Transform3D(Basis(), Vector3(0, 1.29, -0.125)), Vector3(0.27, 0.2, 0.025), vc.darkened(0.3))
-			if lv == 3:
-				for k in 3:
-					m.box(Transform3D(Basis(), Vector3(-0.09 + k * 0.09, 1.16, -0.14)), Vector3(0.07, 0.08, 0.035), vc.lightened(0.12))
-		"helmet1", "helmet2", "helmet3":
-			var lv := int(kind.substr(6))
-			var hc: Color = [Color(0.48, 0.45, 0.33), OLIVE, Color(0.12, 0.12, 0.13)][lv - 1]
-			m.tex(U.PLAIN, 3.0)
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.13, 0.11 if lv > 1 else 0.08, 0.145)), Vector3(0, 1.665, 0.01)), 10, 5, hc)
-			if lv >= 2:
-				m.box(Transform3D(Basis(), Vector3(0, 1.625, 0.0)), Vector3(0.27, 0.02, 0.3), hc.darkened(0.15))
-			if lv == 3:
-				m.box(Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0, 1.62, -0.14)), Vector3(0.2, 0.06, 0.015), Color(0.2, 0.35, 0.45))
-		"bag":
-			m.tex(U.FABRIC, 3.0)
-			m.box(Transform3D(Basis(), Vector3(0, 1.25, 0.21)), Vector3(0.34, 0.44, 0.17), Color(0.45, 0.4, 0.3))
-			m.box(Transform3D(Basis(), Vector3(0, 1.12, 0.3)), Vector3(0.28, 0.16, 0.06), Color(0.4, 0.35, 0.26))
+		"vest1", "vest2", "vest3", "helmet1", "helmet2", "helmet3", "bag1", "bag2", "bag3":
+			_shared[kind] = Weapons.gear(kind)
+			return _shared[kind]
 		"chute":
 			# velame retangular (asa) arqueado, com espessura, e cordas presas na borda de baixo
 			var ca := Color(0.52, 0.56, 0.38)
@@ -351,7 +328,7 @@ func _build_model() -> void:
 	vest_mi.material_override = U.wmat()
 	sol.attach("Spine2", vest_mi)
 	bag_mi = MeshInstance3D.new()
-	bag_mi.mesh = _gear("bag")
+	bag_mi.mesh = _gear("bag1")
 	bag_mi.material_override = U.wmat()
 	sol.attach("Spine2", bag_mi)
 	helmet_mi = MeshInstance3D.new()
@@ -402,6 +379,8 @@ func refresh_gear() -> void:
 	if helmet_mi.visible:
 		helmet_mi.mesh = _gear("helmet%d" % helmet)
 	bag_mi.visible = bag > 0
+	if bag_mi.visible:
+		bag_mi.mesh = _gear("bag%d" % clampi(bag, 1, 3))
 
 
 func update_gun() -> void:

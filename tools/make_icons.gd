@@ -55,18 +55,22 @@ func render_all() -> void:
 		elif Weapons.is_gun(id):
 			node = Weapons.build_model(id)
 			node.rotation.y = -PI / 2.0
-			var L: float = Weapons.get_w(id)["len"]
-			size = maxf(L * 1.1, 0.3)
-			center = Vector3(L * 0.42, 0.0, 0)
+			# enquadra pelo tamanho real do modelo (largura da imagem = 2x a altura)
+			var ab: AABB = Weapons.mesh_for(id).get_aabb()
+			center = Basis(Vector3.UP, -PI / 2.0) * ab.get_center()
+			size = maxf(ab.size.z * 0.56, ab.size.y * 1.15)
 		else:
 			node = Weapons.build_item(id, false)
 			node.rotation = Vector3(0.6, 0.6, 0)
 			size = 0.95 if id == "box" else 0.6
+			center = Vector3(0, 0.12, 0)
 			if Weapons.is_att(id):
 				node.rotation = Vector3(0.35, 0.9, 0)
-				size = 0.3 if Weapons.att_cat(id) != "sight" or id == "holo" else 0.42
-				center = Vector3(0, 0.04, 0)
-			center = Vector3(0, 0.12, 0)
+				size = 0.26 if id in ["holo", "mag1", "mag2", "mag3"] else 0.34
+				center = Vector3(0, 0.05, 0)
+			elif Weapons.is_bag(id):
+				size = 0.85
+				center = Vector3(0, 0.05, 0)
 		vp.add_child(node)
 		cam.size = size
 		cam.position = center + Vector3(0, 0, 3)

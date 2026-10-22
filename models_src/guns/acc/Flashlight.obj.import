@@ -1,0 +1,22 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://plteptm75jgv"
+path="res://.godot/imported/Flashlight.obj-de0a587c31d5030ffde9ed4edc6e123e.mesh"
+
+[deps]
+
+files=["res://.godot/imported/Flashlight.obj-de0a587c31d5030ffde9ed4edc6e123e.mesh"]
+
+source_file="res://models_src/guns/acc/Flashlight.obj"
+dest_files=["res://.godot/imported/Flashlight.obj-de0a587c31d5030ffde9ed4edc6e123e.mesh", "res://.godot/imported/Flashlight.obj-de0a587c31d5030ffde9ed4edc6e123e.mesh"]
+
+[params]
+
+generate_tangents=true
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+optimize_mesh=true
+force_disable_mesh_compression=false

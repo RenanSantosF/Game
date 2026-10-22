@@ -253,9 +253,41 @@ static func _tube(m: MB, pos: Vector3, r: float, length: float, col: Color, seg 
 	m.cyl(Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), pos), r, r, length, seg, col, true, true)
 
 
+# Modelos detalhados (Ultimate Gun Pack da Quaternius, CC0, convertido por tools/prepare_guns.gd)
+# com as miras e o silenciador encaixados no trilho e no cano.
+static func _model_mesh(id: String, att: Array) -> Mesh:
+	var info: Dictionary = GunInfo.INFO[id]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(load("res://models/guns/%s.res" % id), 0, Transform3D())
+	var ln: float = info["len"]
+	var rail: float = info["rail"]
+	var mz: Vector3 = info["muzzle"]
+	var own_scope := id in SCOPES
+	for a in ["scope2", "scope4", "scope8"]:
+		if a in att and not own_scope:
+			st.append_from(load("res://models/guns/acc_%s.res" % a), 0, Transform3D(Basis(), Vector3(0, rail - 0.005, -ln * 0.3)))
+	if "silencer" in att:
+		var sm: Mesh = load("res://models/guns/acc_silencer.res")
+		var ab := sm.get_aabb()
+		st.append_from(sm, 0, Transform3D(Basis(), Vector3(0, mz.y - ab.get_center().y, mz.z - ab.end.z + 0.01)))
+	if "holo" in att:
+		var m := MB.new()
+		m.tex(U.PLAIN, 6.0)
+		_b(m, Vector3(0, rail + 0.012, -ln * 0.3), Vector3(0.035, 0.024, 0.07), METAL)
+		_b(m, Vector3(0, rail + 0.045, -ln * 0.3 - 0.03), Vector3(0.04, 0.045, 0.008), METAL)
+		_b(m, Vector3(0, rail + 0.045, -ln * 0.3 + 0.03), Vector3(0.04, 0.045, 0.008), METAL)
+		_b(m, Vector3(0, rail + 0.045, -ln * 0.3 - 0.026), Vector3(0.03, 0.03, 0.002), Color(0.3, 0.6, 0.7))
+		st.append_from(m.commit(), 0, Transform3D())
+	return st.commit()
+
+
 static func mesh_for(id: String, att: Array = []) -> Mesh:
 	var key := id + "|" + ",".join(att)
 	if _cache.has(key):
+		return _cache[key]
+	if GunInfo.INFO.has(id):
+		_cache[key] = _model_mesh(id, att)
 		return _cache[key]
 	var w := get_w(id)
 	var L: float = w["len"]
@@ -360,7 +392,7 @@ static func mesh_for(id: String, att: Array = []) -> Mesh:
 
 
 static func muzzle_len(id: String, att: Array) -> float:
-	var L: float = get_w(id)["len"]
+	var L: float = GunInfo.INFO[id]["len"] if GunInfo.INFO.has(id) else float(get_w(id)["len"])
 	return L + (0.16 if "silencer" in att else 0.0)
 
 
@@ -372,9 +404,92 @@ static func build_model(id: String, att: Array = []) -> Node3D:
 		U.mesh(root, mesh)
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
-	muzzle.position = Vector3(0, 0.035, -muzzle_len(id, att))
+	var my: float = GunInfo.INFO[id]["muzzle"].y if GunInfo.INFO.has(id) else 0.035
+	muzzle.position = Vector3(0, my, -muzzle_len(id, att))
 	root.add_child(muzzle)
 	return root
+
+
+# ---------------- colete, capacete e mochila ----------------
+# Um desenho só (vestido no boneco); no chão o mesmo modelo aparece deitado/em pé.
+# Cor por nível: 1 verde-oliva, 2 azul, 3 roxo.
+const LV_COL := [Color(0.46, 0.5, 0.32), Color(0.32, 0.46, 0.7), Color(0.52, 0.36, 0.66)]
+const STRAP := Color(0.1, 0.1, 0.1)
+
+
+static func gear(kind: String) -> Mesh:
+	var key := "gear_" + kind
+	if _cache.has(key):
+		return _cache[key]
+	var lv := clampi(level_of(kind), 1, 3)
+	var c: Color = LV_COL[lv - 1]
+	var m := MB.new()
+	m.tex(U.FABRIC, 5.0)
+	if is_vest(kind):
+		# placas da frente e de trás arredondadas, faixa lateral, alças, bolsos e tiras (MOLLE)
+		for sz in [-1.0, 1.0]:
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.185, 0.175, 0.045)), Vector3(0, 1.27, sz * 0.105)), 12, 6, c, null, 0.0, true, 0.25)
+		for sx in [-1.0, 1.0]:
+			m.box(Transform3D(Basis(), Vector3(sx * 0.17, 1.2, 0.0)), Vector3(0.04, 0.16, 0.2), c.darkened(0.15))
+			m.box(Transform3D(Basis(Vector3.FORWARD, sx * 0.15), Vector3(sx * 0.09, 1.44, 0.0)), Vector3(0.07, 0.035, 0.24), c.darkened(0.1))
+		m.tex(U.PLAIN, 4.0)
+		for k in 3:
+			m.box(Transform3D(Basis(), Vector3(0, 1.17 + k * 0.06, -0.152)), Vector3(0.3, 0.012, 0.012), STRAP)
+		m.tex(U.FABRIC, 5.0)
+		var np := 2 + lv
+		for k in np:
+			var x := (k - (np - 1) / 2.0) * 0.075
+			m.box(Transform3D(Basis(), Vector3(x, 1.18, -0.155)), Vector3(0.062, 0.095, 0.04), c.lightened(0.08))
+			m.box(Transform3D(Basis(), Vector3(x, 1.235, -0.157)), Vector3(0.064, 0.02, 0.046), c.darkened(0.2))
+		if lv >= 2:
+			# placa balística por cima
+			m.box(Transform3D(Basis(Vector3.RIGHT, -0.05), Vector3(0, 1.33, -0.152)), Vector3(0.24, 0.13, 0.025), c.darkened(0.3))
+		if lv == 3:
+			# gola, ombreiras e rádio
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.14, 0.04, 0.12)), Vector3(0, 1.47, 0.0)), 10, 4, c.darkened(0.2))
+			for sx in [-1.0, 1.0]:
+				m.blob(Transform3D(Basis.from_scale(Vector3(0.06, 0.03, 0.08)), Vector3(sx * 0.2, 1.42, 0.0)), 8, 4, c.darkened(0.1))
+			m.tex(U.PLAIN, 4.0)
+			m.box(Transform3D(Basis(), Vector3(0.13, 1.36, -0.15)), Vector3(0.04, 0.07, 0.03), STRAP)
+			m.cyl(Transform3D(Basis(), Vector3(0.14, 1.395, -0.15)), 0.004, 0.003, 0.08, 4, STRAP)
+	elif is_helmet(kind):
+		var hy := 1.665
+		m.tex(U.PLAIN, 4.0)
+		if lv == 1:
+			# capacete leve de tecido (tipo boné de combate) com aba
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.128, 0.085, 0.14)), Vector3(0, hy + 0.005, 0.01)), 12, 6, c)
+			m.box(Transform3D(Basis(Vector3.RIGHT, 0.15), Vector3(0, hy - 0.035, -0.135)), Vector3(0.17, 0.012, 0.08), c.darkened(0.2))
+		else:
+			# casco de aço com borda, jugular e (nível 3) suporte de visão noturna e trilhos
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.138, 0.115, 0.152)), Vector3(0, hy + 0.01, 0.01)), 14, 7, c, null, 0.0, true, 0.15)
+			m.cyl(Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 1.1)), Vector3(0, hy - 0.035, 0.01)), 0.142, 0.138, 0.025, 14, c.darkened(0.2))
+			for sx in [-1.0, 1.0]:
+				m.box(Transform3D(Basis(), Vector3(sx * 0.125, hy - 0.08, 0.0)), Vector3(0.012, 0.09, 0.02), STRAP)
+			if lv == 3:
+				m.box(Transform3D(Basis(), Vector3(0, hy + 0.03, -0.15)), Vector3(0.05, 0.04, 0.02), STRAP)
+				m.box(Transform3D(Basis(Vector3.RIGHT, 0.3), Vector3(0, hy + 0.01, -0.175)), Vector3(0.06, 0.035, 0.05), Color(0.2, 0.2, 0.22))
+				for sx in [-1.0, 1.0]:
+					m.box(Transform3D(Basis(), Vector3(sx * 0.13, hy - 0.005, 0.0)), Vector3(0.015, 0.025, 0.12), STRAP)
+	elif is_bag(kind):
+		# mochila: corpo arredondado (maior a cada nível), tampa, bolsos dos lados e da frente, alças
+		var k := 0.85 + lv * 0.12
+		var bz := 0.21
+		m.blob(Transform3D(Basis.from_scale(Vector3(0.17, 0.23, 0.09) * k), Vector3(0, 1.26, bz + 0.03 * k)), 12, 6, c, null, 0.0, true, 0.25)
+		m.box(Transform3D(Basis(Vector3.RIGHT, -0.25), Vector3(0, 1.26 + 0.2 * k, bz + 0.05 * k)), Vector3(0.3 * k, 0.05, 0.15 * k), c.darkened(0.2))
+		m.blob(Transform3D(Basis.from_scale(Vector3(0.12, 0.09, 0.05) * k), Vector3(0, 1.17, bz + 0.11 * k)), 10, 5, c.lightened(0.06))
+		if lv >= 2:
+			for sx in [-1.0, 1.0]:
+				m.blob(Transform3D(Basis.from_scale(Vector3(0.045, 0.1, 0.06) * k), Vector3(sx * 0.17 * k, 1.2, bz + 0.03 * k)), 8, 5, c.darkened(0.1))
+		if lv == 3:
+			# saco de dormir enrolado em cima
+			m.tex(U.FABRIC, 6.0)
+			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(0.16 * k, 1.53, bz + 0.03)), 0.06, 0.06, 0.32 * k, 10, Color(0.3, 0.3, 0.28))
+		m.tex(U.PLAIN, 4.0)
+		for sx in [-0.09, 0.09]:
+			m.box(Transform3D(Basis(), Vector3(sx, 1.27, bz - 0.06 * k)), Vector3(0.035, 0.36, 0.02), STRAP)
+	var mesh := m.commit()
+	_cache[key] = mesh
+	return mesh
 
 
 static func item_mesh(kind: String) -> Mesh:
@@ -402,34 +517,8 @@ static func item_mesh(kind: String) -> Mesh:
 			m.tex(U.FABRIC, 6.0)
 			for k in 3:
 				m.cyl(Transform3D(Basis(), Vector3(k * 0.13 - 0.13, 0, 0)), 0.055, 0.055, 0.1, 10, Color(0.95, 0.93, 0.88))
-		"vest1", "vest2", "vest3":
-			# nível 1: tecido verde; 2: areia com placas; 3: preto tático com placas e bolsos
-			var lv := int(kind.substr(4))
-			var vc: Color = [olive, Color(0.62, 0.55, 0.4), Color(0.13, 0.13, 0.14)][lv - 1]
-			m.tex(U.FABRIC, 3.0)
-			m.boxp(Vector3(0, 0.06, 0), Vector3(0.5, 0.12, 0.6), vc)
-			m.boxp(Vector3(0, 0.13, -0.12), Vector3(0.4, 0.04, 0.2), vc.darkened(0.15))
-			if lv >= 2:
-				m.boxp(Vector3(0, 0.135, 0.12), Vector3(0.36, 0.05, 0.26), vc.darkened(0.25))
-			if lv == 3:
-				for k in 3:
-					m.boxp(Vector3(-0.14 + k * 0.14, 0.17, -0.12), Vector3(0.1, 0.05, 0.12), vc.lightened(0.1))
-		"helmet1", "helmet2", "helmet3":
-			# nível 1: capacete leve de tecido; 2: aço verde; 3: preto com viseira
-			var lv := int(kind.substr(6))
-			var hc: Color = [Color(0.48, 0.45, 0.33), olive, Color(0.12, 0.12, 0.13)][lv - 1]
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.18, 0.15 if lv > 1 else 0.11, 0.21)), Vector3(0, 0.02, 0)), 10, 4, hc)
-			if lv >= 2:
-				m.boxp(Vector3(0, 0.0, 0), Vector3(0.38, 0.02, 0.44), hc.darkened(0.2))
-			if lv == 3:
-				m.boxp(Vector3(0, 0.03, -0.2), Vector3(0.28, 0.08, 0.02), Color(0.2, 0.35, 0.45))
-		"bag1", "bag2", "bag3":
-			var lv := int(kind.substr(3))
-			var bc: Color = [Color(0.45, 0.4, 0.3), Color(0.3, 0.36, 0.25), Color(0.2, 0.22, 0.25)][lv - 1]
-			var sz := 0.8 + lv * 0.15
-			m.tex(U.FABRIC, 3.0)
-			m.boxp(Vector3(0, 0.12 * sz, 0), Vector3(0.42, 0.24, 0.5) * sz, bc)
-			m.boxp(Vector3(0, 0.12 * sz, -0.28 * sz), Vector3(0.3, 0.16, 0.08) * sz, bc.darkened(0.15))
+		"vest1", "vest2", "vest3", "helmet1", "helmet2", "helmet3", "bag1", "bag2", "bag3":
+			pass
 		"a9", "a556", "a762", "a12":
 			var ac: Color = {"a9": Color(0.75, 0.6, 0.2), "a556": Color(0.35, 0.5, 0.3), "a762": Color(0.6, 0.25, 0.2), "a12": Color(0.7, 0.15, 0.12)}[kind]
 			m.tex(U.METAL, 3.0)
@@ -449,22 +538,44 @@ static func item_mesh(kind: String) -> Mesh:
 			var lvc: Color = RARITY[clampi(level_of(kind), 1, 3)]
 			match att_cat(kind):
 				"stock":
-					m.boxp(Vector3(0, 0.05, 0), Vector3(0.05, 0.1, 0.26), POLY)
-					m.boxp(Vector3(0, 0.05, 0.14), Vector3(0.06, 0.13, 0.06), POLY)
+					pass
 				"mag":
-					var hh := 0.12 + level_of(kind) * 0.04
-					m.boxp(Vector3(0, 0.03, 0), Vector3(hh, 0.05, 0.08), METAL)
+					# pente curvo deitado (maior a cada nível), com base e cartuchos aparecendo
+					var lvm := level_of(kind)
+					var segs := 3 + lvm
+					for k in segs:
+						m.box(Transform3D(Basis(Vector3.UP, k * 0.09), Vector3(-0.08 + k * 0.045, 0.022, k * k * 0.004)), Vector3(0.05, 0.04, 0.075), METAL.lightened(0.05))
+					m.boxp(Vector3(-0.11, 0.022, 0), Vector3(0.02, 0.046, 0.085), POLY)
+					m.boxp(Vector3(-0.08 + segs * 0.045, 0.03, segs * segs * 0.004), Vector3(0.025, 0.02, 0.03), Color(0.8, 0.65, 0.3))
 				"sight":
 					if kind == "holo":
 						m.boxp(Vector3(0, 0.02, 0), Vector3(0.05, 0.03, 0.09), METAL)
 						m.boxp(Vector3(0, 0.06, 0.03), Vector3(0.05, 0.05, 0.012), METAL)
-					else:
-						var ln := 0.14 if kind == "scope2" else (0.26 if kind == "scope4" else 0.34)
-						m.cyl(Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3(0, 0.04, ln / 2.0)), 0.03, 0.03, ln, 8, METAL)
 				_:
-					m.cyl(Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3(0, 0.03, 0.09)), 0.025, 0.025, 0.18, 8, METAL)
+					pass
 			m.boxp(Vector3(0, 0.002, 0), Vector3(0.12, 0.004, 0.02), lvc)
 	var mesh := m.commit()
+	var acc := "stock" if att_cat(kind) == "stock" else kind
+	if acc in ["scope2", "scope4", "scope8", "silencer", "stock"]:
+		# luneta, silenciador e coronha: o modelo de verdade, maior pra ver no chão (com a faixa da cor do nível)
+		var st2 := SurfaceTool.new()
+		st2.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st2.append_from(load("res://models/guns/acc_%s.res" % acc), 0, Transform3D(Basis(Vector3.UP, PI / 2.0).scaled(Vector3.ONE * 1.6), Vector3(0, 0.0, 0)))
+		st2.append_from(mesh, 0, Transform3D())
+		mesh = st2.commit()
+	if is_vest(kind) or is_helmet(kind) or is_bag(kind):
+		# no chão: colete deitado de costas, capacete em pé, mochila deitada
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var xf := Transform3D()
+		if is_vest(kind):
+			xf = Transform3D(Basis(Vector3.RIGHT, -PI / 2.0).scaled(Vector3.ONE * 1.25) * Basis.from_scale(Vector3(1, 1, 0.45)), Vector3(0, 0.12, 0)) * Transform3D(Basis(), Vector3(0, -1.27, 0))
+		elif is_helmet(kind):
+			xf = Transform3D(Basis().scaled(Vector3.ONE * 1.3), Vector3(0, 0.17, 0)) * Transform3D(Basis(), Vector3(0, -1.665, 0))
+		else:
+			xf = Transform3D(Basis(Vector3.RIGHT, PI / 2.0).scaled(Vector3.ONE * 1.25), Vector3(0, 0.0, 0)) * Transform3D(Basis(), Vector3(0, -1.26, -0.3))
+		st.append_from(gear(kind), 0, xf)
+		mesh = st.commit()
 	_cache[key] = mesh
 	return mesh
 

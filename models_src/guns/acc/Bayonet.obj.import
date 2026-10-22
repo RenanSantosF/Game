@@ -1,0 +1,22 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://j3i1rypt30fs"
+path="res://.godot/imported/Bayonet.obj-b9b762cefaf32cd284c062b0c1ff1390.mesh"
+
+[deps]
+
+files=["res://.godot/imported/Bayonet.obj-b9b762cefaf32cd284c062b0c1ff1390.mesh"]
+
+source_file="res://models_src/guns/acc/Bayonet.obj"
+dest_files=["res://.godot/imported/Bayonet.obj-b9b762cefaf32cd284c062b0c1ff1390.mesh", "res://.godot/imported/Bayonet.obj-b9b762cefaf32cd284c062b0c1ff1390.mesh"]
+
+[params]
+
+generate_tangents=true
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+optimize_mesh=true
+force_disable_mesh_compression=false
