@@ -104,7 +104,6 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			b = Build.new(self)
 			b.edits = edit_data["e"]
 			b.editor = editor],
-		["Moldando o terreno", func(): _wts = _build_terrain()],
 		["Construindo as cidades", func():
 			for i in towns.size():
 				_build_loc(i)],
@@ -113,6 +112,7 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			_car_spots()
 			_build_extras()
 			_build_added()],
+		["Moldando o terreno", func(): _wts = _build_terrain()],
 		["Plantando árvores", _build_nature],
 		["Arrumando a área de aquecimento", func(): _build_bounds(); _build_lobby()],
 		["Desenhando o mapa", func():
@@ -196,7 +196,43 @@ func height(x: float, z: float) -> float:
 		var rd := _grid(_rl_d, x, z)
 		if rd < 30.0:
 			h = lerpf(_grid(_rl_h, x, z), h, smoothstep(4.0, 30.0, rd))
+	if not _pads.is_empty():
+		h = _pad_h(x, z, h)
 	return h
+
+
+# ---------------- chão plano embaixo das construções ----------------
+# Casa nunca fica inclinada: o terreno é que fica plano embaixo dela (e dos objetos).
+# Por isso o relevo é montado depois das cidades e objetos.
+const PAD_CELL := 24.0
+var _pads := {}
+
+
+func add_pad(c: Vector2, r: float, h: float, blend := 5.0) -> void:
+	var e := [c, r, h, blend]
+	var ext := r + blend
+	for cx in range(floori((c.x - ext) / PAD_CELL), floori((c.x + ext) / PAD_CELL) + 1):
+		for cz in range(floori((c.y - ext) / PAD_CELL), floori((c.y + ext) / PAD_CELL) + 1):
+			var k := Vector2i(cx, cz)
+			if not _pads.has(k):
+				_pads[k] = []
+			_pads[k].append(e)
+
+
+func _pad_h(x: float, z: float, h: float) -> float:
+	var k := Vector2i(floori(x / PAD_CELL), floori(z / PAD_CELL))
+	if not _pads.has(k):
+		return h
+	var best := 0.0
+	var bh := h
+	var p := Vector2(x, z)
+	for e in _pads[k]:
+		var d: float = p.distance_to(e[0])
+		var wt := 1.0 - smoothstep(float(e[1]), float(e[1]) + float(e[3]), d)
+		if wt > best:
+			best = wt
+			bh = e[2]
+	return lerpf(h, bh, best)
 
 
 func town_factor(x: float, z: float) -> float:
@@ -1548,6 +1584,12 @@ func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
 				body.add_child(cs)
 
 
+static func added_nat_xf(ent: Dictionary) -> Transform3D:
+	var k: String = ent["k"]
+	var b := Basis.from_euler(Vector3(float(ent.get("tx", 0.0)), float(ent.get("r", 0.0)), float(ent.get("tz", 0.0)))) * _nat_default_basis(k) * float(ent.get("s", 1.0))
+	return Transform3D(b, MapEdits.v3(ent["p"]))
+
+
 static func _nat_default_basis(k: String) -> Basis:
 	match k:
 		"rock":
@@ -1581,7 +1623,7 @@ func _build_nature() -> void:
 		var p: Vector2 = e[0]
 		var s: float = e[1]
 		var sc := Vector3(s, s * float(e[3]), s * rng.randf_range(0.7, 1.1))
-		var gp := Vector3(p.x, height(p.x, p.y) + sc.y * 0.1, p.y)
+		var gp := Vector3(p.x, low_h(p, s * 0.45) + sc.y * 0.06, p.y)
 		_nat("rock", Transform3D(Basis(Vector3.UP, e[2]) * Basis.from_scale(sc), gp), sets)
 	var tries := 0
 	var trees := 0
@@ -1620,7 +1662,7 @@ func _build_nature() -> void:
 		if _near_town(p, -6.0) or road_dist(x, z) < 3.0 or hw_dist(x, z) < 6.0 or not is_free(p, 1.0) or height(x, z) < WATER_Y + 0.4:
 			continue
 		var s := rng.randf_range(1.3, 2.2)
-		_nat("bush", Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, height(x, z) - 0.1, z)), sets)
+		_nat("bush", Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, low_h(p, 0.45 * s) - 0.08, z)), sets)
 		bushes += 1
 	# pedras: cobertura que segura bala (algumas enormes)
 	tries = 0
@@ -1636,7 +1678,7 @@ func _build_nature() -> void:
 		var s := rng.randf_range(3.5, 7.5) if big else rng.randf_range(1.6, 3.5)
 		var sc := Vector3(s, s * rng.randf_range(0.5, 0.85), s * rng.randf_range(0.7, 1.1))
 		var r := rng.randf() * TAU
-		var gp := Vector3(x, height(x, z) + sc.y * 0.08, z)
+		var gp := Vector3(x, low_h(p, s * 0.45) + sc.y * 0.05, z)
 		_nat("rock", Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(sc), gp), sets)
 		rocks += 1
 		claim(p, s * 0.55)
@@ -1665,7 +1707,7 @@ func _build_nature() -> void:
 		var k: String = ent.get("k", "")
 		if k in NAT_KINDS:
 			var sc := float(ent.get("s", 1.0))
-			_nat(k, Transform3D(Basis(Vector3.UP, float(ent.get("r", 0.0))) * _nat_default_basis(k) * sc, MapEdits.v3(ent["p"])), sets, "+%d" % int(ent.get("n", 1)), {})
+			_nat(k, added_nat_xf(ent), sets, "+%d" % int(ent.get("n", 1)), {})
 	if headless:
 		return
 	if quality >= 1 and not editor:

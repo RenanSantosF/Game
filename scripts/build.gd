@@ -4,7 +4,7 @@ extends RefCounted
 # Constrói as estruturas do mapa (casas, sobrados, galpões, torres, contêineres, carros...).
 # Tudo de uma localidade vai numa malha só (self.mb); a colisão vai em caixas.
 
-const FH := 3.3            # altura de um andar
+const FH := 3.65           # altura de um andar
 const WALL_T := 0.22
 const PLASTER_TINTS := [Color(0.96, 0.93, 0.86), Color(0.92, 0.8, 0.6), Color(0.78, 0.86, 0.9), Color(0.94, 0.76, 0.68),
 	Color(0.84, 0.9, 0.78), Color(1, 1, 1), Color(0.86, 0.76, 0.64), Color(0.95, 0.88, 0.7)]
@@ -45,7 +45,7 @@ func body(pos: Vector3, yaw: float) -> StaticBody3D:
 	var b := StaticBody3D.new()
 	b.collision_mask = 0
 	b.position = pos
-	b.rotation.y = yaw + _dyaw
+	b.rotation = Vector3(_tx, yaw + _dyaw, _tz)
 	if _scale != 1.0:
 		b.scale = Vector3.ONE * _scale
 	if _skip:
@@ -59,6 +59,12 @@ func body(pos: Vector3, yaw: float) -> StaticBody3D:
 # ---------------- ajustes feitos à mão (editor de cenário) ----------------
 
 const NO_YAW := ["barrel", "water_tower", "silo", "radio_tower", "well"]
+# raio de chão plano embaixo de cada coisa (o terreno se ajeita; nada fica flutuando nem inclinado)
+const FOOT := {"shack": 3.8, "warehouse": 10.0, "church": 11.0, "barracks": 9.8, "store": 7.2, "ruin": 6.5,
+	"watchtower": 2.8, "water_tower": 3.2, "silo": 3.4, "radio_tower": 4.2, "well": 1.8,
+	"crates": 1.9, "barrel": 0.7, "container": 3.8, "barrier": 1.9, "barricade": 2.0, "gun_crate": 2.0,
+	"hay": 1.6, "logs": 3.2, "car": 3.0}
+const PROPS := ["crates", "barrel", "container", "sandbags", "barrier", "barricade", "gun_crate", "hay", "logs", "car"]
 const AB := ["low_wall", "fence"]
 
 var edits: Dictionary = {}     # chave -> ajuste ("e" de MapEdits)
@@ -69,6 +75,8 @@ var _used := {}
 var _depth := 0
 var _scale := 1.0
 var _dyaw := 0.0
+var _tx := 0.0      # inclinação feita à mão no editor
+var _tz := 0.0
 var _skip := false
 var _ghosts: Array = []
 var _cur: Node3D = null
@@ -121,8 +129,12 @@ func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
 	var vst := vrng.state
 	var a2 := _apply_args(kind, args, o, e)
 	_skip = bool(e.get("d", false))
+	if not _skip:
+		_ground_pad(kind, a2, e.has("p"))
 	_scale = 1.0 if kind in AB else float(e.get("s", 1.0))
 	_dyaw = float(e.get("r", 0.0)) if kind in NO_YAW else 0.0
+	_tx = float(e.get("tx", 0.0))
+	_tz = float(e.get("tz", 0.0))
 	var hs := w.houses.size()
 	var its := w.items.size()
 	var saved := mb
@@ -155,6 +167,34 @@ func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
 	_skip = false
 	_scale = 1.0
 	_dyaw = 0.0
+	_tx = 0.0
+	_tz = 0.0
+
+
+# deixa o chão plano embaixo (casas na altura delas; objetos soltos assentam no chão)
+func _ground_pad(kind: String, a2: Array, edited: bool) -> void:
+	if not (kind in FOOT or kind == "house" or kind == "sandbags"):
+		return
+	var pos: Vector3 = a2[0]
+	if absf(pos.x) > World.SIZE / 2.0 - 4.0 or absf(pos.z) > World.SIZE / 2.0 - 4.0:
+		return
+	var c := Vector2(pos.x, pos.z)
+	var r: float = FOOT.get(kind, 2.0)
+	if kind == "house":
+		var sp: Dictionary = a2[2]
+		r = 0.5 * Vector2(float(sp.get("w", 8.0)), float(sp.get("d", 7.0))).length() + 1.0
+		if sp.get("ext_stairs", false) or sp.get("porch", false) or sp.get("balcony", false):
+			r += 1.6
+	elif kind == "sandbags":
+		r = float(a2[2]) / 2.0 + 0.6
+	if kind in PROPS:
+		if edited:
+			return
+		var gy := w.height(c.x, c.y)
+		a2[0] = Vector3(pos.x, gy - 0.03, pos.z)
+		w.add_pad(c, r, gy, 3.0)
+	else:
+		w.add_pad(c, r, pos.y + 0.02, 6.0)
 
 
 # editor: remonta um objeto depois de mexer nele (mesmo sorteio de antes)
@@ -192,7 +232,7 @@ func add_new(ent: Dictionary) -> void:
 	var kind: String = ent["k"]
 	var pos := MapEdits.v3(ent["p"])
 	var args := new_args(kind, pos, float(ent.get("r", 0.0)), ent.get("x", []))
-	var e := {"s": ent.get("s", 1.0)}
+	var e := {"s": ent.get("s", 1.0), "tx": ent.get("tx", 0.0), "tz": ent.get("tz", 0.0)}
 	if kind in NO_YAW:
 		e["r"] = ent.get("r", 0.0)
 	_obj(kind, args, "+%d" % int(ent.get("n", 1)), e)
@@ -776,7 +816,14 @@ func _k_low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -
 	var ln := a.distance_to(b)
 	var root := body(Vector3(mid.x, y, mid.y), -atan2(b.y - a.y, b.x - a.x))
 	var st := _style_tex(style)
-	piece(root, Vector3(ln, h, 0.25), Vector3(0, h / 2.0, 0), st[2], st[0], st[1])
+	# base desce até o ponto mais baixo do chão ao longo do muro (sem vão embaixo)
+	var dn := 0.0
+	if absf(mid.x) < World.SIZE / 2.0:
+		for i in 9:
+			var q := a.lerp(b, i / 8.0)
+			dn = maxf(dn, y - w.height(q.x, q.y))
+	dn = minf(dn, 3.0)
+	piece(root, Vector3(ln, h + dn, 0.25), Vector3(0, (h - dn) / 2.0, 0), st[2], st[0], st[1])
 	if not headless:
 		vis(root, Vector3(ln + 0.05, 0.08, 0.32), Vector3(0, h + 0.04, 0), Color(0.85, 0.85, 0.83), U.CONCRETE, 0.5)
 
@@ -786,18 +833,34 @@ func fence(a: Vector2, b: Vector2, y: float) -> void:
 
 
 func _k_fence(a: Vector2, b: Vector2, y: float) -> void:
+	# cerca acompanha o chão: cada mourão no seu ponto e as tábuas inclinadas entre eles
 	var mid := (a + b) / 2.0
 	var ln := a.distance_to(b)
 	var root := body(Vector3(mid.x, y, mid.y), -atan2(b.y - a.y, b.x - a.x))
-	col_box(root, Vector3(ln, 1.0, 0.1), Vector3(0, 0.5, 0))
+	var n := maxi(1, int(ln / 2.2))
+	var ys := []
+	for i in n + 1:
+		var q := a.lerp(b, float(i) / n)
+		ys.append(w.height(q.x, q.y) - y if absf(mid.x) < World.SIZE / 2.0 else 0.0)
+	var seg := ln / n
+	var wood := Color(0.85, 0.75, 0.65)
+	for i in n:
+		var x0 := -ln / 2.0 + i * seg
+		var y0: float = ys[i]
+		var y1: float = ys[i + 1]
+		var ang := atan2(y1 - y0, seg)
+		var rot := Basis(Vector3.BACK, ang)
+		var cx := x0 + seg / 2.0
+		var cy := (y0 + y1) / 2.0
+		var sl := sqrt(seg * seg + (y1 - y0) * (y1 - y0))
+		col_box(root, Vector3(sl, 1.0, 0.1), Vector3(cx, cy + 0.5, 0), rot)
+		if not headless:
+			vis(root, Vector3(sl, 0.12, 0.05), Vector3(cx, cy + 0.45, 0), wood, U.WOOD, 0.6, rot)
+			vis(root, Vector3(sl, 0.12, 0.05), Vector3(cx, cy + 0.85, 0), wood, U.WOOD, 0.6, rot)
 	if headless:
 		return
-	var wood := Color(0.85, 0.75, 0.65)
-	vis(root, Vector3(ln, 0.12, 0.05), Vector3(0, 0.45, 0), wood, U.WOOD, 0.6)
-	vis(root, Vector3(ln, 0.12, 0.05), Vector3(0, 0.85, 0), wood, U.WOOD, 0.6)
-	var n := maxi(1, int(ln / 2.2))
 	for i in n + 1:
-		vis(root, Vector3(0.12, 1.1, 0.12), Vector3(-ln / 2.0 + i * ln / n, 0.55, 0), wood.darkened(0.2), U.WOOD, 0.8)
+		vis(root, Vector3(0.12, 1.4, 0.12), Vector3(-ln / 2.0 + i * seg, float(ys[i]) + 0.4, 0), wood.darkened(0.2), U.WOOD, 0.8)
 
 
 # cerca em volta (polígono de pontos), com portões nos índices gaps
@@ -1204,11 +1267,12 @@ func _k_car(pos: Vector3, yaw: float) -> void:
 	var wreck := rng.randf() < 0.35
 	if wreck:
 		tint = tint.lerp(Color(0.45, 0.3, 0.2), 0.45)
-	var L := 4.4 if kind == 0 else 5.2
+	var L := 4.6 if kind == 0 else 4.5
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), 3.5)
-	col_box(root, Vector3(1.85, 0.95, L), Vector3(0, 0.6, 0))
-	col_box(root, Vector3(1.6, 0.6, 1.6), Vector3(0, 1.2, 0.1 if kind == 0 else -0.4))
+	col_box(root, Vector3(1.95, 1.0, L), Vector3(0, 0.62, 0))
+	if kind == 0:
+		col_box(root, Vector3(1.6, 0.55, 1.8), Vector3(0, 1.35, 0.1))
 	if not headless:
 		var mi := Vehicle.prop_node(kind, Vehicle.car_material(tint.darkened(0.15), 0.55, 0.85 if wreck else 0.15))
 		root.add_child(mi)

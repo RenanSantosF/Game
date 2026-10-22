@@ -1,11 +1,12 @@
 extends SceneTree
 # Converte os carros do Car Kit da Kenney (CC0, models_src/cars) para malhas do jogo:
 #   models/car0.res (esportivo), models/car1.res (picape), models/car_wheel.res
-# A carroceria ganha COLOR.r = 1 nas partes pintadas (a cor sai do shader) e COLOR.g = 1 nos vidros.
+# A carroceria ganha COLOR.r = 1 nas partes pintadas (a cor sai do shader). Sem vidros (dá pra ver quem
+# está dentro); o jeep (feito do SUV) perde também o teto e as colunas: fica aberto em cima.
 # Uso: godot --headless --script tools/prepare_cars.gd
 
 const SRC := "res://models_src/cars/"
-const CARS := [["sedan-sports", "car0"], ["truck", "car1"]]
+const CARS := [["sedan-sports", "car0", false], ["suv", "car1", true]]
 
 
 func _initialize() -> void:
@@ -35,10 +36,24 @@ func _initialize() -> void:
 				best = area[c]
 				paint = c
 		print(e[0], " pintura=", paint, " cor=", _cell_color(img, paint))
-		# superfície 0 = lataria, superfície 1 = vidros (material transparente no jogo)
-		var sts := [SurfaceTool.new(), SurfaceTool.new()]
-		for x in sts:
-			(x as SurfaceTool).begin(Mesh.PRIMITIVE_TRIANGLES)
+		# altura de baixo dos vidros (o jeep corta tudo que estiver acima dela)
+		var glass_y := 99.0
+		var top := 0.0
+		for p in parts:
+			for vv in (p[0][Mesh.ARRAY_VERTEX] as PackedVector3Array):
+				top = maxf(top, ((p[1] as Transform3D) * vv).y)
+		for p in parts:
+			var a: Array = p[0]
+			var xf: Transform3D = p[1]
+			var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+			var uv: PackedVector2Array = a[Mesh.ARRAY_TEX_UV]
+			for t in range(v.size()):
+				var cc := _cell_color(img, _cell(uv[t]))
+				if cc.v > 0.85 and cc.s < 0.25 and cc.b >= cc.r and (xf * v[t]).y > top * 0.6:
+					glass_y = minf(glass_y, (xf * v[t]).y)
+		print("  vidro começa em y=", glass_y)
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for p in parts:
 			var a: Array = p[0]
 			var xf: Transform3D = p[1]
@@ -48,19 +63,20 @@ func _initialize() -> void:
 			var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
 			for t0 in range(0, idx.size(), 3):
 				var cc := _cell_color(img, _cell(uv[idx[t0]]))
-				var glass := cc.v > 0.85 and cc.s < 0.25 and cc.b >= cc.r
-				var st: SurfaceTool = sts[1 if glass else 0]
+				if cc.v > 0.85 and cc.s < 0.25 and cc.b >= cc.r:
+					continue
+				if e[2]:
+					var lo := minf((xf * v[idx[t0]]).y, minf((xf * v[idx[t0 + 1]]).y, (xf * v[idx[t0 + 2]]).y))
+					if lo > glass_y + 0.02:
+						continue
 				for j in 3:
 					var t := idx[t0 + j]
-					var c := _cell(uv[t])
-					st.set_color(Color(1.0 if c == paint else 0.0, 1.0 if glass else 0.0, 0.0))
+					st.set_color(Color(1.0 if _cell(uv[t]) == paint else 0.0, 0.0, 0.0))
 					st.set_uv(uv[t])
 					st.set_normal((xf.basis * n[t]).normalized())
 					st.add_vertex(xf * v[t])
-		(sts[0] as SurfaceTool).index()
-		var mesh: ArrayMesh = (sts[0] as SurfaceTool).commit()
-		(sts[1] as SurfaceTool).index()
-		mesh = (sts[1] as SurfaceTool).commit(mesh)
+		st.index()
+		var mesh: ArrayMesh = st.commit()
 		ResourceSaver.save(mesh, "res://models/%s.res" % e[1])
 		for w in sc.find_children("wheel-*", "MeshInstance3D", true, false):
 			print("  ", w.name, " ", (w as Node3D).transform.origin)

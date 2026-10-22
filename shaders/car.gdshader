@@ -2,12 +2,11 @@ shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
 // Carros (modelos do Car Kit da Kenney, CC0): paleta da textura com cores mais sóbrias.
-// COLOR.r = parte pintada (cor vem de "paint"), COLOR.g = vidro.
+// COLOR.r = parte pintada (cor vem de "paint"). Os carros não têm vidro.
 uniform sampler2D tex : source_color, filter_linear_mipmap;
 uniform vec3 paint : source_color = vec3(0.5, 0.1, 0.08);
 uniform float dirt = 0.25;     // poeira de guerra
 uniform float rust = 0.0;      // carcaça abandonada: ferrugem
-uniform float glass_alpha = 1.0;
 varying vec3 wpos;
 varying vec3 wnrm;
 
@@ -39,11 +38,6 @@ void fragment() {
 		rough = 0.38;
 		spec = 0.55;
 	}
-	if (COLOR.g > 0.5) {
-		base = vec3(0.05, 0.065, 0.08) + vec3(0.12, 0.14, 0.16) * l;
-		rough = 0.08;
-		spec = 0.8;
-	}
 	float n = vnoise(wpos.xz * 4.0 + wpos.y * 3.0) * 0.6 + vnoise(wpos.xy * 11.0) * 0.4;
 	// poeira mais forte embaixo e nas laterais
 	float low = 1.0 - smoothstep(0.1, 0.9, wpos.y);
@@ -56,7 +50,6 @@ void fragment() {
 		rough = mix(rough, 1.0, r);
 	}
 	ALBEDO = base;
-	// ALPHA (o jogo troca esta linha por "ALPHA = glass_alpha;" só no material dos vidros)
 	ROUGHNESS = rough;
 	SPECULAR = spec;
 }

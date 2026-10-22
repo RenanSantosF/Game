@@ -668,7 +668,7 @@ func _move(delta: float) -> void:
 
 
 func _keep_in() -> void:
-	var lobby: bool = game.phase == game.LOBBY
+	var lobby: bool = game.phase == game.LOBBY and not game.sandbox
 	if position.y < -60.0 or (lobby and position.y < World.LOBBY_P.y - 8.0):
 		position = game.world.random_spawn(game.rng) if lobby else game.world.map_spawn(game.rng)
 		velocity = Vector3.ZERO
@@ -911,7 +911,7 @@ func _bot(delta: float) -> void:
 		var d := b_dest - position
 		wish = Vector3(d.x, 0, d.z).normalized() if Vector2(d.x, d.z).length() > 4.0 else Vector3.ZERO
 		return
-	if game.phase == game.LOBBY:
+	if game.phase == game.LOBBY and not game.sandbox:
 		_bot_lobby(delta)
 		return
 	b_think -= delta

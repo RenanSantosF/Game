@@ -146,6 +146,7 @@ func _build_ui() -> void:
 	top_bar.add_child(_btn("+ ADICIONAR", func(): add_panel.visible = not add_panel.visible))
 	top_bar.add_child(_btn("COPIAR", _copy))
 	top_bar.add_child(_btn("LIMPAR", _clear))
+	top_bar.add_child(_btn("▶ JOGAR AQUI", _play))
 	count_lbl = _label("", 16)
 	top_bar.add_child(count_lbl)
 	# câmera: subir/descer e velocidade (direita)
@@ -153,13 +154,19 @@ func _build_ui() -> void:
 	cam_btns.add_theme_constant_override("separation", 6)
 	cam_btns.anchor_left = 1.0
 	cam_btns.anchor_right = 1.0
-	cam_btns.offset_left = -84
-	cam_btns.offset_right = -10
-	cam_btns.offset_top = 90
+	cam_btns.offset_left = -150
+	cam_btns.offset_right = -46
+	cam_btns.offset_top = 96
+	cam_btns.add_theme_constant_override("separation", 10)
 	ui.add_child(cam_btns)
-	cam_btns.add_child(_btn("▲", Callable(), "cam_up"))
-	cam_btns.add_child(_btn("▼", Callable(), "cam_down"))
+	var bu := _btn("▲\nSOBE", Callable(), "cam_up")
+	var bd := _btn("▼\nDESCE", Callable(), "cam_down")
+	for bb in [bu, bd]:
+		bb.custom_minimum_size = Vector2(104, 96)
+		bb.add_theme_font_size_override("font_size", 22)
+		cam_btns.add_child(bb)
 	var fb := _btn("x1", Callable())
+	fb.custom_minimum_size = Vector2(104, 60)
 	fb.pressed.connect(func():
 		fast = not fast
 		fb.text = "x4" if fast else "x1")
@@ -180,7 +187,10 @@ func _build_ui() -> void:
 	toast_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	toast_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	toast_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui.add_child(toast_lbl)
+	var tl := CanvasLayer.new()
+	tl.layer = 6
+	add_child(tl)
+	tl.add_child(toast_lbl)
 	# painel do objeto selecionado (embaixo, à direita do analógico)
 	sel_panel = _panel()
 	sel_panel.anchor_left = 1.0
@@ -200,7 +210,8 @@ func _build_ui() -> void:
 	sel_panel.add_child(g)
 	for e in [["⟲ GIRA", "rot_l"], ["▲ FRENTE", "fwd"], ["GIRA ⟳", "rot_r"], ["SOBE", "up"], ["MAIOR", "big"], ["CHÃO", ""],
 			["◄ ESQ", "left"], ["▼ TRÁS", "back"], ["DIR ►", "right"], ["DESCE", "down"], ["MENOR", "small"], ["AQUI", ""],
-			["DUPLICAR", ""], ["APAGAR", ""], ["PRONTO", ""]]:
+			["INCLINA ▲", "tilt_f"], ["INCLINA ▼", "tilt_b"], ["INCLINA ◄", "tilt_l"], ["INCLINA ►", "tilt_r"], ["RETO", ""], ["DUPLICAR", ""],
+			["APAGAR", ""], ["PRONTO", ""]]:
 		var b: Button
 		match e[0]:
 			"CHÃO":
@@ -209,6 +220,8 @@ func _build_ui() -> void:
 				b = _btn(e[0], _move_here)
 			"DUPLICAR":
 				b = _btn(e[0], _duplicate)
+			"RETO":
+				b = _btn(e[0], _straighten)
 			"APAGAR":
 				b = _btn(e[0], _delete)
 			"PRONTO":
@@ -316,6 +329,11 @@ func _input(ev: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if toast_t > 0.0:
+		toast_t -= delta
+		toast_lbl.modulate.a = clampf(toast_t * 2.0, 0.0, 1.0)
+	if playing:
+		return
 	look_t += delta
 	# teclado (PC): WASD anda, Q/E sobe e desce
 	var kv := Vector2(Input.get_axis("ui_left", "ui_right"), Input.get_axis("ui_up", "ui_down"))
@@ -334,9 +352,6 @@ func _process(delta: float) -> void:
 			hold_t -= 0.08
 			_hold_step(hold)
 	cam_v = 1.0 if hold == "cam_up" else (-1.0 if hold == "cam_down" else 0.0)
-	if toast_t > 0.0:
-		toast_t -= delta
-		toast_lbl.modulate.a = clampf(toast_t * 2.0, 0.0, 1.0)
 	if clear_t > 0.0:
 		clear_t -= delta
 	if hl.visible:
@@ -379,8 +394,8 @@ func _refresh_sel() -> void:
 	(hl.mesh as BoxMesh).size = ab.size + Vector3.ONE * 0.1
 	var st := _state(sel)
 	var changed := sel.begins_with("+") or (data["e"] as Dictionary).has(sel)
-	info_lbl.text = "%s%s\ngiro %d°  tamanho %d%%" % [NAMES.get(_kind_of(sel), _kind_of(sel)), " (novo)" if sel.begins_with("+") else (" (alterado)" if changed else ""),
-		roundi(rad_to_deg(float(st["r"]))), roundi(float(st["s"]) * 100.0)]
+	info_lbl.text = "%s%s\ngiro %d°  inclinação %d° / %d°  tamanho %d%%" % [NAMES.get(_kind_of(sel), _kind_of(sel)), " (novo)" if sel.begins_with("+") else (" (alterado)" if changed else ""),
+		roundi(rad_to_deg(float(st["r"]))), roundi(rad_to_deg(float(st["tx"]))), roundi(rad_to_deg(float(st["tz"]))), roundi(float(st["s"]) * 100.0)]
 
 
 func _aabb(n: Node) -> AABB:
@@ -433,10 +448,11 @@ func _entry(key: String) -> Dictionary:
 func _state(key: String) -> Dictionary:
 	if key.begins_with("+"):
 		var en := _entry(key)
-		return {"p": MapEdits.v3(en["p"]), "r": float(en.get("r", 0.0)), "s": float(en.get("s", 1.0))}
+		return {"p": MapEdits.v3(en["p"]), "r": float(en.get("r", 0.0)), "s": float(en.get("s", 1.0)), "tx": float(en.get("tx", 0.0)), "tz": float(en.get("tz", 0.0))}
 	var e: Dictionary = (data["e"] as Dictionary).get(key, {})
 	var orig: Vector3 = (world.nat_reg[key][1] as Transform3D).origin if _is_nat(key) else world.b.reg[key]["o"][0]
-	return {"p": MapEdits.v3(e["p"]) if e.has("p") else orig, "r": float(e.get("r", 0.0)), "s": float(e.get("s", 1.0))}
+	return {"p": MapEdits.v3(e["p"]) if e.has("p") else orig, "r": float(e.get("r", 0.0)), "s": float(e.get("s", 1.0)),
+		"tx": float(e.get("tx", 0.0)), "tz": float(e.get("tz", 0.0))}
 
 
 func _push_undo(key: String) -> void:
@@ -457,11 +473,15 @@ func _set_state(key: String, st: Dictionary, push := true) -> void:
 		en["p"] = MapEdits.arr(st["p"])
 		en["r"] = snappedf(st["r"], 0.001)
 		en["s"] = snappedf(st["s"], 0.001)
+		en["tx"] = snappedf(st["tx"], 0.001)
+		en["tz"] = snappedf(st["tz"], 0.001)
 	else:
 		var e: Dictionary = (data["e"] as Dictionary).get(key, {})
 		e["p"] = MapEdits.arr(st["p"])
 		e["r"] = snappedf(st["r"], 0.001)
 		e["s"] = snappedf(st["s"], 0.001)
+		e["tx"] = snappedf(st["tx"], 0.001)
+		e["tz"] = snappedf(st["tz"], 0.001)
 		e["k"] = _kind_of(key)
 		data["e"][key] = e
 	_rebuild(key)
@@ -479,7 +499,7 @@ func _rebuild(key: String) -> void:
 			world.b.reg.erase(key)
 		elif en["k"] in World.NAT_KINDS:
 			var sc := float(en.get("s", 1.0))
-			world._nat(en["k"], Transform3D(Basis(Vector3.UP, float(en.get("r", 0.0))) * World._nat_default_basis(en["k"]) * sc, MapEdits.v3(en["p"])), {}, key, {})
+			world._nat(en["k"], World.added_nat_xf(en), {}, key, {})
 		else:
 			world.b.no_items = true
 			world.b.add_new(en)
@@ -524,12 +544,83 @@ func _hold_step(what: String) -> void:
 			st["r"] += deg_to_rad(5.0)
 		"rot_r":
 			st["r"] -= deg_to_rad(5.0)
+		"tilt_f":
+			st["tx"] -= deg_to_rad(2.0)
+		"tilt_b":
+			st["tx"] += deg_to_rad(2.0)
+		"tilt_l":
+			st["tz"] += deg_to_rad(2.0)
+		"tilt_r":
+			st["tz"] -= deg_to_rad(2.0)
 		"big":
 			st["s"] = minf(float(st["s"]) * 1.05, 4.0)
 		"small":
 			st["s"] = maxf(float(st["s"]) / 1.05, 0.25)
 	# segurando o botão vira um passo só no desfazer
 	_set_state(sel, st, hold_t < -0.3)
+
+
+func _straighten() -> void:
+	if sel == "" or _node_of(sel) == null:
+		return
+	var st := _state(sel)
+	st["tx"] = 0.0
+	st["tz"] = 0.0
+	_set_state(sel, st)
+	_toast("Sem inclinação")
+
+
+# ---------------- jogar aqui / voar ----------------
+
+var play_ui: CanvasLayer
+var playing := false
+
+
+func _play() -> void:
+	var p = _aim_point()
+	if p == null:
+		return
+	_select("")
+	add_panel.visible = false
+	playing = true
+	ui.visible = false
+	set_process_input(false)
+	game.sandbox_play(p)
+	if play_ui == null:
+		play_ui = CanvasLayer.new()
+		play_ui.layer = 5
+		add_child(play_ui)
+		var box := HBoxContainer.new()
+		box.add_theme_constant_override("separation", 8)
+		box.anchor_left = 0.5
+		box.anchor_right = 0.5
+		box.offset_left = -140
+		box.offset_top = 112
+		play_ui.add_child(box)
+		var fly := _btn("✈ VOAR", _fly)
+		fly.custom_minimum_size = Vector2(130, 64)
+		box.add_child(fly)
+		var bots := _btn("+3 BOTS", func():
+			game.sandbox_bots(3)
+			_toast("3 bots perto de você (não morrem)"))
+		bots.custom_minimum_size = Vector2(130, 64)
+		box.add_child(bots)
+	play_ui.visible = true
+
+
+func _fly() -> void:
+	if not playing:
+		return
+	playing = false
+	game.sandbox_hud(false)
+	play_ui.visible = false
+	ui.visible = true
+	set_process_input(true)
+	var lp: Player = game.players.get(game.local_id)
+	if lp:
+		cam.position = lp.position + Vector3(0, 6.0, 0) - Vector3(-sin(yaw), 0, -cos(yaw)) * 8.0
+		pitch = -0.4
+	cam.current = true
 
 
 func _snap_ground() -> void:

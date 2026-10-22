@@ -86,4 +86,5 @@ static func nat_apply(xf: Transform3D, e: Dictionary) -> Transform3D:
 		return xf
 	var o := v3(e["p"]) if e.has("p") else xf.origin
 	var s := float(e.get("s", 1.0))
-	return Transform3D(Basis(Vector3.UP, float(e.get("r", 0.0))) * xf.basis.scaled(Vector3.ONE * s), o)
+	var tilt := Basis.from_euler(Vector3(float(e.get("tx", 0.0)), float(e.get("r", 0.0)), float(e.get("tz", 0.0))))
+	return Transform3D(tilt * xf.basis.scaled(Vector3.ONE * s), o)

@@ -8,16 +8,30 @@ const DATA := {
 	"fist": {"name": "Soco", "dmg": 25.0, "rate": 2.2, "mag": 1, "reload": 0.0, "spread": 0.0, "range": 2.2, "pellets": 1, "head": 1.5, "zoom": 1.0, "recoil": 0.0, "len": 0.0, "type": "fist", "slot": 2, "ammo": ""},
 	"glock": {"name": "Glock 17", "dmg": 30.0, "rate": 4.5, "mag": 17, "reload": 1.5, "spread": 1.2, "range": 60.0, "pellets": 1, "head": 2.2, "zoom": 1.0, "recoil": 0.014, "len": 0.2, "type": "pistol", "slot": 1, "ammo": "a9", "bloom": 0.25, "bloom_max": 2.0},
 	"deagle": {"name": "Desert Eagle", "dmg": 72.0, "rate": 1.8, "mag": 7, "reload": 1.9, "spread": 1.0, "range": 80.0, "pellets": 1, "head": 2.5, "zoom": 1.0, "recoil": 0.06, "len": 0.27, "type": "pistol", "slot": 1, "ammo": "a9", "bloom": 0.7, "bloom_max": 3.0},
-	"mp5": {"name": "MP5", "dmg": 27.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 1.7, "range": 70.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.1, "bloom_max": 1.5},
-	"ump45": {"name": "UMP-45", "dmg": 34.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 1.5, "range": 75.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.011, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.13, "bloom_max": 1.7},
+	"mp5": {"name": "MP5", "dmg": 31.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 1.7, "range": 70.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.1, "bloom_max": 1.5},
+	"ump45": {"name": "UMP-45", "dmg": 38.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 1.5, "range": 75.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.011, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.13, "bloom_max": 1.7},
 	"m4a1": {"name": "M4A1", "dmg": 38.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 0.9, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556", "bloom": 0.15, "bloom_max": 2.2},
 	"scar": {"name": "SCAR-L", "dmg": 41.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 0.9, "range": 170.0, "pellets": 1, "head": 2.2, "zoom": 1.8, "recoil": 0.015, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556", "bloom": 0.2, "bloom_max": 2.6},
 	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 1.1, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.5, "recoil": 0.024, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a762", "bloom": 0.5, "bloom_max": 4.5},
-	"r870": {"name": "Remington 870", "dmg": 24.0, "rate": 0.85, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.09, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
-	"m1014": {"name": "M1014", "dmg": 19.0, "rate": 1.7, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.075, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"r870": {"name": "Remington 870", "dmg": 27.0, "rate": 0.85, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.09, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"m1014": {"name": "M1014", "dmg": 21.0, "rate": 1.7, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.075, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
 	"kar98": {"name": "Kar98k", "dmg": 125.0, "rate": 0.75, "mag": 5, "reload": 3.2, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 3.0, "zoom": 3.0, "recoil": 0.06, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
 	"awm": {"name": "AWM", "dmg": 160.0, "rate": 0.6, "mag": 5, "reload": 4.2, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.6, "zoom": 4.0, "recoil": 0.08, "len": 1.2, "type": "sniper", "slot": 0, "ammo": "a762"},
 }
+
+# Dano cai com a distância: [até onde é dano cheio (m), quanto sobra no alcance máximo]
+# Armas de perto (SMG e 12) batem forte colado e perdem muito de longe.
+const FALLOFF := {
+	"fist": [9.0, 1.0], "glock": [10.0, 0.45], "deagle": [15.0, 0.5], "mp5": [8.0, 0.3], "ump45": [9.0, 0.3],
+	"m4a1": [30.0, 0.6], "scar": [32.0, 0.62], "ak47": [25.0, 0.55], "r870": [5.0, 0.1], "m1014": [4.0, 0.08],
+	"kar98": [80.0, 0.8], "awm": [100.0, 0.85],
+}
+
+
+static func falloff(w: Dictionary, dist: float) -> float:
+	var f: Array = FALLOFF.get(w.get("id", ""), [1000.0, 1.0])
+	return lerpf(1.0, float(f[1]), smoothstep(float(f[0]), float(w["range"]), dist))
+
 
 # Itens que não são armas. stack = quantos cabem numa vaga da mochila; count = quanto vem no chão.
 # Colete, capacete, mochila, coronha e carregador têm nível 1, 2 e 3 (cor diferente no chão).
@@ -197,6 +211,7 @@ static func slots_used(inv: Dictionary) -> int:
 # status da arma com os acessórios
 static func stat(id: String, att: Array) -> Dictionary:
 	var w: Dictionary = get_w(id).duplicate()
+	w["id"] = id
 	w["bloom"] = float(w.get("bloom", 0.0))
 	w["bloom_max"] = float(w.get("bloom_max", 0.0))
 	var sl := att_level(att, "stock")

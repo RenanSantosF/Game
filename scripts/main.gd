@@ -40,6 +40,7 @@ var local_id := 0
 var dedicated := false
 var in_game := false
 var map_editing := false
+var sandbox := false        # editor: jogando no mapa com tudo liberado (vida e munição sem fim)
 var training := false
 var rng := RandomNumberGenerator.new()
 var players_root: Node3D
@@ -810,7 +811,7 @@ func _menu_btn(t: String, cb: Callable) -> Button:
 
 
 func _nick() -> String:
-	var n := nick_edit.text.strip_edges().left(16) if nick_edit else ""
+	var n := nick_edit.text.strip_edges().left(16) if is_instance_valid(nick_edit) else str(Cfg.get_v("nick"))
 	return n if n != "" else "Jogador"
 
 
@@ -993,6 +994,103 @@ func start_editor() -> void:
 	add_child(ed)
 
 
+# ---------------- editor: jogar aqui ----------------
+# O boneco entra no ponto escolhido com equipamento nível 3, arma e munição; as outras armas e
+# acessórios ficam no chão em volta. Ninguém perde vida (fase de aquecimento) e o pente enche sozinho.
+func sandbox_play(at: Vector3) -> void:
+	if not sandbox:
+		sandbox = true
+		bots_per_match = 0
+		_enter_game()
+		_server_init()
+		phase_t = 99999.0
+		z_stage = 0
+		z_wait = 1e9
+		z_shrink = 1.0
+		_server_add_player(local_id, _nick(), false)
+		_sandbox_kit(players[local_id])
+	var lp: Player = players[local_id]
+	_sandbox_zone(at)
+	lp.position = at + Vector3(0, 0.4, 0)
+	lp.velocity = Vector3.ZERO
+	lp.air = 0
+	sandbox_hud(true)
+	_sandbox_items(at)
+
+
+func _sandbox_zone(at: Vector3) -> void:
+	z_c0 = Vector2(at.x, at.z)
+	z_c1 = z_c0
+	z_r0 = 70.0
+	z_r1 = 70.0
+
+
+func sandbox_hud(on: bool) -> void:
+	if hud == null:
+		return
+	hud.move_vec = Vector2.ZERO
+	hud.joy_active = false
+	hud.touches.clear()
+	hud.fire_held = false
+	hud.visible = on
+	hud.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	if on:
+		cam.current = true
+
+
+func _sandbox_kit(p: Player) -> void:
+	for k in ["bag3", "vest3", "helmet3"]:
+		_give(p, k, 1, 100.0 if k == "vest3" else null)
+	for k in ["a9", "a556", "a762", "a12"]:
+		_give(p, k, 240, null)
+	for k in [["med", 6], ["bandage", 10], ["drink", 5], ["grenade", 6]]:
+		_give(p, k[0], k[1], null)
+
+
+var _sandbox_items_at := Vector3(0, -999, 0)
+
+
+func _sandbox_items(at: Vector3) -> void:
+	# não repete se já tem um monte de item ali perto
+	if _sandbox_items_at.distance_to(at) < 25.0:
+		return
+	_sandbox_items_at = at
+	var guns := ["glock", "deagle", "mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "awm"]
+	var rest := Weapons.ATTS.duplicate()
+	rest.append_array(["vest1", "vest2", "helmet1", "helmet2", "bag1", "bag2"])
+	var all := guns + rest
+	for i in all.size():
+		var a := TAU * i / all.size()
+		var r := 3.0 if i < guns.size() else 4.6
+		var q := Vector2(at.x + cos(a) * r, at.z + sin(a) * r)
+		var pos := Vector3(q.x, world.height(q.x, q.y) + 0.07, q.y)
+		if absf(pos.y - at.y) > 1.5:
+			pos.y = at.y + 0.07
+		var kind: String = all[i]
+		_all("spawn_item", [world.items.size(), pos, kind, Weapons.default_count(kind), null, [], ""])
+
+
+# bots que não morrem, perto de onde você está
+func sandbox_bots(n := 3) -> void:
+	if not sandbox:
+		return
+	var lp: Player = players[local_id]
+	var guns := ["mp5", "ump45", "m4a1", "scar", "ak47", "m1014"]
+	for i in n:
+		var id := next_bot
+		next_bot += 1
+		_server_add_player(id, "Bot " + str(BOT_NAMES[(id - 1000) % BOT_NAMES.size()]), true)
+		var b: Player = players[id]
+		var a := randf() * TAU
+		var q := Vector2(lp.position.x + cos(a) * randf_range(8.0, 16.0), lp.position.z + sin(a) * randf_range(8.0, 16.0))
+		b.position = Vector3(q.x, world.height(q.x, q.y) + 0.5, q.y)
+		b.air = 0
+		var g: String = guns[randi() % guns.size()]
+		_give(b, g, 1, null)
+		_give(b, Weapons.ammo_of(g), 200, null)
+		_give(b, "vest2", 1, 100.0)
+
+
 func start_join(addr: String) -> void:
 	if addr == "":
 		status_lbl.text = "Digite o IP do servidor."
@@ -1053,6 +1151,11 @@ func _build_world() -> void:
 	_load_progress(1.0, "Pronto!")
 	_step("mapa pronto")
 	if map_editing:
+		# itens do mapa não aparecem no editor; os do "jogar aqui" são criados na hora
+		n_static = world.items.size()
+		items_avail = []
+		for i in world.items.size():
+			items_avail.append(false)
 		return
 	n_static = world.items.size()
 	items_avail = []
@@ -2066,7 +2169,9 @@ func _ui_slow(lp: Player, playing: bool) -> void:
 	hud.alive_n = _alive_count()
 	hud.kills_n = me["kills"] if me else 0
 	var t := _view_target()
-	if phase == LOBBY:
+	if sandbox:
+		hud.set_spec("Modo teste: vida e munição sem fim")
+	elif phase == LOBBY:
 		hud.set_spec("Partida começa em %d s   ·   %d na sala" % [ceili(phase_t), players.size()])
 	elif t and t != lp and phase != END:
 		hud.set_spec("Assistindo: %s" % t.nick)
@@ -2568,7 +2673,9 @@ func _on_peer_left(id: int) -> void:
 func _server_tick(delta: float) -> void:
 	match phase:
 		LOBBY:
-			if dedicated and _human_count() == 0 and not bots_only:
+			if sandbox:
+				phase_t = 99999.0
+			elif dedicated and _human_count() == 0 and not bots_only:
 				phase_t = LOBBY_T
 			elif phase_t <= 0.0:
 				_server_board()
@@ -2763,12 +2870,12 @@ func server_bot_shot(id: int, origin: Vector3, dirs: Array, wid: String) -> void
 		ends.append(r["position"])
 		var c = r["collider"]
 		if c is Player and c.alive:
-			_acc(dmg, c.pid, w, (r["position"].y - c.position.y) > c.head_y(), 0.75)
+			_acc(dmg, c.pid, w, (r["position"].y - c.position.y) > c.head_y(), 0.75, origin.distance_to(r["position"]))
 	_server_apply(id, ends, dmg, wid)
 
 
-func _acc(dmg: Dictionary, vid: int, w: Dictionary, head: bool, mult := 1.0) -> void:
-	var amt: float = float(w["dmg"]) * (float(w["head"]) if head else 1.0) * mult
+func _acc(dmg: Dictionary, vid: int, w: Dictionary, head: bool, mult := 1.0, dist := 0.0) -> void:
+	var amt: float = float(w["dmg"]) * (float(w["head"]) if head else 1.0) * mult * Weapons.falloff(w, dist)
 	if dmg.has(vid):
 		dmg[vid][0] += amt
 		dmg[vid][1] = dmg[vid][1] or head
@@ -3119,7 +3226,7 @@ func req_fire(origin: Vector3, ends: PackedVector3Array, hits: Array, wid: Strin
 			var q2 := PhysicsRayQueryParameters3D.create(origin, v.position + Vector3(0, 0.6, 0), 1)
 			if not space.intersect_ray(q2).is_empty():
 				continue
-		_acc(dmg, v.pid, w, bool(h[1]))
+		_acc(dmg, v.pid, w, bool(h[1]), 1.0, along)
 	_server_apply(id, ends, dmg, wid)
 
 

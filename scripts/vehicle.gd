@@ -9,12 +9,13 @@ extends CharacterBody3D
 const MAX := [21.0, 14.5]        # velocidade máxima (m/s)
 const ACCEL := [7.0, 5.0]
 const TURN := [1.7, 1.35]        # giro (rad/s) em velocidade boa
-const LEN := [4.3, 5.1]
+const LEN := [4.6, 4.5]
 const HP := 520.0
 const WHEEL_R := 0.36
 # modelos do Car Kit da Kenney (CC0): escala do modelo e rodas (x, raio, z da frente, z de trás)
-const SCALE := [Vector3(1.38, 1.4, 1.69), Vector3(1.2, 1.35, 1.73)]
-const WH := [[0.59, 0.42, -1.115, 1.115], [0.51, 0.405, -1.49, 1.31]]
+# 0 = esportivo (rápido), 1 = jeep aberto (mais lento e alto). Sem vidro: dá pra ver e acertar quem dirige.
+const SCALE := [Vector3(1.5, 1.5, 1.82), Vector3(1.38, 1.45, 1.78)]
+const WH := [[0.64, 0.45, -1.2, 1.2], [0.59, 0.435, -1.35, 1.0]]
 static var _shader: Shader
 static var _cmap: Texture2D
 
@@ -53,7 +54,7 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 	# só a parte de baixo bloqueia tiro: quem está dirigindo dá pra acertar pelo vidro
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(1.8, 0.75, LEN[k])
+	bs.size = Vector3(1.95, 0.8, LEN[k])
 	cs.shape = bs
 	cs.position = Vector3(0, 0.72, 0)
 	add_child(cs)
@@ -103,29 +104,11 @@ static func car_material(paint: Color, dirt: float, rust := 0.0) -> ShaderMateri
 	return m
 
 
-static var _gshader: Shader
-
-
-# mesmo shader, mas com transparência (só nos vidros)
-static func _glass_shader() -> Shader:
-	if _gshader == null:
-		_gshader = Shader.new()
-		_gshader.code = (load("res://shaders/car.gdshader") as Shader).code.replace("render_mode diffuse_lambert", "render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert").replace("// ALPHA (", "ALPHA = glass_alpha; // (")
-	return _gshader
-
-
 # carroceria (sem rodas), já virada pra -Z e no tamanho do jogo
-static func body_node(k: int, mat: Material, see_through := true) -> MeshInstance3D:
+static func body_node(k: int, mat: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = load("res://models/car%d.res" % k)
-	mi.set_surface_override_material(0, mat)
-	if mi.mesh.get_surface_count() > 1 and not see_through:
-		mi.set_surface_override_material(1, mat)
-	elif mi.mesh.get_surface_count() > 1:
-		var gm: ShaderMaterial = mat.duplicate()
-		gm.shader = _glass_shader()
-		gm.set_shader_parameter("glass_alpha", 0.55)
-		mi.set_surface_override_material(1, gm)
+	mi.material_override = mat
 	mi.scale = SCALE[k]
 	mi.rotation.y = PI
 	mi.visibility_range_end = 450.0
@@ -135,7 +118,7 @@ static func body_node(k: int, mat: Material, see_through := true) -> MeshInstanc
 # carro parado de enfeite (com rodas fixas)
 static func prop_node(k: int, mat: Material) -> Node3D:
 	var n := Node3D.new()
-	n.add_child(body_node(k, mat, false))
+	n.add_child(body_node(k, mat))
 	var wm: Mesh = load("res://models/car_wheel.res")
 	var wh: Array = WH[k]
 	for z in [wh[2], wh[3]]:
@@ -152,11 +135,11 @@ static func prop_node(k: int, mat: Material) -> Node3D:
 
 
 func seat_pos() -> Vector3:
-	return global_position + Basis(Vector3.UP, yaw) * Vector3(-0.38, 0.38, 0.15 if kind == 0 else -0.45)
+	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 0.42, 0.15) if kind == 0 else Vector3(-0.45, 0.55, 0.05))
 
 
 func wheel_pos() -> Vector3:
-	return global_position + Basis(Vector3.UP, yaw) * Vector3(-0.38, 1.1, -0.35 if kind == 0 else -0.95)
+	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 1.1, -0.35) if kind == 0 else Vector3(-0.45, 1.25, -0.45))
 
 
 # simulação de quem dirige: throttle -1..1 (ré/freio .. acelera), steer -1..1
