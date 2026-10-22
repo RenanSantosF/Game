@@ -86,17 +86,18 @@ t = t_(0.35)
 tink = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in [(2900, 14, 1.0), (4350, 18, 0.6), (6150, 24, 0.4), (8100, 30, 0.2)])
 save("headshot", tink + bp(noise(0.35), 4000, 10000) * np.exp(-t * 120) * 0.4, 0.6)
 
-# abate: pancada grave e agressiva (soco no peito + estalo seco + estrondo distorcido), sem sininho
-t = t_(1.1)
-sub = np.sin(2 * np.pi * np.cumsum(55 + 140 * np.exp(-t * 18)) / R) * np.exp(-t * 5.5)
-thump = lp(noise(1.1), 180) * np.exp(-t * 22) * 3.0
-crack = bp(noise(1.1), 1800, 7000) * np.exp(-t * 90) * 1.4
-metal = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in [(310, 16, 0.5), (523, 20, 0.35), (911, 26, 0.25)])
-o = int(0.06 * R)
-tail = np.zeros_like(t)
-tail[o:] = (lp(noise(1.1), 400) * np.exp(-t * 4.0))[:len(t) - o] * 0.9
-kill = np.tanh((sub * 1.6 + thump + crack + metal * 0.6 + tail) * 2.2)
-save("kill", reverb(kill, 0.9, 0.3), 0.85)
+# abate: "BRAAM" de cinema (acorde grave de metais distorcido) + pancada no peito + estalo seco
+t = t_(1.4)
+def saw(f):
+    ph = (f * t) % 1.0
+    return 2.0 * ph - 1.0
+chord = sum(saw(f * d) for f in (73.42, 110.0, 146.83, 220.0) for d in (0.995, 1.005)) / 8.0
+env = np.minimum(1.0, t / 0.025) * np.exp(-t * 2.6)
+braam = lp(chord * env, 900) * 3.0
+thump = np.sin(2 * np.pi * np.cumsum(48 + 120 * np.exp(-t * 20)) / R) * np.exp(-t * 7) * 1.4
+crack = bp(noise(1.4), 2500, 8000) * np.exp(-t * 70) * 0.9
+kill = np.tanh((braam + thump + crack) * 1.8)
+save("kill", reverb(kill, 1.0, 0.28), 0.9)
 
 # vento em queda livre: rugido forte com rajadas
 d = 3.0
@@ -139,3 +140,12 @@ save("engine", eng, 0.6)
 # porta do carro
 t = t_(0.3)
 save("door", lp(noise(0.3), 700) * np.exp(-t * 25) * 2 + np.sin(2 * np.pi * 140 * t) * np.exp(-t * 30), 0.7)
+
+
+# explosão de carro: estrondo grave longo, estalos e chiado de fogo
+t = t_(2.6)
+boom = np.sin(2 * np.pi * np.cumsum(30 + 90 * np.exp(-t * 6)) / R) * np.exp(-t * 2.2) * 1.6
+rumble = lp(noise(2.6), 260) * np.exp(-t * 1.6) * 3.5
+crk = bp(noise(2.6), 1500, 6000) * np.exp(-t * 9) * 1.2
+expl = np.tanh((boom + rumble + crk) * 1.6)
+save("explosion", reverb(expl, 1.4, 0.3), 0.95)

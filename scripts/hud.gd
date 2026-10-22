@@ -38,6 +38,7 @@ var pick_panel: PanelContainer
 var pick_list: HBoxContainer
 var pick_scroll: ScrollContainer
 var bag_panel: PanelContainer
+var bag_back: Control
 var bag_left: VBoxContainer
 var bag_grid: GridContainer
 var bag_title: Label
@@ -85,6 +86,11 @@ var edit_sel := ""
 var bag_open := false
 var _pick_sig := ""
 var _pick_n := 0
+var kill_t := 0.0
+var _pick_touch := {}
+var kill_txt := ""
+var kill_head := false
+var kill_n := 0
 var _bag_sig := ""
 var _slot_rects := []
 var _slots_bottom := 160.0
@@ -163,8 +169,12 @@ func _build_pick_panel() -> void:
 	pick_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	pick_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	pick_scroll.scroll_deadzone = 12
+	pick_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pick_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pick_panel.add_child(pick_scroll)
 	pick_list = HBoxContainer.new()
+	pick_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pick_list.alignment = BoxContainer.ALIGNMENT_END
 	pick_list.add_theme_constant_override("separation", 4)
 	pick_scroll.add_child(pick_list)
 
@@ -180,6 +190,13 @@ func _tile_style(c: Color, border := Color(1, 1, 1, 0.18)) -> StyleBoxFlat:
 
 
 func _build_bag_panel() -> void:
+	# fundo: arrastar um item pra fora da mochila larga ele no chão
+	bag_back = Control.new()
+	bag_back.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bag_back.visible = false
+	add_child(bag_back)
+	bag_back.set_drag_forwarding(Callable(), func(_p, d): return d is Dictionary and d.get("t") in ["item", "att", "gun", "gear"],
+		func(_p, d): _drop_any(d))
 	bag_panel = PanelContainer.new()
 	var st := _panel_style(0.9)
 	st.set_corner_radius_all(14)
@@ -249,16 +266,6 @@ func _build_bag_panel() -> void:
 	bag_act.add_theme_constant_override("separation", 8)
 	bag_act.custom_minimum_size = Vector2(0, 48)
 	bot.add_child(bag_act)
-	var trash := PanelContainer.new()
-	trash.add_theme_stylebox_override("panel", _tile_style(Color(0.5, 0.1, 0.08, 0.5)))
-	trash.custom_minimum_size = Vector2(56, 48)
-	var tg := Control.new()
-	tg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tg.draw.connect(func(): glyph(tg, "drop", tg.size / 2.0, 14.0, Color.WHITE))
-	trash.add_child(tg)
-	trash.set_drag_forwarding(Callable(), func(_p, d): return d is Dictionary,
-		func(_p, d): _drop_any(d))
-	bot.add_child(trash)
 
 
 func _drop_any(d: Dictionary) -> void:
@@ -364,6 +371,14 @@ func add_step(p: Vector3) -> void:
 		steps.pop_front()
 
 
+# abate: caveira grande no meio da tela, curta e séria
+func kill_banner(victim: String, head: bool, total: int) -> void:
+	kill_t = 1.6
+	kill_txt = victim
+	kill_head = head
+	kill_n = total
+
+
 func feed(t: String, col := Color.WHITE) -> void:
 	var l := Label.new()
 	l.text = t
@@ -381,6 +396,7 @@ func feed(t: String, col := Color.WHITE) -> void:
 func set_bag(open: bool) -> void:
 	bag_open = open
 	bag_panel.visible = open
+	bag_back.visible = open
 	bag_sel = {}
 	_bag_sig = ""
 
@@ -398,9 +414,14 @@ func set_pickups(list: Array) -> void:
 	for c in pick_list.get_children():
 		pick_list.remove_child(c)
 		c.queue_free()
-	for e in list:
+	# o primeiro item fica na direita (lê da direita pra esquerda)
+	var rev := list.duplicate()
+	rev.reverse()
+	for e in rev:
 		var b := Button.new()
 		b.focus_mode = Control.FOCUS_NONE
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.set_meta("key", e["key"])
 		b.add_theme_stylebox_override("normal", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
 		b.add_theme_stylebox_override("hover", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
 		b.add_theme_stylebox_override("pressed", _tile_style(Color(1, 0.8, 0.3, 0.35)))
@@ -437,8 +458,9 @@ func set_pickups(list: Array) -> void:
 		var key: Array = e["key"]
 		b.pressed.connect(func(): pick.emit(key))
 		pick_list.add_child(b)
-	pick_scroll.scroll_horizontal = 0
 	pick_panel.visible = _pick_n > 0
+	await get_tree().process_frame
+	pick_scroll.scroll_horizontal = int(pick_scroll.get_h_scroll_bar().max_value)
 
 
 # quadradinho de item da mochila (arrastável)
@@ -610,7 +632,7 @@ func refresh_bag(p: Player) -> void:
 	# ações do item escolhido
 	if bag_sel.is_empty():
 		var hint := Label.new()
-		hint.text = "Toque num item ou arraste ele até a arma"
+		hint.text = "Arraste até a arma pra equipar · arraste pra fora pra largar"
 		hint.add_theme_font_size_override("font_size", 14)
 		hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
 		bag_act.add_child(hint)
@@ -632,15 +654,11 @@ func refresh_bag(p: Player) -> void:
 						var gi := i
 						_act_btn("equip", func(): inv_action.emit("equip", kind, gi); bag_sel = {})
 						break
-			_act_btn("drop", func(): _drop_any(d))
 		"att":
 			_act_btn("unequip", func(): inv_action.emit("unequip", d["kind"], int(d["slot"])); bag_sel = {})
 		"gun":
 			var si: int = d["slot"]
 			_act_btn("hand", func(): action.emit("slot%d" % (si + 1)); bag_sel = {}; _bag_sig = "")
-			_act_btn("drop", func(): _drop_any(d))
-		"gear":
-			_act_btn("drop", func(): _drop_any(d))
 
 
 # ---------------- botões e toque ----------------
@@ -775,6 +793,11 @@ func _input(e: InputEvent) -> void:
 
 
 func _down(i: int, p: Vector2) -> void:
+	# faixa de coleta: tratada aqui (funciona com outro dedo no analógico)
+	if pick_panel.visible and Rect2(pick_panel.position, pick_panel.size).has_point(p) and not bag_open:
+		touches[i] = "pick"
+		_pick_touch[i] = [p, 0.0]
+		return
 	if _in_gui(p):
 		touches[i] = "gui"
 		return
@@ -823,6 +846,14 @@ func _down(i: int, p: Vector2) -> void:
 func _up(i: int) -> void:
 	var r: String = touches.get(i, "")
 	touches.erase(i)
+	if r == "pick" and _pick_touch.has(i):
+		var st: Array = _pick_touch[i]
+		_pick_touch.erase(i)
+		if float(st[1]) < 14.0:
+			for c in pick_list.get_children():
+				if (c as Control).get_global_rect().has_point(st[0]) and c.has_meta("key"):
+					pick.emit(c.get_meta("key"))
+					break
 	if r == "joy":
 		joy_active = false
 		move_vec = Vector2.ZERO
@@ -837,6 +868,9 @@ func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 		if v.length() < 0.12:
 			v = Vector2.ZERO
 		move_vec = v
+	elif r == "pick" and _pick_touch.has(i):
+		_pick_touch[i][1] = float(_pick_touch[i][1]) + rel.length()
+		pick_scroll.scroll_horizontal -= int(rel.x)
 	elif r == "look":
 		_look += rel
 	elif r == "fire":
@@ -876,6 +910,7 @@ func _process(delta: float) -> void:
 	if center_t <= 0.0:
 		lbl_center.text = ""
 	hit_t = maxf(hit_t - delta, 0.0)
+	kill_t = maxf(kill_t - delta, 0.0)
 	flash.color.a = maxf(flash.color.a - delta * 1.5, 0.0)
 	var ta := 0.0
 	if out_zone:
@@ -912,15 +947,16 @@ func _process(delta: float) -> void:
 	feed_box.position = Vector2(14, under + 50)
 	feed_box.size = Vector2(420, 10)
 	# faixa de coleta: proporção 100 x 20, cabem 5 itens
-	var pw := clampf(s.x * 0.36, 340.0, 480.0)
+	var pw := clampf(s.x * 0.3, 300.0, 400.0)
 	var ph := pw * 0.2
-	pick_panel.position = Vector2(s.x - pw - 14.0, _slots_bottom + 34.0)
+	pick_panel.position = Vector2(s.x - pw - 14.0, _slots_bottom + 10.0)
 	pick_panel.size = Vector2(pw, ph)
 	pick_panel.custom_minimum_size = pick_panel.size
 	pick_scroll.custom_minimum_size = Vector2(pw - 12, ph - 12)
 	var cell := (pw - 12.0 - 4.0 * 4.0) / 5.0
 	for c in pick_list.get_children():
 		(c as Control).custom_minimum_size = Vector2(cell, ph - 12)
+	pick_list.custom_minimum_size = Vector2(pw - 12.0, 0)
 	pick_panel.visible = _pick_n > 0 and mode == "ground" and not bag_open and not edit_mode and not big_map
 	# mochila: no meio, sem ocupar a tela toda
 	var bw := clampf(s.x * 0.62, 560.0, 860.0)

@@ -59,6 +59,8 @@ var punch_t := 0.0
 var vault_t := -1.0
 var _vault := []
 var aim_t := 0.0         # tempo virado pra mira depois de atirar
+var ready_t := 0.0       # tempo com a arma apontada (depois volta pra perto da barriga)
+var _ready_k := 0.0
 var _air_time := 0.0
 var _step_t := 0.0
 
@@ -227,6 +229,8 @@ func set_crouch(c: bool) -> void:
 	if c == crouch:
 		return
 	crouch = c
+	if c:
+		sprint = false
 	cap.height = 1.25 if c else 1.8
 	cshape.position.y = cap.height / 2.0
 
@@ -506,6 +510,7 @@ func _physics_process(delta: float) -> void:
 	cool = maxf(cool - delta, 0.0)
 	punch_t = maxf(punch_t - delta, 0.0)
 	aim_t = maxf(aim_t - delta, 0.0)
+	ready_t = maxf(ready_t - delta, 0.0)
 	if reload_t > 0.0:
 		reload_t -= delta
 		if reload_t <= 0.0:
@@ -588,9 +593,9 @@ func _move(delta: float) -> void:
 		_keep_in()
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
-	var spd := lerpf(1.6, 5.0, clampf((dir.length() - 0.15) / 0.75, 0.0, 1.0))
+	var spd := lerpf(1.6, 4.7, clampf((dir.length() - 0.15) / 0.75, 0.0, 1.0))
 	if sprint:
-		spd = 7.0 if (sel < 0 or cur_wid() == "fist") else 6.5
+		spd = 6.2 if (sel < 0 or cur_wid() == "fist") else 5.8
 	if crouch:
 		spd = 2.8
 	if scoped:
@@ -615,7 +620,10 @@ func _move(delta: float) -> void:
 		if aim_t > 0.0 or scoped:
 			yaw = lerp_angle(yaw, game.cam_yaw_v, minf(1.0, 28.0 * delta))
 		elif dir.length() > 0.15:
-			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 10.0 * delta))
+			# vira pra onde anda sem estalar (girando o analógico rápido ele gira mais devagar)
+			var want := atan2(-dir.x, -dir.z)
+			var diff := angle_difference(yaw, want)
+			yaw += clampf(diff, -5.5 * delta, 5.5 * delta)
 	if not on_floor:
 		velocity.y -= GRAVITY * delta
 		_air_time += delta
@@ -758,10 +766,22 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.tick(delta, false, 0.0, 0.0, [])
 		chute.visible = false
 		return
-	model.visible = air != 3 and not spect and alive and car < 0 and not (_remote_car and not is_local)
+	model.visible = air != 3 and not spect and alive
 	chute.visible = alive and air == 2
 	if not model.visible:
 		return
+	# dirigindo: sentado, mãos no volante, sem arma
+	if car >= 0 and car < game.vehicles.size():
+		var v: Vehicle = game.vehicles[car]
+		model.rotation = Vector3(0, v.yaw, 0)
+		model.position = Vector3(0, -0.45, 0)
+		aim.visible = false
+		sol.play("Idle", 0.2)
+		var wp := v.wheel_pos()
+		var rt := Basis(Vector3.UP, v.yaw) * Vector3.RIGHT
+		sol.tick(delta, not game.near_cam(global_position, 35.0), 0.0, 0.85, [wp - rt * 0.2, wp + rt * 0.2])
+		return
+	aim.visible = true
 	model.rotation.y = yaw
 	chute.rotation.y = yaw
 	var k := minf(1.0, 12.0 * delta)
@@ -794,7 +814,12 @@ func _animate(delta: float, sim: bool) -> void:
 		var q := PhysicsRayQueryParameters3D.create(from, from + fw * 1.05, 1)
 		_wall_near = not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 	_gun_low = lerpf(_gun_low, 1.0 if (_wall_near and armed) else 0.0, minf(1.0, 10.0 * delta))
-	aim.rotation.x = pitch * 0.85 * (1.0 - _gun_low) - 1.1 * _gun_low
+	# sem atirar: arma baixa, perto da barriga; atirando ou mirando: levanta e aponta
+	var rdy: bool = ready_t > 0.0 or aim_t > 0.0 or scoped or (is_local and game.hud != null and game.hud.fire_held)
+	_ready_k = lerpf(_ready_k, 1.0 if rdy else 0.0, minf(1.0, (18.0 if rdy else 5.0) * delta))
+	var low := maxf(_gun_low, (1.0 - _ready_k) * 0.62)
+	aim.rotation.x = pitch * 0.85 * (1.0 - low) - 1.1 * low
+	aim.position = Vector3(0, 1.36 - (1.0 - _ready_k) * 0.12, (1.0 - _ready_k) * 0.06)
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
 	if vault_t >= 0.0 or airborne:
 		sol.play("Air", 0.12)

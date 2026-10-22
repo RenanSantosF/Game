@@ -56,9 +56,16 @@ var _was_firing := false
 var regen_t := 0.0
 var vehicles: Array = []
 var _veh_send_t := 0.0
+var _shake := 0.0
 var _runover_t := {}
 var _snap_q: Array = []
 var menu_stage: Node3D
+var load_bar: ProgressBar
+var load_lbl: Label
+const LOAD_TIPS := ["Dica: arraste pra cima enquanto atira pra subir a mira pra cabeça.",
+	"Dica: tocar na arma que está na mão recarrega.", "Dica: itens com brilho roxo são nível 3.",
+	"Dica: o carro protege, mas explode se levar muito tiro.", "Dica: agachado na moita fica difícil de te ver de longe.",
+	"Dica: a vida enche aos poucos depois do kit médico."]
 var menu_sol: Soldier
 var menu_aim: Node3D
 var menu_gun: Node3D
@@ -582,7 +589,7 @@ func start_dedicated() -> void:
 		get_tree().quit(1)
 		return
 	multiplayer.multiplayer_peer = peer
-	_build_world()
+	await _build_world()
 	_server_init()
 	in_game = true
 	print("[servidor] rodando na porta %d, %d bots por partida" % [PORT, bots_per_match])
@@ -600,15 +607,57 @@ func _show_loading() -> void:
 	if menu == null:
 		return
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.07, 0.06, 0.96)
+	bg.color = Color(0.05, 0.06, 0.05, 1.0)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	menu.add_child(bg)
-	var l := _menu_label("Carregando o mapa...", 30)
-	l.set_anchors_preset(Control.PRESET_FULL_RECT)
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	menu.add_child(l)
+	var t := _menu_label("CONFRONTO", 54)
+	t.add_theme_color_override("font_color", Color(1, 0.86, 0.45))
+	t.set_anchors_preset(Control.PRESET_FULL_RECT)
+	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	t.offset_top = -120
+	t.offset_bottom = -120
+	menu.add_child(t)
+	load_lbl = _menu_label("Preparando...", 18)
+	load_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	load_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	load_lbl.offset_top = 70
+	load_lbl.offset_bottom = 70
+	load_lbl.modulate = Color(1, 1, 1, 0.75)
+	menu.add_child(load_lbl)
+	load_bar = ProgressBar.new()
+	load_bar.show_percentage = false
+	load_bar.anchor_left = 0.25
+	load_bar.anchor_right = 0.75
+	load_bar.anchor_top = 0.5
+	load_bar.anchor_bottom = 0.5
+	load_bar.offset_top = 20
+	load_bar.offset_bottom = 34
+	var bgs := StyleBoxFlat.new()
+	bgs.bg_color = Color(1, 1, 1, 0.12)
+	bgs.set_corner_radius_all(7)
+	var fgs := StyleBoxFlat.new()
+	fgs.bg_color = Color(1, 0.7, 0.2)
+	fgs.set_corner_radius_all(7)
+	load_bar.add_theme_stylebox_override("background", bgs)
+	load_bar.add_theme_stylebox_override("fill", fgs)
+	load_bar.max_value = 100.0
+	menu.add_child(load_bar)
+	var tip := _menu_label(LOAD_TIPS[randi() % LOAD_TIPS.size()], 15)
+	tip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	tip.offset_top = -60
+	tip.offset_bottom = -24
+	tip.modulate = Color(1, 1, 1, 0.55)
+	menu.add_child(tip)
 	await get_tree().process_frame
 	await get_tree().process_frame
+
+
+func _load_progress(k: float, txt: String) -> void:
+	if load_bar:
+		var tw := create_tween()
+		tw.tween_property(load_bar, "value", k * 100.0, 0.15)
+	if load_lbl:
+		load_lbl.text = txt
 
 
 func start_host(online: bool) -> void:
@@ -627,7 +676,7 @@ func start_host(online: bool) -> void:
 		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	bots_per_match = MAX_PLAYERS - 1
 	local_id = multiplayer.get_unique_id()
-	_build_world()
+	await _build_world()
 	_step("criando tela do jogo")
 	_enter_game()
 	_server_init()
@@ -662,7 +711,7 @@ func start_join(addr: String) -> void:
 func _on_connected() -> void:
 	local_id = multiplayer.get_unique_id()
 	await _show_loading()
-	_build_world()
+	await _build_world()
 	_enter_game()
 	rpc_id(1, "req_join", _nick())
 
@@ -687,7 +736,16 @@ func _build_world() -> void:
 	world = World.new()
 	world.name = "World"
 	add_child(world)
-	world.build(dedicated, int(Cfg.get_v("quality")))
+	var steps := world.build_steps(dedicated, int(Cfg.get_v("quality")))
+	# quem entra numa sala monta tudo de uma vez (as mensagens da rede não podem chegar no meio)
+	var show := load_bar != null and multiplayer.is_server()
+	for i in steps.size():
+		_load_progress(float(i) / steps.size(), str(steps[i][0]) + "...")
+		if show:
+			await get_tree().process_frame
+			await get_tree().process_frame
+		(steps[i][1] as Callable).call()
+	_load_progress(1.0, "Pronto!")
 	_step("mapa pronto")
 	n_static = world.items.size()
 	items_avail = []
@@ -795,6 +853,65 @@ func veh_st(i: int, pos: Vector3, yw: float, spd: float) -> void:
 	v.target_pos = pos
 	v.target_yaw = yw
 	v.speed = spd
+
+
+func _server_car_damage(v: Vehicle, amount: float, by: int) -> void:
+	if v.dead:
+		return
+	v.hp -= amount
+	if v.hp <= 0.0:
+		_all("on_explode", [v.idx])
+		# explosão: machuca quem estiver perto (quem está dentro quase morre)
+		for id in players.keys():
+			var p: Player = players.get(id)
+			if p == null or not p.alive or p.air != 0:
+				continue
+			var d := p.global_position.distance_to(v.global_position)
+			if p.car == v.idx:
+				_server_damage(id, by, 180.0, false, "explosão", true)
+			elif d < 7.0:
+				_server_damage(id, by, 150.0 * (1.0 - d / 7.0) + 15.0, false, "explosão", true)
+
+
+@rpc("authority", "call_remote", "reliable")
+func on_explode(i: int) -> void:
+	var v: Vehicle = vehicles[i]
+	var old := v.driver
+	if old != 0:
+		on_car(i, 0)
+	v.explode_visual()
+	if dedicated:
+		return
+	sfx_at("explosion", v.global_position, false, 0.0, 220.0)
+	var fl := OmniLight3D.new()
+	fl.light_color = Color(1.0, 0.55, 0.2)
+	fl.light_energy = 6.0
+	fl.omni_range = 14.0
+	add_child(fl)
+	fl.global_position = v.global_position + Vector3(0, 1.5, 0)
+	var tw := create_tween()
+	tw.tween_property(fl, "light_energy", 0.0, 0.8)
+	tw.tween_callback(fl.queue_free)
+	for k in 14:
+		var mi := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.5
+		sm.height = 1.0
+		sm.radial_segments = 8
+		sm.rings = 4
+		mi.mesh = sm
+		var fire := k < 7
+		mi.material_override = U.mat(Color(1.0, 0.5, 0.15) if fire else Color(0.15, 0.14, 0.13), fire)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.global_position = v.global_position + Vector3(randf_range(-1, 1), 1.0 + randf() * 0.5, randf_range(-1.5, 1.5))
+		var t2 := create_tween()
+		var dur := randf_range(0.5, 0.9) if fire else randf_range(1.8, 3.0)
+		t2.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-2, 2), randf_range(2, 6), randf_range(-2, 2)), dur)
+		t2.parallel().tween_property(mi, "scale", Vector3.ONE * (randf_range(2.0, 3.5) if fire else randf_range(3.0, 5.0)), dur)
+		t2.tween_callback(mi.queue_free)
+	if cam and cam.global_position.distance_to(v.global_position) < 30.0:
+		_shake = 0.6
 
 
 # atropelou: o servidor confere a distância
@@ -1170,6 +1287,8 @@ func _process(delta: float) -> void:
 	_snap_items()
 	# carros dos outros: seguem a posição recebida; o motorista vai junto no banco
 	for v: Vehicle in vehicles:
+		if not v.settled and Engine.get_physics_frames() > 4:
+			v.settle()
 		if v.driver != 0 and (v.driver != local_id or dedicated):
 			v.follow(delta)
 			var dp: Player = players.get(v.driver)
@@ -1326,7 +1445,7 @@ func _local_update(lp: Player, delta: float) -> void:
 			lp.bloom = maxf(lp.bloom - delta * 4.0, 0.0)
 		if _snap_t > 0.0:
 			_snap_t -= delta
-		if firing or _shot_pending or _snap_t > 0.0 or (int(Cfg.get_v("aim_assist")) == 2 and lp.air == 0 and lp.car < 0):
+		if firing or _shot_pending or _snap_t > 0.0:
 			_aim_assist(lp, w, delta)
 		if firing or _shot_pending:
 			_press_t += delta
@@ -1386,6 +1505,10 @@ func _local_update(lp: Player, delta: float) -> void:
 	spring.position.x = lerpf(spring.position.x, side, minf(1.0, (25.0 if side < spring.position.x else 6.0) * delta))
 	spring.spring_length = lerpf(spring.spring_length, target_len, minf(1.0, 8.0 * delta))
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, 12.0 * delta))
+	if _shake > 0.0:
+		_shake = maxf(_shake - delta, 0.0)
+		cam.h_offset = randf_range(-0.15, 0.15) * _shake
+		cam.v_offset = randf_range(-0.15, 0.15) * _shake
 	# manda posição pro servidor 20x por segundo
 	send_t += delta
 	if send_t >= 0.05 and not multiplayer.is_server() and playing:
@@ -1418,6 +1541,9 @@ func _local_update(lp: Player, delta: float) -> void:
 	hud.refresh_bag(lp)
 
 
+# Mira assistida: só puxa ao tocar/segurar o tiro ou ao abrir a mira. Gruda no peito de quem está
+# mais perto da mira (empate: o mais perto de mim); de longe precisa estar mais perto da mira pra pegar.
+# Arrastar pra cima atirando sobe pra cabeça (capa).
 func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	var mode: int = int(Cfg.get_v("aim_assist"))
 	if mode == 0 or (mode == 1 and lp.scoped) or lp.cur_wid() == "fist":
@@ -1426,47 +1552,49 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	var from := cam.global_position
 	var fwd := -cam.global_transform.basis.z
 	if assist_t <= 0.0:
-		assist_t = 0.1
+		assist_t = 0.08
 		assist_target = 0
-		var best := 9.0
+		var best := 1e9
 		var space := get_world_3d().direct_space_state
 		for id in players:
 			var o: Player = players[id]
 			if o == lp or not o.alive or o.spect or o.air != 0:
 				continue
-			var tp := o.position + Vector3(0, o.head_y() - 0.35, 0)
+			var tp := o.position + Vector3(0, o.head_y() - 0.45, 0)
 			var d := tp - from
 			var dist := d.length()
-			if dist > minf(float(w["range"]), 120.0) or dist < 0.5:
+			if dist > minf(float(w["range"]), 120.0) or dist < 1.0:
 				continue
 			var ang := fwd.angle_to(d / dist)
-			var lim := clampf(atan2(5.5, dist), 0.08, 0.5)
-			# só olhando (sem atirar): puxa mais de leve e só quando a mira já está perto
-			if not hud.fire_held and not _shot_pending and _snap_t <= 0.0:
-				lim *= 0.45
-			if ang > lim or ang > best:
+			# cone em graus "de tamanho de gente": quanto mais longe, mais fino
+			var lim := clampf(atan2(3.2, dist), 0.03, 0.42)
+			if ang > lim:
+				continue
+			var score := ang + lp.position.distance_to(o.position) * 0.0025
+			if score >= best:
 				continue
 			var q := PhysicsRayQueryParameters3D.create(from, tp, 1)
 			if not space.intersect_ray(q).is_empty():
 				continue
-			best = ang
+			best = score
 			assist_target = id
 	var t: Player = players.get(assist_target)
 	if t == null or not t.alive:
 		return
-	# arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
-	var aimp := t.position + Vector3(0, t.head_y() + 0.12 if up_drag > 18.0 else t.head_y() - 0.4, 0)
-	# acompanha quem está correndo (mira um pouco à frente)
-	var tv: Vector3 = t.velocity if t.velocity.length() > 0.1 else (t.target_pos - t.position) * 10.0
-	aimp += Vector3(tv.x, 0, tv.z) * clampf(from.distance_to(aimp) / 300.0, 0.0, 0.15)
+	var head := up_drag > 18.0
+	var aimp := t.position + Vector3(0, t.head_y() + 0.1 if head else t.head_y() - 0.45, 0)
+	# acompanha quem corre (pouco, e com limite: nada de puxão doido)
+	var tv: Vector3 = t.velocity
+	var lead := Vector3(tv.x, 0, tv.z) * clampf(from.distance_to(aimp) / 400.0, 0.0, 0.12)
+	aimp += lead.limit_length(1.2)
 	var dir := (aimp - from).normalized()
+	if fwd.angle_to(dir) > 0.6:
+		return
 	var wy := atan2(-dir.x, -dir.z)
 	var wp := asin(clampf(dir.y, -1.0, 1.0))
-	var firing: bool = hud.fire_held
-	var passive := not firing and not _shot_pending and _snap_t <= 0.0
-	var k := minf(1.0, (22.0 if up_drag > 18.0 else (20.0 if firing else (5.0 if passive else 9.0))) * delta)
+	var k := minf(1.0, (24.0 if head else 20.0) * delta)
 	if _snap_t > 0.0:
-		k = minf(1.0, 45.0 * delta)
+		k = minf(1.0, 40.0 * delta)
 	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
@@ -1598,7 +1726,7 @@ func _on_action(act: String) -> void:
 			for c in hud.pick_list.get_children():
 				l.append(c)
 			if not l.is_empty():
-				(l[0] as Button).pressed.emit()
+				(l[-1] as Button).pressed.emit()
 		"slot0", "slot1", "slot2", "slot3":
 			_select(lp, int(act.substr(4)) - 1)
 		"car":
@@ -1767,6 +1895,8 @@ func _local_fire(lp: Player) -> void:
 		var col = res["collider"]
 		if col is Player and col.alive:
 			hits.append([col.pid, (res["position"].y - col.position.y) > col.head_y()])
+		elif col is Vehicle and not col.dead:
+			hits.append(["car", col.idx])
 		else:
 			hits.append(-1)
 	_to_server("req_fire", [origin, ends, hits, wid])
@@ -1800,6 +1930,8 @@ func _play_shot(wid: String, att: Array, pos: Vector3, local: bool) -> void:
 func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> void:
 	if dedicated:
 		return
+	p.aim_t = maxf(p.aim_t, 0.8)
+	p.ready_t = 1.6
 	if wid == "fist":
 		sfx_at("punch_swing", p.position, local)
 		return
@@ -1807,11 +1939,18 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 	var far := cam != null and cam.global_position.distance_to(p.position) > 200.0
 	var from := p.muzzle_pos()
 	if not far:
+		# sem traçante colorido: só a poeira no impacto e um clarão rápido de luz no cano
 		for e in ends:
-			_tracer(from, e)
-			_temp_box(e, 0.1, Color(0.5, 0.47, 0.4), 0.3)
-		if not ("silencer" in att):
-			_temp_box(from, 0.12, Color(1.0, 0.85, 0.3), 0.04, true)
+			_temp_box(e, 0.08, Color(0.45, 0.42, 0.36), 0.25)
+		if not ("silencer" in att) and cam and cam.global_position.distance_to(from) < 60.0:
+			var fl := OmniLight3D.new()
+			fl.light_color = Color(1.0, 0.75, 0.45)
+			fl.light_energy = 1.6
+			fl.omni_range = 3.5
+			fl.shadow_enabled = false
+			add_child(fl)
+			fl.global_position = from
+			get_tree().create_timer(0.04).timeout.connect(fl.queue_free)
 	_play_shot(wid, att, p.position, local)
 
 
@@ -1828,6 +1967,23 @@ func _tracer(a: Vector3, b: Vector3) -> void:
 	var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT
 	mi.global_transform = Transform3D(Basis.looking_at(dir, up) * Basis.from_scale(Vector3(1, 1, length)), (a + b) / 2.0)
 	get_tree().create_timer(0.05).timeout.connect(mi.queue_free)
+
+
+# respingo de sangue curto (pode desligar nas configurações)
+func _blood(at: Vector3) -> void:
+	if cam == null or cam.global_position.distance_to(at) > 70.0:
+		return
+	for i in 4:
+		var mi := MeshInstance3D.new()
+		mi.mesh = U.box_mesh(Vector3(0.05, 0.05, 0.05))
+		mi.material_override = U.mat(Color(0.45, 0.02, 0.02))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.global_position = at + Vector3(randf_range(-0.12, 0.12), randf_range(-0.1, 0.1), randf_range(-0.12, 0.12))
+		var tw := create_tween()
+		tw.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-0.4, 0.4), randf_range(-0.6, 0.1), randf_range(-0.4, 0.4)), 0.35)
+		tw.parallel().tween_property(mi, "scale", Vector3(0.2, 0.2, 0.2), 0.35)
+		tw.tween_callback(mi.queue_free)
 
 
 func _temp_box(pos: Vector3, size: float, col: Color, life: float, unshaded := false) -> void:
@@ -2177,11 +2333,19 @@ func _server_apply(id: int, ends: PackedVector3Array, dmg: Dictionary, wid: Stri
 
 
 func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, raw := false) -> void:
-	if phase == LOBBY or phase == END:
+	if phase == END:
+		return
+	if phase == LOBBY:
+		# aquecimento: ninguém perde vida, mas quem atirou vê o dano
+		var lv: Player = players.get(vid)
+		if lv and aid > 0 and aid != vid:
+			_all("on_hp", [vid, lv.hp, lv.armor, aid, head, amount])
 		return
 	var v: Player = players.get(vid)
 	if v == null or not v.alive or v.spect:
 		return
+	if not raw and v.car >= 0:
+		amount *= 0.75     # dentro do carro é mais difícil, mas dá pra acertar
 	if not raw:
 		# capacete segura parte do tiro na cabeça; colete segura parte do tiro no corpo (e vai gastando)
 		if head and v.helmet > 0:
@@ -2480,6 +2644,12 @@ func req_fire(origin: Vector3, ends: PackedVector3Array, hits: Array, wid: Strin
 		var h = hits[i]
 		if not (h is Array) or h.size() < 2:
 			continue
+		if h[0] is String:
+			if h[0] == "car" and int(h[1]) >= 0 and int(h[1]) < vehicles.size():
+				var vc: Vehicle = vehicles[int(h[1])]
+				if not vc.dead and vc.global_position.distance_to(ends[i]) < 5.0:
+					_server_car_damage(vc, float(w["dmg"]), id)
+			continue
 		var v: Player = players.get(int(h[0]))
 		if v == null or not v.alive or v == p:
 			continue
@@ -2762,12 +2932,15 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 	if hp < old and vid == local_id and aid == 0 and Time.get_ticks_msec() - _pain_snd > 1800:
 		_pain_snd = Time.get_ticks_msec()
 		sfx("pain%d" % randi_range(0, 2), -2.0)
+	# acerto (vale também no lobby, onde ninguém perde vida: mostra quanto teria tirado)
+	if amount > 0.0 and aid == local_id and vid != local_id:
+		hud.hit(head, false)
+		sfx("headshot" if head else "hit", -6.0)
+		if v:
+			hud.dmg_number(v.position, amount, head, false)
+	if amount > 0.0 and v and aid != 0 and bool(Cfg.get_v("blood")):
+		_blood(v.position + Vector3(0, v.head_y() - (0.0 if head else 0.45), 0))
 	if hp < old:
-		if aid == local_id and vid != local_id:
-			hud.hit(head, false)
-			sfx("headshot" if head else "hit", -6.0)
-			if v:
-				hud.dmg_number(v.position, amount, head, false)
 		if vid == local_id:
 			sfx("hurt", -4.0)
 			var a: Player = players.get(aid)
@@ -2805,13 +2978,16 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		hud.feed("%s caiu de muito alto" % vn, col)
 	elif wid == "carro":
 		hud.feed("%s atropelou %s" % [kn, vn], col)
+	elif wid == "explosão":
+		hud.feed("%s explodiu %s" % [kn, vn] if kn != vn else "%s explodiu" % vn, col)
 	elif wid == "zona" or aid == 0:
 		hud.feed("%s morreu na zona" % vn, col)
 	else:
 		hud.feed("%s  [%s%s]  %s" % [kn, Weapons.get_w(wid)["name"], " · cabeça" if head else "", vn], col)
 	if aid == local_id and vid != local_id:
 		hud.hit(head, true)
-		sfx("kill", -2.0)
+		hud.kill_banner(vn, head, int(info[local_id]["kills"]) if info.has(local_id) else 0)
+		sfx("kill", 0.0)
 		hud.dmg_number(vpos, amount, head, true)
 		hud.center("Você eliminou %s" % vn, 2.0)
 	if vid == local_id:

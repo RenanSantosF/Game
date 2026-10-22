@@ -74,11 +74,37 @@ var _scatter_nodes: Array = []
 var _lobby_cover: Array = []
 var car_spots: Array = []   # carros dirigíveis: [posição, yaw, tipo, cor]
 var b: Build
+var _wts := PackedColorArray()
 
 
 func build(is_headless: bool, q := 1) -> void:
+	for st in build_steps(is_headless, q):
+		(st[1] as Callable).call()
+
+
+# Etapas da montagem do mapa (o jogo mostra uma barra de progresso entre elas)
+func build_steps(is_headless: bool, q := 1) -> Array:
 	headless = is_headless
 	quality = q
+	return [
+		["Gerando o relevo", _step_relief],
+		["Traçando rodovias e estradas", func(): _make_highways(); _make_roads(); b = Build.new(self)],
+		["Moldando o terreno", func(): _wts = _build_terrain()],
+		["Construindo as cidades", func():
+			for i in towns.size():
+				_build_loc(i)],
+		["Colocando carros e objetos", func(): _build_highway_props(); _car_spots(); _build_extras()],
+		["Plantando árvores", _build_nature],
+		["Arrumando a área de aquecimento", func(): _build_bounds(); _build_lobby()],
+		["Desenhando o mapa", func():
+			if not headless:
+				_build_highway_mesh()
+				_build_map(_wts)
+				_build_env()],
+	]
+
+
+func _step_relief() -> void:
 	noise.seed = SEED
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.frequency = 0.0026
@@ -94,22 +120,6 @@ func build(is_headless: bool, q := 1) -> void:
 		towns.append({"name": t[0], "pos": t[1], "kind": t[2], "r": t[3], "h": 0.0})
 	for t in towns:
 		t["h"] = _base(t["pos"].x, t["pos"].y)
-	_make_highways()
-	_make_roads()
-	b = Build.new(self)
-	var wts := _build_terrain()
-	for i in towns.size():
-		_build_loc(i)
-	_build_highway_props()
-	_car_spots()
-	_build_extras()
-	_build_nature()
-	_build_bounds()
-	_build_lobby()
-	if not headless:
-		_build_highway_mesh()
-		_build_map(wts)
-		_build_env()
 
 
 # ---------------- relevo ----------------
@@ -368,7 +378,7 @@ func _car_spots() -> void:
 			claim(p, 4.0)
 			var kind := car_spots.size() % 2
 			var tint: Color = Build.CAR_TINTS[rng.randi() % Build.CAR_TINTS.size()]
-			car_spots.append([Vector3(p.x, height(p.x, p.y) + 0.3, p.y), rng.randf() * TAU, kind, tint])
+			car_spots.append([Vector3(p.x, height(p.x, p.y), p.y), rng.randf() * TAU, kind, tint])
 			break
 
 

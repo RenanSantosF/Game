@@ -18,6 +18,10 @@ static var v := {
 	"volume": 0.9,
 	"layout": {},        # botão -> [x (fração da tela), y (fração), escala]
 	"invert": false,
+	"blood": true,       # respingo de sangue no acerto
+	"shadows": true,     # sombras
+	"tex_detail": 1,     # 0 = textura simples, 1 = detalhada
+	"grass": true,       # tufos de grama
 	"ver": 2,            # versão das configurações (migra padrões novos)
 }
 static var _loaded := false
