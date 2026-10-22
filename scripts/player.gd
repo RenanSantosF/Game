@@ -16,6 +16,7 @@ const SHIRTS := [Color(0.32, 0.36, 0.24), Color(0.55, 0.5, 0.38), Color(0.2, 0.2
 	Color(0.55, 0.45, 0.25), Color(0.25, 0.35, 0.3)]
 const PANTS := [Color(0.22, 0.28, 0.4), Color(0.3, 0.33, 0.23), Color(0.15, 0.15, 0.16), Color(0.5, 0.44, 0.33), Color(0.33, 0.33, 0.34), Color(0.38, 0.3, 0.22)]
 const SKINS := [Color(0.93, 0.76, 0.62), Color(0.84, 0.64, 0.48), Color(0.68, 0.48, 0.34), Color(0.5, 0.34, 0.23), Color(0.97, 0.82, 0.7), Color(0.76, 0.56, 0.4)]
+const BOOTS := [Color(0.1, 0.08, 0.06), Color(0.22, 0.16, 0.1), Color(0.14, 0.14, 0.14), Color(0.35, 0.27, 0.18)]
 const HAIRS := [Color(0.1, 0.08, 0.06), Color(0.24, 0.16, 0.1), Color(0.4, 0.3, 0.18), Color(0.05, 0.05, 0.05), Color(0.55, 0.45, 0.3)]
 const OLIVE := Color(0.38, 0.42, 0.28)
 
@@ -70,14 +71,11 @@ var _was_floor := true
 
 # visual
 var model: Node3D
+var sol: Soldier
+var dying_t := 0.0
 var aim: Node3D
 var gun: Node3D
 var gun_key := ""
-var leg_l: Node3D
-var leg_r: Node3D
-var knee_l: Node3D
-var knee_r: Node3D
-var arm_parts := []      # [upper, fore, hand] x2 (esq, dir)
 var vest_mi: MeshInstance3D
 var helmet_mi: MeshInstance3D
 var bag_mi: MeshInstance3D
@@ -107,6 +105,7 @@ var b_skill := 1.0
 var b_far := false
 var _vault_drop := false
 var _breath := 0.0
+var _crouch_k := 0.0
 var _wall_chk := 0.0
 var _wall_near := false
 var _gun_low := 0.0
@@ -228,41 +227,6 @@ func set_crouch(c: bool) -> void:
 
 # ---------------- modelo ----------------
 
-# membro afunilado apontando pra baixo (coxa, canela), com junta redonda em cima
-static func _limb(rb: float, rt: float, h: float, col: Color, layer: int, foot := false) -> Mesh:
-	var key := "limb_%s_%.3f_%.3f_%.3f_%s_%d" % [col.to_html(), rb, rt, h, foot, layer]
-	if _shared.has(key):
-		return _shared[key]
-	var m := MB.new()
-	m.tex(layer, 3.0)
-	m.cyl(Transform3D(Basis(Vector3.RIGHT, PI), Vector3.ZERO), rb, rt, h, 8, col, true, true)
-	m.blob(Transform3D(Basis.from_scale(Vector3(rb, rb, rb)), Vector3.ZERO), 8, 4, col)
-	if foot:
-		var boot := Color(0.2, 0.17, 0.14)
-		m.tex(U.PLAIN, 4.0)
-		m.box(Transform3D(Basis(), Vector3(0, -h - 0.04, -0.045)), Vector3(0.115, 0.09, 0.27), boot)
-		m.cyl(Transform3D(Basis(Vector3.RIGHT, PI), Vector3(0, -h + 0.08, 0)), rt + 0.012, rt + 0.018, 0.1, 8, boot, false)
-	var mesh := m.commit()
-	_shared[key] = mesh
-	return mesh
-
-
-# segmento de braço ao longo de -Y com comprimento 1 (escalado depois)
-static func _seg(r0: float, r1: float, col: Color, layer: int, hand := false) -> Mesh:
-	var key := "seg_%s_%.3f_%.3f_%s_%d" % [col.to_html(), r0, r1, hand, layer]
-	if _shared.has(key):
-		return _shared[key]
-	var m := MB.new()
-	m.tex(layer, 3.0)
-	if hand:
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.04, 0.055, 0.05)), Vector3(0, -0.04, 0)), 7, 4, col)
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.015, 0.03, 0.015)), Vector3(0.035, -0.03, -0.03)), 5, 3, col)
-	else:
-		m.cyl(Transform3D(Basis(Vector3.RIGHT, PI), Vector3.ZERO), r0, r1, 1.0, 7, col, false, true)
-		m.blob(Transform3D(Basis.from_scale(Vector3(r0, r0 * 0.3, r0)), Vector3.ZERO), 7, 3, col)
-	var mesh := m.commit()
-	_shared[key] = mesh
-	return mesh
 
 
 static func _gear(kind: String) -> Mesh:
@@ -344,67 +308,36 @@ func _build_model() -> void:
 	var cap_hat := rng.randf() < 0.3
 	model = Node3D.new()
 	add_child(model)
-	# corpo (uma malha só): quadril, barriga, peito, ombros, pescoço, cabeça com rosto
-	var m := MB.new()
-	m.tex(U.FABRIC, 3.0)
-	m.box(Transform3D(Basis(), Vector3(0, 0.97, 0)), Vector3(0.34, 0.2, 0.22), pants)
-	m.box(Transform3D(Basis(), Vector3(0, 1.075, 0)), Vector3(0.35, 0.04, 0.225), Color(0.2, 0.16, 0.12))
-	m.box(Transform3D(Basis(), Vector3(0, 1.17, 0.0)), Vector3(0.34, 0.18, 0.21), shirt.darkened(0.04))
-	m.box(Transform3D(Basis(), Vector3(0, 1.34, -0.005)), Vector3(0.42, 0.2, 0.24), shirt)
-	m.box(Transform3D(Basis(Vector3.RIGHT, -0.15), Vector3(0, 1.35, -0.09)), Vector3(0.38, 0.17, 0.1), shirt)
-	m.box(Transform3D(Basis(), Vector3(0, 1.47, 0.0)), Vector3(0.36, 0.07, 0.2), shirt)
-	for sx in [-0.21, 0.21]:
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.075, 0.07, 0.08)), Vector3(sx, 1.45, 0)), 7, 4, shirt)
-	m.tex(U.PLAIN, 3.0)
-	m.cyl(Transform3D(Basis(), Vector3(0, 1.48, 0.005)), 0.055, 0.05, 0.1, 7, skin, false)
-	# cabeça
-	var hc := Vector3(0, 1.66, -0.005)
-	m.blob(Transform3D(Basis.from_scale(Vector3(0.098, 0.12, 0.112)), hc), 10, 6, skin)
-	m.blob(Transform3D(Basis.from_scale(Vector3(0.075, 0.05, 0.08)), hc + Vector3(0, -0.07, -0.025)), 8, 4, skin)
-	m.box(Transform3D(Basis(Vector3.RIGHT, -0.25), hc + Vector3(0, -0.005, -0.112)), Vector3(0.028, 0.05, 0.03), skin.darkened(0.06))
-	for sx in [-0.038, 0.038]:
-		m.box(Transform3D(Basis(), hc + Vector3(sx, 0.022, -0.1)), Vector3(0.026, 0.014, 0.01), Color(0.95, 0.95, 0.95))
-		m.box(Transform3D(Basis(), hc + Vector3(sx, 0.022, -0.105)), Vector3(0.012, 0.012, 0.006), Color(0.12, 0.1, 0.08))
-		m.box(Transform3D(Basis(), hc + Vector3(sx, 0.045, -0.103)), Vector3(0.034, 0.008, 0.012), hair.darkened(0.2))
-	m.box(Transform3D(Basis(), hc + Vector3(0, -0.055, -0.1)), Vector3(0.04, 0.007, 0.01), skin.darkened(0.3))
-	for sx in [-1.0, 1.0]:
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.015, 0.03, 0.022)), hc + Vector3(sx * 0.098, 0.0, 0.01)), 6, 3, skin.darkened(0.05))
+	# boneco animado (modelo do Meshy); cada jogador com as suas cores
+	sol = Soldier.new()
+	model.add_child(sol)
+	sol.setup(skin, shirt, pants, BOOTS[rng.randi() % BOOTS.size()], hair)
+	vest_mi = MeshInstance3D.new()
+	vest_mi.mesh = _gear("vest")
+	vest_mi.material_override = U.wmat()
+	sol.attach("Spine2", vest_mi)
+	bag_mi = MeshInstance3D.new()
+	bag_mi.mesh = _gear("bag")
+	bag_mi.material_override = U.wmat()
+	sol.attach("Spine2", bag_mi)
+	helmet_mi = MeshInstance3D.new()
+	helmet_mi.mesh = _gear("helmet")
+	helmet_mi.material_override = U.wmat()
+	sol.attach("Head", helmet_mi)
 	if cap_hat:
-		m.tex(U.FABRIC, 4.0)
-		var hat: Color = SHIRTS[rng.randi() % SHIRTS.size()]
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.105, 0.07, 0.118)), hc + Vector3(0, 0.055, 0.0)), 9, 4, hat)
-		m.box(Transform3D(Basis(Vector3.RIGHT, 0.12), hc + Vector3(0, 0.06, -0.13)), Vector3(0.17, 0.012, 0.09), hat.darkened(0.1))
-	else:
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.104, 0.085, 0.118)), hc + Vector3(0, 0.045, 0.014)), 9, 4, hair)
-	U.mesh(model, m.commit())
-	vest_mi = U.mesh(model, _gear("vest"))
-	helmet_mi = U.mesh(model, _gear("helmet"))
-	bag_mi = U.mesh(model, _gear("bag"))
-	# pernas com joelho
-	leg_l = _leg(model, -0.095, pants)
-	leg_r = _leg(model, 0.095, pants)
-	knee_l = leg_l.get_child(1)
-	knee_r = leg_r.get_child(1)
+		var hat := MeshInstance3D.new()
+		var hm := MB.new()
+		var hc: Color = SHIRTS[rng.randi() % SHIRTS.size()]
+		hm.tex(U.FABRIC, 4.0)
+		hm.blob(Transform3D(Basis.from_scale(Vector3(0.1, 0.065, 0.112)), Vector3(0, 1.66, 0.0)), 9, 4, hc)
+		hm.box(Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, 1.655, -0.12)), Vector3(0.16, 0.012, 0.09), hc.darkened(0.1))
+		hat.mesh = hm.commit()
+		hat.material_override = U.wmat()
+		sol.attach("Head", hat)
 	# mira (gira com o pitch); a arma fica aqui e os braços alcançam a arma
 	aim = Node3D.new()
-	aim.position = Vector3(0, 1.4, 0)
+	aim.position = Vector3(0, 1.36, 0)
 	model.add_child(aim)
-	var sleeve := shirt
-	var fore := shirt.darkened(0.05) if long_sleeve else skin
-	for side in 2:
-		var up := MeshInstance3D.new()
-		up.mesh = _seg(0.058, 0.048, sleeve, U.FABRIC)
-		up.material_override = U.wmat()
-		model.add_child(up)
-		var fo := MeshInstance3D.new()
-		fo.mesh = _seg(0.046, 0.036, fore, U.FABRIC if long_sleeve else U.PLAIN)
-		fo.material_override = U.wmat()
-		model.add_child(fo)
-		var ha := MeshInstance3D.new()
-		ha.mesh = _seg(0.0, 0.0, skin, U.PLAIN, true)
-		ha.material_override = U.wmat()
-		model.add_child(ha)
-		arm_parts.append([up, fo, ha])
 	chute = Node3D.new()
 	U.mesh(chute, _gear("chute"))
 	chute.visible = false
@@ -419,28 +352,10 @@ func _build_model() -> void:
 	tag.modulate = Color(1, 1, 1, 0.85)
 	tag.visible = false
 	add_child(tag)
-	for c in model.get_children():
-		if c is GeometryInstance3D:
-			c.visibility_range_end = 320.0
+	for g in [vest_mi, bag_mi, helmet_mi]:
+		g.visibility_range_end = 120.0
 	refresh_gear()
 
-
-func _leg(parent: Node3D, x: float, pants: Color) -> Node3D:
-	var hip := Node3D.new()
-	hip.position = Vector3(x, 0.92, 0)
-	parent.add_child(hip)
-	var th := MeshInstance3D.new()
-	th.mesh = _limb(0.095, 0.07, 0.45, pants, U.FABRIC)
-	th.material_override = U.wmat()
-	hip.add_child(th)
-	var knee := Node3D.new()
-	knee.position = Vector3(0, -0.45, 0)
-	hip.add_child(knee)
-	var sh := MeshInstance3D.new()
-	sh.mesh = _limb(0.068, 0.05, 0.42, pants.darkened(0.04), U.FABRIC, true)
-	sh.material_override = U.wmat()
-	knee.add_child(sh)
-	return hip
 
 
 func refresh_gear() -> void:
@@ -502,7 +417,11 @@ func die() -> void:
 	vault_t = -1.0
 	set_crouch(false)
 	velocity = Vector3.ZERO
-	if model:
+	if sol and model and model.visible and air == 0:
+		dying_t = 2.2
+		sol.play("Dead", 0.08)
+		_set_gun_model("fist", [])
+	elif model:
 		model.visible = false
 
 
@@ -536,6 +455,7 @@ func reset_state(pos: Vector3) -> void:
 	b_target = 0
 	update_gun()
 	refresh_gear()
+	dying_t = 0.0
 	if model:
 		model.rotation = Vector3.ZERO
 		model.position = Vector3.ZERO
@@ -802,6 +722,14 @@ func _animate(delta: float, sim: bool) -> void:
 	var sp := est_speed
 	if sim:
 		sp = Vector2(velocity.x, velocity.z).length()
+	if dying_t > 0.0:
+		dying_t -= delta
+		model.visible = dying_t > 0.0
+		model.rotation.x = 0.0
+		model.position.y = 0.0
+		sol.tick(delta, false, 0.0, 0.0, [])
+		chute.visible = false
+		return
 	model.visible = air != 3 and not spect and alive
 	chute.visible = alive and air == 2
 	if not model.visible:
@@ -811,23 +739,27 @@ func _animate(delta: float, sim: bool) -> void:
 	var k := minf(1.0, 12.0 * delta)
 	var airborne := (not is_on_floor()) if sim else _remote_air
 	var armed := shown_wid != "fist"
+	var far: bool = not game.near_cam(global_position, 35.0)
+	var cr := 0.0
+	var hands := []
+	aim.rotation.x = 0.0
 	if air == 1:
 		model.rotation.x = lerpf(model.rotation.x, -1.2, k)
 		model.position.y = 0.6
-		_legs(0.2, -0.1, -0.5, -0.7)
-		aim.rotation.x = 0.6
-		_arms(false, sp, true)
+		sol.play("Air")
+		hands = [model.global_transform * Vector3(-0.8, 1.45, 0.15), model.global_transform * Vector3(0.8, 1.45, 0.15)]
+		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
 	model.rotation.x = lerpf(model.rotation.x, 0.0, k)
 	if air == 2:
 		model.position.y = 0.0
-		_legs(0.15, -0.05, -0.25, -0.15)
-		aim.rotation.x = 0.0
-		_arms(false, sp, false, true)
+		sol.play("Air", 0.3, 0.2)
+		hands = [model.global_transform * Vector3(-0.3, 1.95, -0.05), model.global_transform * Vector3(0.3, 1.95, -0.05)]
+		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
 	# arma encostada na parede: abaixa o cano (não atravessa a parede)
 	_wall_chk -= delta
-	if _wall_chk <= 0.0 and armed and gun:
+	if _wall_chk <= 0.0 and armed and gun and not far:
 		_wall_chk = 0.15
 		var from := global_position + Vector3(0, 1.4, 0)
 		var fw := Basis(Vector3.UP, yaw) * Vector3.FORWARD
@@ -835,98 +767,35 @@ func _animate(delta: float, sim: bool) -> void:
 		_wall_near = not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 	_gun_low = lerpf(_gun_low, 1.0 if (_wall_near and armed) else 0.0, minf(1.0, 10.0 * delta))
 	aim.rotation.x = pitch * 0.85 * (1.0 - _gun_low) - 1.1 * _gun_low
-	if vault_t >= 0.0:
-		model.position.y = lerpf(model.position.y, -0.15, k)
-		_legs(1.3, 0.4, -1.6, -0.6)
-		_arms(armed, 0.0)
-		return
-	if crouch:
-		model.position.y = lerpf(model.position.y, -0.4, k)
-		var cw := sin(anim_t) * clampf(sp / 3.0, 0.0, 1.0) * 0.25
-		anim_t += delta * sp * 2.0
-		_legs(1.15 + cw, 1.05 - cw, -1.65, -1.55)
-		_arms(armed, sp)
-		return
-	if airborne:
-		model.position.y = lerpf(model.position.y, 0.0, k)
-		_legs(0.7, 0.25, -1.1, -0.5)
-		_arms(armed, 0.0, false, false, true)
-		return
-	model.position.y = lerpf(model.position.y, 0.0, k)
-	# correndo inclina o corpo pra frente; parado respira de leve
-	var lean := clampf((sp - 4.6) / 2.5, 0.0, 1.0) * 0.14
-	model.rotation.x = lerpf(model.rotation.x, -lean, k)
-	anim_t += delta * sp * 1.5
-	var amt := clampf(sp / 6.0, 0.0, 1.0)
-	var sw := sin(anim_t) * amt * (0.7 + lean * 1.5)
-	_legs(sw, -sw, -maxf(0.0, sin(anim_t - 1.4)) * amt * 1.15, -maxf(0.0, sin(anim_t + PI - 1.4)) * amt * 1.15)
-	model.position.y = absf(sin(anim_t)) * amt * 0.045 - amt * 0.02
-	if sp < 0.3:
-		_breath += delta
-		model.position.y += sin(_breath * 1.9) * 0.006
-	_arms(armed, sp)
-
-
-func _legs(l: float, r: float, kl: float, kr: float) -> void:
-	leg_l.rotation.x = l
-	leg_r.rotation.x = r
-	knee_l.rotation.x = kl
-	knee_r.rotation.x = kr
-
-
-# braços por cinemática inversa simples (ombro -> cotovelo -> mão)
-func _arms(armed: bool, sp: float, spread := false, chute_up := false, jumping := false) -> void:
-	var sh := [Vector3(-0.22, 1.44, 0.0), Vector3(0.22, 1.44, 0.0)]
-	var targets := []
+	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
+	if vault_t >= 0.0 or airborne:
+		sol.play("Air", 0.12)
+	elif sp < 0.35:
+		sol.play("Idle", 0.25)
+	elif sp < 5.0 or crouch:
+		sol.play("Walking", 0.2, clampf(sp / (1.25 if not crouch else 0.9), 0.5, 3.0))
+	else:
+		sol.play("Running", 0.2, clampf(sp / 5.2, 0.8, 1.6))
 	if armed:
 		var gp := gun.position if gun else Vector3(0.12, -0.02, -0.36)
 		var t: String = Weapons.get_w(shown_wid)["type"]
-		var grip := aim.transform * (gp + Vector3(0, -0.05, 0.02))
-		var fore := aim.transform * (gp + Vector3(-0.02, -0.03, -0.26 if t != "pistol" else -0.02))
-		targets = [fore, grip]
-	else:
-		var swing := sin(anim_t) * clampf(sp / 6.0, 0.0, 1.0) * 0.25
-		targets = [Vector3(-0.26, 0.92, -swing), Vector3(0.26, 0.92, swing)]
-		if spread:
-			targets = [Vector3(-0.85, 1.5, 0.1), Vector3(0.85, 1.5, 0.1)]
-		elif chute_up:
-			targets = [Vector3(-0.35, 1.95, -0.05), Vector3(0.35, 1.95, -0.05)]
-		elif jumping:
-			targets = [Vector3(-0.35, 1.25, -0.2), Vector3(0.35, 1.25, -0.2)]
-		if punch_t > 0.0:
-			var pk := sin(clampf(punch_t / 0.3, 0.0, 1.0) * PI)
-			targets[1] = aim.transform * Vector3(0.12, 0.0, -0.25 - pk * 0.45)
-			targets[0] = Vector3(-0.18, 1.3, -0.25)
-	for side in 2:
-		_ik(arm_parts[side], sh[side], targets[side], -1.0 if side == 0 else 1.0)
+		var grip := aim.global_transform * (gp + Vector3(0, -0.05, 0.03))
+		var fore := aim.global_transform * (gp + Vector3(-0.02, -0.03, -0.26 if t != "pistol" else -0.02))
+		hands = [fore, grip]
+	elif heal_t > 0.0:
+		hands = [model.global_transform * Vector3(-0.06, 1.12, -0.3), model.global_transform * Vector3(0.06, 1.12, -0.3)]
+	elif sol.cur == "Idle" and vault_t < 0.0:
+		# parado de mãos livres: braços soltos do lado do corpo, respirando
+		_breath += delta
+		var br := sin(_breath * 1.8) * 0.008
+		hands = [model.global_transform * Vector3(-0.27, 0.86 + br, 0.02), model.global_transform * Vector3(0.27, 0.86 + br, 0.02)]
+	if punch_t > 0.0 and not armed:
+		var pk := sin(clampf(punch_t / 0.3, 0.0, 1.0) * PI)
+		hands = [model.global_transform * Vector3(-0.2, 1.3, -0.25), aim.global_transform * Vector3(0.12, 0.0, -0.2 - pk * 0.4)]
+	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, _crouch_k, hands)
 
 
-func _ik(parts: Array, s: Vector3, t: Vector3, side: float) -> void:
-	var a := 0.29
-	var b := 0.27
-	var d := t - s
-	var L := clampf(d.length(), 0.05, a + b - 0.005)
-	var dir := d.normalized()
-	# o cotovelo dobra pra fora e pra baixo
-	var hint := Vector3(side * 0.6, -1.0, 0.25).normalized()
-	var pole := (hint - dir * hint.dot(dir)).normalized()
-	var x := (a * a - b * b + L * L) / (2.0 * L)
-	var hgt := sqrt(maxf(a * a - x * x, 0.0))
-	var e := s + dir * x + pole * hgt
-	var hand := s + dir * L
-	_place(parts[0], s, e)
-	_place(parts[1], e, hand)
-	var hp: MeshInstance3D = parts[2]
-	hp.transform = Transform3D(Basis(Quaternion(Vector3.DOWN, (hand - e).normalized())), hand)
 
-
-func _place(mi: MeshInstance3D, p0: Vector3, p1: Vector3) -> void:
-	var d := p1 - p0
-	var l := d.length()
-	if l < 0.001:
-		return
-	var bs := Basis(Quaternion(Vector3.DOWN, d / l))
-	mi.transform = Transform3D(bs * Basis.from_scale(Vector3(1, l, 1)), p0)
 
 
 # ---------------- bot (só roda no servidor) ----------------
