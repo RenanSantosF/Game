@@ -6,18 +6,18 @@ extends CharacterBody3D
 # As rodas procuram o chão (raio pra baixo): o carro sobe e desce morro acompanhando o terreno.
 # Tiro machuca o carro; sem vida ele explode e machuca quem estiver perto.
 
-const MAX := [21.0, 14.5]        # velocidade máxima (m/s)
-const ACCEL := [7.0, 5.0]
+const MAX := [21.0, 16.5]        # velocidade máxima (m/s)
+const ACCEL := [7.0, 6.5]
 const TURN := [1.7, 1.35]        # giro (rad/s) em velocidade boa
-const LEN := [4.6, 4.5]
+const LEN := [5.0, 4.6]
 const HP := 520.0
 const WHEEL_R := 0.36
 # modelos do Car Kit da Kenney (CC0): escala do modelo e rodas (x, raio, z da frente, z de trás)
 # 0 = esportivo (rápido), 1 = jeep aberto (mais lento e alto). Sem vidro: dá pra ver e acertar quem dirige.
-const SCALE := [Vector3(1.5, 1.5, 1.82), Vector3(1.38, 1.45, 1.78)]
-const WH := [[0.64, 0.45, -1.2, 1.2], [0.59, 0.435, -1.35, 1.0]]
+# rodas de cada modelo (gerado por tools/prepare_cars2.gd): [x, raio, z da frente, z de trás, largura]
+static func wh_of(k: int) -> Array:
+	return CarInfo.INFO[k]["wh"]
 static var _shader: Shader
-static var _cmap: Texture2D
 
 var game: Node
 var idx := 0
@@ -54,17 +54,17 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 	# só a parte de baixo bloqueia tiro: quem está dirigindo dá pra acertar pelo vidro
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(1.95, 0.8, LEN[k])
+	bs.size = Vector3(float(CarInfo.INFO[k]["wid"]) * 0.92, 0.8, LEN[k] * 0.95)
 	cs.shape = bs
 	cs.position = Vector3(0, 0.72, 0)
 	add_child(cs)
 	if visual:
 		mesh = Node3D.new()
 		add_child(mesh)
-		var mat := car_material(tint, 0.3)
+		var mat := car_material(paint_for(k, tint), 0.3)
 		mesh.add_child(body_node(k, mat))
-		var wm: Mesh = load("res://models/car_wheel.res")
-		var wh: Array = WH[k]
+		var wm: Mesh = load("res://models/car%d_wheel.res" % k)
+		var wh: Array = wh_of(k)
 		for z in [wh[2], wh[3]]:
 			for sx in [-1.0, 1.0]:
 				var piv := Node3D.new()
@@ -74,7 +74,7 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 				w.mesh = wm
 				w.material_override = mat
 				w.rotation.y = 0.0 if sx > 0 else PI
-				w.scale = Vector3(0.4, wh[1], wh[1])
+				w.scale = Vector3(wh[4], wh[1], wh[1])
 				w.visibility_range_end = 200.0
 				piv.add_child(w)
 				wheels.append([piv, z == wh[2]])
@@ -84,20 +84,27 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 		crash_snd.max_distance = 110.0
 		add_child(crash_snd)
 		engine = AudioStreamPlayer3D.new()
-		engine.stream = load("res://sounds/engine.wav")
+		# cada carro com seu motor: esportivo mais agudo, jeep diesel grave
+		engine.stream = load("res://sounds/engine.wav" if k == 0 else "res://sounds/engine_jeep.wav")
 		engine.unit_size = 8.0
 		engine.max_distance = 90.0
 		add_child(engine)
 	rotation.y = yaw
 
 
+# jeep é militar: cáqui, verde-oliva ou areia; esportivo usa a cor sorteada
+static func paint_for(k: int, tint: Color) -> Color:
+	if k == 1:
+		var opts := [Color(0.56, 0.54, 0.4), Color(0.42, 0.46, 0.3), Color(0.66, 0.58, 0.42)]
+		return opts[absi(hash(tint.to_html())) % opts.size()]
+	return tint
+
+
 static func car_material(paint: Color, dirt: float, rust := 0.0) -> ShaderMaterial:
 	if _shader == null:
 		_shader = load("res://shaders/car.gdshader")
-		_cmap = load("res://models/car_colormap.png")
 	var m := ShaderMaterial.new()
 	m.shader = _shader
-	m.set_shader_parameter("tex", _cmap)
 	m.set_shader_parameter("paint", paint)
 	m.set_shader_parameter("dirt", dirt)
 	m.set_shader_parameter("rust", rust)
@@ -109,18 +116,51 @@ static func body_node(k: int, mat: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = load("res://models/car%d.res" % k)
 	mi.material_override = mat
-	mi.scale = SCALE[k]
-	mi.rotation.y = PI
 	mi.visibility_range_end = 450.0
+	# piso e bancos por dentro: o carro tem fundo e dá pra ver quem está sentado
+	var inn := MeshInstance3D.new()
+	inn.mesh = interior(k)
+	inn.material_override = U.wmat()
+	inn.visibility_range_end = 120.0
+	mi.add_child(inn)
 	return mi
+
+
+static var _inner := {}
+
+
+static func interior(k: int) -> Mesh:
+	if _inner.has(k):
+		return _inner[k]
+	var c: Dictionary = CarInfo.INFO[k]
+	var wh: Array = c["wh"]
+	var L: float = c["len"]
+	var W: float = c["wid"]
+	var r: float = wh[1]
+	var m := MB.new()
+	m.tex(U.METAL, 1.0)
+	# assoalho cobrindo o vão entre as rodas (de baixo não se vê o chão através do carro)
+	m.box(Transform3D(Basis(), Vector3(0, r * 0.75, (float(wh[2]) + float(wh[3])) / 2.0)), Vector3(W * 0.86, 0.1, L * 0.82), Color(0.12, 0.12, 0.12))
+	m.tex(U.FABRIC, 3.0)
+	var sy := r * 0.8 + (0.12 if k == 0 else 0.3)
+	var sz := 0.25 if k == 0 else 0.05
+	for sx in [-0.42, 0.42]:
+		m.box(Transform3D(Basis(), Vector3(sx, sy + 0.12, sz)), Vector3(0.5, 0.18, 0.5), Color(0.25, 0.2, 0.17))
+		m.box(Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(sx, sy + 0.45, sz + 0.27)), Vector3(0.5, 0.6, 0.12), Color(0.22, 0.18, 0.15))
+	if k == 0:
+		m.tex(U.PLAIN, 2.0)
+		m.box(Transform3D(Basis(), Vector3(0, sy + 0.45, sz - 0.85)), Vector3(W * 0.82, 0.25, 0.3), Color(0.08, 0.08, 0.08))
+		m.box(Transform3D(Basis(), Vector3(0, sy + 0.2, (float(wh[3]) + 0.9))), Vector3(W * 0.8, 0.3, 0.6), Color(0.2, 0.17, 0.15))
+	_inner[k] = m.commit()
+	return _inner[k]
 
 
 # carro parado de enfeite (com rodas fixas)
 static func prop_node(k: int, mat: Material) -> Node3D:
 	var n := Node3D.new()
 	n.add_child(body_node(k, mat))
-	var wm: Mesh = load("res://models/car_wheel.res")
-	var wh: Array = WH[k]
+	var wm: Mesh = load("res://models/car%d_wheel.res" % k)
+	var wh: Array = wh_of(k)
 	for z in [wh[2], wh[3]]:
 		for sx in [-1.0, 1.0]:
 			var w := MeshInstance3D.new()
@@ -128,18 +168,18 @@ static func prop_node(k: int, mat: Material) -> Node3D:
 			w.material_override = mat
 			w.position = Vector3(sx * wh[0], wh[1], z)
 			w.rotation.y = 0.0 if sx > 0 else PI
-			w.scale = Vector3(0.4, wh[1], wh[1])
+			w.scale = Vector3(wh[4], wh[1], wh[1])
 			w.visibility_range_end = 150.0
 			n.add_child(w)
 	return n
 
 
 func seat_pos() -> Vector3:
-	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 0.42, 0.15) if kind == 0 else Vector3(-0.45, 0.55, 0.05))
+	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 0.38, 0.25) if kind == 0 else Vector3(-0.42, 0.62, 0.05))
 
 
 func wheel_pos() -> Vector3:
-	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 1.1, -0.35) if kind == 0 else Vector3(-0.45, 1.25, -0.45))
+	return global_position + Basis(Vector3.UP, yaw) * (Vector3(-0.42, 1.0, -0.3) if kind == 0 else Vector3(-0.42, 1.3, -0.45))
 
 
 # simulação de quem dirige: throttle -1..1 (ré/freio .. acelera), steer -1..1
@@ -161,7 +201,8 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 	var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
 	# subindo morro perde um pouco de força, descendo ganha
 	var up_k := -_tilt.z.y if mesh else 0.0
-	speed -= up_k * 6.0 * delta * signf(speed)
+	# o jeep sobe morro e anda no mato quase sem perder força; o esportivo sente mais
+	speed -= up_k * (5.0 if kind == 0 else 1.8) * delta * signf(speed)
 	velocity = Vector3(fwd.x * speed, 0, fwd.z * speed)
 	var before := global_position
 	move_and_slide()
@@ -172,8 +213,8 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 			speed *= 0.5
 			break
 	var moved := Vector2(global_position.x - before.x, global_position.z - before.z).length()
-	if absf(speed) > 3.0 and moved < absf(speed) * delta * 0.35:
-		speed *= 0.4
+	if absf(speed) > 3.0 and moved < absf(speed) * delta * 0.15:
+		speed *= 0.5
 	_ground(delta)
 	target_pos = global_position
 	target_yaw = yaw
@@ -184,7 +225,7 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 func _ground(delta: float) -> void:
 	var space := get_world_3d().direct_space_state
 	var b := Basis(Vector3.UP, yaw)
-	var wh: Array = WH[kind]
+	var wh: Array = wh_of(kind)
 	var hz: float = (float(wh[3]) - float(wh[2])) / 2.0
 	var zc: float = (float(wh[3]) + float(wh[2])) / 2.0
 	var wx: float = wh[0]
@@ -265,13 +306,13 @@ func _update_visual(delta: float) -> void:
 	_tilt = _tilt.slerp(_want_tilt, minf(1.0, 10.0 * delta))
 	mesh.basis = _tilt
 	# rodas giram com a velocidade e as da frente viram com o volante
-	_spin -= speed / float(WH[kind][1]) * delta
+	_spin -= speed / float(wh_of(kind)[1]) * delta
 	for wi in wheels.size():
 		var e: Array = wheels[wi]
 		var piv: Node3D = e[0]
 		piv.rotation = Vector3(_spin, -steer_v * 0.45 if e[1] else 0.0, 0)
 		_susp_v[wi] = lerpf(float(_susp_v[wi]), clampf(float(_susp[wi]), -0.18, 0.18), minf(1.0, 12.0 * delta))
-		piv.position.y = float(WH[kind][1]) + float(_susp_v[wi])
+		piv.position.y = float(wh_of(kind)[1]) + float(_susp_v[wi])
 	# batida: perdeu velocidade de repente (só som, carro não toma dano de batida)
 	_crash_cd -= delta
 	var drop := absf(_last_speed) - absf(speed)

@@ -14,9 +14,10 @@ Sintetizados por tools/synth_sounds.py (feitos pra este jogo):
 tiro com silenciador, acerto, tiro na cabeça, abate, vento em queda livre, vento no paraquedas,
 motor do avião, abertura do paraquedas, batida de carro.
 
-Música do lobby (CC0, OpenGameArt.org):
-- lobby_rock1.ogg: "Boss Battle #9 [Metal]" — https://opengameart.org/content/boss-battle-9-metal
-- lobby_rock2.ogg: "Fight for Better Future [Rock/Metal]" — https://opengameart.org/content/fight-for-better-future-rockmetal
+Música do lobby (OpenGameArt.org):
+- lobby_rock1.ogg: "Devoted Guard" — vitalezzz, CC0 — https://opengameart.org/content/devoted-guard
+- lobby_rock2.ogg: "Heavy Metal Riffs - Monolith" — Tri-Tachyon, CC-BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/) — https://opengameart.org/content/heavy-metal-riffs-monolith
   (volume igualado e emenda do loop feitas pro jogo)
 
 Modelos dos carros: "Car Kit" de Kenney (www.kenney.nl), CC0 — repintados pelo jogo.

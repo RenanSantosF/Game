@@ -24,6 +24,7 @@ static var v := {
 	"view": 1,           # distância de visão: 0 perto, 1 média, 2 longe
 	"grass": true,       # tufos de grama
 	"music": true,       # música do lobby
+	"music_vol": 0.7,    # volume da música (0 a 1)
 	"ver": 2,            # versão das configurações (migra padrões novos)
 }
 static var _loaded := false

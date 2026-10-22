@@ -170,3 +170,45 @@ for k in range(9):
 crash = np.tanh((thump + crunch * 1.4 + ring + glass) * 1.5)
 save("crash", reverb(crash, 0.5, 0.18), 0.9)
 print("batida ok")
+
+
+# pulo de janela: roupa raspando (whoosh) + mão batendo no batente + queda pesada no chão
+t = t_(0.75)
+whoosh = bp(noise(0.75), 400, 2500) * np.exp(-((t - 0.12) / 0.09) ** 2) * 1.2
+knock = np.zeros_like(t)
+st = int(0.05 * R)
+kt = t_(0.12)
+knock[st:st + len(kt)] += (np.sin(2 * np.pi * 180 * kt) + 0.6 * np.sin(2 * np.pi * 410 * kt)) * np.exp(-kt * 35)
+thud = np.zeros_like(t)
+st = int(0.42 * R)
+tt2 = t_(0.3)
+thud[st:st + len(tt2)] += (np.sin(2 * np.pi * np.cumsum(70 + 60 * np.exp(-tt2 * 30)) / R) * 1.4 + lp(noise(0.3), 500) * 2.0) * np.exp(-tt2 * 14)
+save("vault", np.tanh((whoosh + knock + thud) * 1.6), 0.9)
+
+# largar item no chão: pancada de bolsa/metal leve
+t = t_(0.35)
+drop = lp(noise(0.35), 900) * np.exp(-t * 28) * 2.0 + np.sin(2 * np.pi * 120 * t) * np.exp(-t * 30) + bp(noise(0.35), 2500, 6000) * np.exp(-t * 60) * 0.4
+save("drop", np.tanh(drop * 1.4), 0.8)
+
+# granada: pino saindo (clique metálico + mola) e apito da contagem
+t = t_(0.4)
+pin = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in [(2400, 30, 0.6), (3700, 45, 0.4), (5200, 60, 0.25)])
+pin += bp(noise(0.4), 3000, 9000) * np.exp(-t * 80) * 0.8
+spr = np.zeros_like(t)
+st = int(0.12 * R)
+sp_t = t_(0.2)
+spr[st:st + len(sp_t)] += np.sin(2 * np.pi * (900 + 700 * sp_t) * sp_t) * np.exp(-sp_t * 25) * 0.5
+save("pin", pin + spr, 0.8)
+t = t_(0.12)
+save("beep", np.sign(np.sin(2 * np.pi * 1850 * t)) * 0.5 * np.minimum(1, (0.12 - t) * 60) * np.minimum(1, t * 400), 0.6)
+
+# motor do jeep (loop de 2 s): diesel mais grave e batido que o do esportivo
+d = 2.0
+t = t_(d)
+f0 = 26.0
+eng = sum(np.sin(2 * np.pi * f0 * k * t + k * 0.5) / k ** 0.6 for k in range(1, 12))
+eng *= 0.6 + 0.4 * (np.sin(2 * np.pi * f0 * 0.5 * t) > 0)
+eng += lp(noise(d), 500) * 0.9
+eng = np.tanh(eng * 1.5)
+save("engine_jeep", eng, 0.65)
+print("sons novos ok")

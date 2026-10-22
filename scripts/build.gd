@@ -1267,14 +1267,15 @@ func _k_car(pos: Vector3, yaw: float) -> void:
 	var wreck := rng.randf() < 0.35
 	if wreck:
 		tint = tint.lerp(Color(0.45, 0.3, 0.2), 0.45)
-	var L := 4.6 if kind == 0 else 4.5
+	var ci: Dictionary = CarInfo.INFO[kind]
+	var L: float = ci["len"]
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), 3.5)
-	col_box(root, Vector3(1.95, 1.0, L), Vector3(0, 0.62, 0))
+	col_box(root, Vector3(float(ci["wid"]) * 0.92, 1.0, L * 0.95), Vector3(0, 0.62, 0))
 	if kind == 0:
-		col_box(root, Vector3(1.6, 0.55, 1.8), Vector3(0, 1.35, 0.1))
+		col_box(root, Vector3(1.5, 0.5, 1.9), Vector3(0, 1.2, 0.2))
 	if not headless:
-		var mi := Vehicle.prop_node(kind, Vehicle.car_material(tint.darkened(0.15), 0.55, 0.85 if wreck else 0.15))
+		var mi := Vehicle.prop_node(kind, Vehicle.car_material(Vehicle.paint_for(kind, tint).darkened(0.15), 0.55, 0.85 if wreck else 0.15))
 		root.add_child(mi)
 		if wreck:
 			mi.rotation.z = 0.04

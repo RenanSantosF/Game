@@ -789,7 +789,9 @@ func _animate(delta: float, sim: bool) -> void:
 		hands = [model.global_transform * Vector3(-0.8, 1.45, 0.15), model.global_transform * Vector3(0.8, 1.45, 0.15)]
 		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
-	model.rotation.x = lerpf(model.rotation.x, 0.0, k)
+	# pulando a janela: corpo inclina pra frente e as pernas encolhem (passa por cima do batente)
+	var vk := sin(clampf(vault_t / VAULT_TIME, 0.0, 1.0) * PI) if vault_t >= 0.0 else 0.0
+	model.rotation.x = lerpf(model.rotation.x, -0.55 * vk, minf(1.0, 20.0 * delta))
 	if air == 2:
 		model.position.y = 0.0
 		sol.play("Air", 0.3, 0.2)
@@ -826,7 +828,8 @@ func _animate(delta: float, sim: bool) -> void:
 	elif sp < 0.35:
 		sol.play("Idle", 0.25)
 	elif sp < 5.0 or crouch:
-		sol.play("Walking", 0.2, clampf(sp / (1.25 if not crouch else 0.9), 0.5, 3.0))
+		# agachado o passo é bem mais curto e lento
+		sol.play("Walking", 0.2, clampf(sp / 1.25, 0.5, 3.0) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
 	else:
 		sol.play("Running", 0.2, clampf(sp / 5.2, 0.8, 1.6))
 	if heal_t > 0.0:
@@ -872,7 +875,10 @@ func _animate(delta: float, sim: bool) -> void:
 	if punch_t > 0.0 and not armed:
 		var pk := sin(clampf(punch_t / 0.3, 0.0, 1.0) * PI)
 		hands = [model.global_transform * Vector3(-0.2, 1.3, -0.25), aim.global_transform * Vector3(0.12, 0.0, -0.2 - pk * 0.4)]
-	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, _crouch_k, hands)
+	if vk > 0.0:
+		# mão de apoio no batente
+		hands = [model.global_transform * Vector3(-0.25, 0.95, -0.45), hands[1] if hands.size() == 2 else model.global_transform * Vector3(0.25, 0.95, -0.4)]
+	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(_crouch_k, 0.85 * vk), hands)
 
 
 

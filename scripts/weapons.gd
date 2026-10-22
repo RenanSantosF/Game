@@ -12,7 +12,7 @@ const DATA := {
 	"ump45": {"name": "UMP-45", "dmg": 38.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 1.5, "range": 75.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.011, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.13, "bloom_max": 1.7},
 	"m4a1": {"name": "M4A1", "dmg": 38.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 0.9, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556", "bloom": 0.15, "bloom_max": 2.2},
 	"scar": {"name": "SCAR-L", "dmg": 41.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 0.9, "range": 170.0, "pellets": 1, "head": 2.2, "zoom": 1.8, "recoil": 0.015, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556", "bloom": 0.2, "bloom_max": 2.6},
-	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 1.1, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.5, "recoil": 0.024, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a762", "bloom": 0.5, "bloom_max": 4.5},
+	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 1.1, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.5, "recoil": 0.024, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a556", "bloom": 0.5, "bloom_max": 4.5},
 	"r870": {"name": "Remington 870", "dmg": 27.0, "rate": 0.85, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.09, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
 	"m1014": {"name": "M1014", "dmg": 21.0, "rate": 1.7, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.075, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
 	"kar98": {"name": "Kar98k", "dmg": 125.0, "rate": 0.75, "mag": 5, "reload": 3.2, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 3.0, "zoom": 3.0, "recoil": 0.06, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
@@ -33,17 +33,19 @@ static func falloff(w: Dictionary, dist: float) -> float:
 	return lerpf(1.0, float(f[1]), smoothstep(float(f[0]), float(w["range"]), dist))
 
 
-# Itens que não são armas. stack = quantos cabem numa vaga da mochila; count = quanto vem no chão.
+# Itens que não são armas. w = quanto cada unidade ocupa da mochila (espaço por quantidade, não por vaga);
+# count = quanto vem no chão.
 # Colete, capacete, mochila, coronha e carregador têm nível 1, 2 e 3 (cor diferente no chão).
 const ITEMS := {
-	"a9": {"name": "Munição 9mm", "stack": 60, "count": 30, "kind": "ammo"},
-	"a556": {"name": "Munição 5.56", "stack": 60, "count": 30, "kind": "ammo"},
-	"a762": {"name": "Munição 7.62", "stack": 60, "count": 25, "kind": "ammo"},
-	"a12": {"name": "Cartucho 12", "stack": 30, "count": 12, "kind": "ammo"},
-	"bandage": {"name": "Bandagem", "stack": 10, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
-	"med": {"name": "Kit médico", "stack": 4, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
-	"drink": {"name": "Energético", "stack": 5, "count": 2, "kind": "heal", "heal": 50.0, "time": 2.5},
-	"grenade": {"name": "Granada", "stack": 3, "count": 1, "kind": "throw"},
+	# 4 munições: SMG/pistola, fuzil (M4, SCAR, AK), sniper (Kar98, AWM) e 12
+	"a9": {"name": "Munição de SMG", "w": 0.25, "count": 30, "kind": "ammo"},
+	"a556": {"name": "Munição de fuzil", "w": 0.3, "count": 30, "kind": "ammo"},
+	"a762": {"name": "Munição de sniper", "w": 1.0, "count": 10, "kind": "ammo"},
+	"a12": {"name": "Cartucho 12", "w": 0.8, "count": 12, "kind": "ammo"},
+	"bandage": {"name": "Bandagem", "w": 2.0, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
+	"med": {"name": "Kit médico", "w": 8.0, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
+	"drink": {"name": "Energético", "w": 4.0, "count": 2, "kind": "heal", "heal": 50.0, "time": 2.5},
+	"grenade": {"name": "Granada", "w": 6.0, "count": 1, "kind": "throw"},
 	"vest1": {"name": "Colete nível 1", "kind": "gear", "level": 1},
 	"vest2": {"name": "Colete nível 2", "kind": "gear", "level": 2},
 	"vest3": {"name": "Colete nível 3", "kind": "gear", "level": 3},
@@ -78,7 +80,7 @@ const FITS := {
 	"sniper": ["mag", "scope8", "muzzle"],
 }
 const AMMO := ["a9", "a556", "a762", "a12"]
-const BAGS := [6, 10, 14, 18]       # vagas sem mochila e com mochila nível 1, 2 e 3
+const BAGS := [80, 160, 240, 320]   # espaço sem mochila e com mochila nível 1, 2 e 3
 const VEST_ABSORB := [0.0, 0.3, 0.42, 0.55]    # quanto do dano no corpo o colete segura
 const HELMET_ABSORB := [0.0, 0.25, 0.38, 0.5]  # quanto do dano na cabeça o capacete segura
 # cor de raridade (destaque no chão): nível 1 branco, 2 azul, 3 roxo; armas dourado
@@ -89,7 +91,7 @@ const LOOT := [
 	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
 	"bandage", "bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med", "med", "med",
 	"drink", "drink", "drink", "grenade", "grenade",
-	"a9", "a9", "a9", "a556", "a556", "a556", "a762", "a762", "a762", "a12", "a12",
+	"a9", "a9", "a9", "a556", "a556", "a556", "a556", "a762", "a762", "a12", "a12",
 	"vest1", "vest1", "vest2", "vest3", "helmet1", "helmet1", "helmet2", "helmet3", "bag1", "bag1", "bag2", "bag3",
 	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "holo", "holo", "scope2", "scope4", "scope8", "silencer",
 ]
@@ -192,20 +194,21 @@ static func default_count(kind: String) -> int:
 	return 1
 
 
-static func stack_of(kind: String) -> int:
-	if ITEMS.has(kind) and ITEMS[kind].has("stack"):
-		return int(ITEMS[kind]["stack"])
-	return 1
+# quanto uma unidade ocupa da mochila
+static func weight(kind: String) -> float:
+	if ITEMS.has(kind) and ITEMS[kind].has("w"):
+		return float(ITEMS[kind]["w"])
+	return 5.0    # acessório
 
 
-# vagas que um inventário ocupa
+# espaço que um inventário ocupa (por quantidade: 100 balas ocupam mais que 10)
 static func slots_used(inv: Dictionary) -> int:
-	var n := 0
+	var n := 0.0
 	for k in inv:
 		var c: int = inv[k]
 		if c > 0:
-			n += ceili(float(c) / stack_of(k))
-	return n
+			n += c * weight(k)
+	return ceili(n - 0.001)
 
 
 # status da arma com os acessórios
@@ -214,11 +217,11 @@ static func stat(id: String, att: Array) -> Dictionary:
 	w["id"] = id
 	w["bloom"] = float(w.get("bloom", 0.0))
 	w["bloom_max"] = float(w.get("bloom_max", 0.0))
+	# segurando o dedo o tiro chega no máximo de espalhar em ~2,5 s; com coronha demora só um pouco mais
 	var sl := att_level(att, "stock")
+	if w["bloom_max"] > 0.0:
+		w["bloom"] = w["bloom_max"] / (float(w["rate"]) * 2.5) * [1.0, 0.9, 0.82, 0.75][sl]
 	if sl > 0:
-		var k: float = [1.0, 0.8, 0.68, 0.55][sl]
-		w["recoil"] = float(w["recoil"]) * k
-		w["bloom"] = float(w["bloom"]) * k
 		w["spread"] = float(w["spread"]) * (0.95 - sl * 0.03)
 	var ml := att_level(att, "mag")
 	if ml > 0:

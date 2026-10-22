@@ -1041,13 +1041,14 @@ func sandbox_hud(on: bool) -> void:
 func _sandbox_kit(p: Player) -> void:
 	for k in ["bag3", "vest3", "helmet3"]:
 		_give(p, k, 1, 100.0 if k == "vest3" else null)
-	for k in ["a9", "a556", "a762", "a12"]:
-		_give(p, k, 240, null)
+	for k in [["a9", 120], ["a556", 150], ["a762", 30], ["a12", 40]]:
+		_give(p, k[0], k[1], null)
 	for k in [["med", 6], ["bandage", 10], ["drink", 5], ["grenade", 6]]:
 		_give(p, k[0], k[1], null)
 
 
 var _sandbox_items_at := Vector3(0, -999, 0)
+var _quiet_spawn := false
 
 
 func _sandbox_items(at: Vector3) -> void:
@@ -1059,6 +1060,7 @@ func _sandbox_items(at: Vector3) -> void:
 	var rest := Weapons.ATTS.duplicate()
 	rest.append_array(["vest1", "vest2", "helmet1", "helmet2", "bag1", "bag2"])
 	var all := guns + rest
+	_quiet_spawn = true
 	for i in all.size():
 		var a := TAU * i / all.size()
 		var r := 3.0 if i < guns.size() else 4.6
@@ -1068,6 +1070,7 @@ func _sandbox_items(at: Vector3) -> void:
 			pos.y = at.y + 0.07
 		var kind: String = all[i]
 		_all("spawn_item", [world.items.size(), pos, kind, Weapons.default_count(kind), null, [], ""])
+	_quiet_spawn = false
 
 
 # bots que não morrem, perto de onde você está
@@ -1332,19 +1335,53 @@ func _explosion_fx(at: Vector3, size: float) -> void:
 
 # ---------------- granada ----------------
 
-func _throw_grenade(lp: Player) -> void:
-	if lp.count("grenade") <= 0 or lp.air != 0 or lp.car >= 0:
+# Granada: segurar o botão tira o pino (começa a contar e apita); soltar arremessa com o tempo que
+# sobrou; segurando demais explode na mão. Enquanto segura aparece o X pra guardar de volta.
+const GREN_FUSE := 4.0
+var gren_t := -1.0
+var _gren_beep := 0.0
+
+
+func _grenade_hold(lp: Player) -> void:
+	if gren_t >= 0.0 or lp.count("grenade") <= 0 or lp.air != 0 or lp.car >= 0 or not lp.alive:
 		return
+	gren_t = 0.0
+	_gren_beep = 0.0
+	sfx("pin")
+
+
+func _grenade_tick(lp: Player, delta: float) -> void:
+	if gren_t < 0.0:
+		return
+	if not lp.alive or lp.count("grenade") <= 0:
+		gren_t = -1.0
+		return
+	gren_t += delta
+	_gren_beep -= delta
+	if _gren_beep <= 0.0:
+		_gren_beep = 1.0 if gren_t < GREN_FUSE - 1.2 else 0.3
+		sfx("beep", -6.0)
+	if gren_t >= GREN_FUSE:
+		# não soltou a tempo: explode na mão
+		gren_t = -1.0
+		_to_server("req_grenade", [lp.global_position + Vector3(0, 1.0, 0), Vector3.ZERO, 0.02])
+
+
+func _throw_grenade(lp: Player) -> void:
+	if gren_t < 0.0:
+		return
+	var fuse := maxf(GREN_FUSE - gren_t, 0.05)
+	gren_t = -1.0
 	var fwd := -cam.global_transform.basis.z
 	var from := lp.global_position + Vector3(0, 1.6, 0) + Vector3(fwd.x, 0, fwd.z).normalized() * 0.5
 	var vel := (fwd + Vector3(0, 0.35, 0)).normalized() * 17.0
 	lp.punch_t = 0.3
 	sfx("punch_swing", -4.0)
-	_to_server("req_grenade", [from, vel])
+	_to_server("req_grenade", [from, vel, fuse])
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func req_grenade(from: Vector3, vel: Vector3) -> void:
+func req_grenade(from: Vector3, vel: Vector3, fuse := 2.6) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := _sender()
@@ -1355,12 +1392,12 @@ func req_grenade(from: Vector3, vel: Vector3) -> void:
 		return
 	p.inv["grenade"] = p.count("grenade") - 1
 	_p_inv(p)
-	_all("on_grenade", [from, vel.limit_length(20.0), id])
+	_all("on_grenade", [from, vel.limit_length(20.0), id, clampf(fuse, 0.02, GREN_FUSE)])
 
 
 @rpc("authority", "call_remote", "reliable")
-func on_grenade(from: Vector3, vel: Vector3, owner_id: int) -> void:
-	var g := {"pos": from, "vel": vel, "t": 2.6, "owner": owner_id, "node": null}
+func on_grenade(from: Vector3, vel: Vector3, owner_id: int, fuse := 2.6) -> void:
+	var g := {"pos": from, "vel": vel, "t": fuse, "owner": owner_id, "node": null}
 	if not dedicated:
 		var mi := MeshInstance3D.new()
 		mi.mesh = Weapons.item_mesh("grenade")
@@ -1513,8 +1550,9 @@ func _menu_music_on() -> void:
 		menu_music = AudioStreamPlayer.new()
 		menu_music.stream = load("res://sounds/lobby_rock%d.ogg" % (randi() % 2 + 1))
 		add_child(menu_music)
-	var want := bool(Cfg.get_v("music")) and float(Cfg.get_v("volume")) > 0.0
-	menu_music.volume_db = linear_to_db(maxf(float(Cfg.get_v("volume")), 0.001)) - 6.0
+	var mv := float(Cfg.get_v("volume")) * float(Cfg.get_v("music_vol"))
+	var want := bool(Cfg.get_v("music")) and mv > 0.0
+	menu_music.volume_db = linear_to_db(maxf(mv, 0.001)) - 4.0
 	if want and not menu_music.playing:
 		menu_music.play()
 	elif not want and menu_music.playing:
@@ -1922,6 +1960,7 @@ func _print_debug_state() -> void:
 
 
 func _local_update(lp: Player, delta: float) -> void:
+	_grenade_tick(lp, delta)
 	var wid := lp.cur_wid()
 	var w := lp.cur_stat()
 	var playing := lp.alive and not lp.spect
@@ -1946,7 +1985,7 @@ func _local_update(lp: Player, delta: float) -> void:
 	var look := hud.take_look()
 	if hud.bag_open or hud.edit_mode:
 		look = Vector2.ZERO
-	var sens: float = 0.0055 * float(Cfg.get_v("sens")) / zoom
+	var sens: float = 0.0046 * float(Cfg.get_v("sens")) / zoom
 	if lp.scoped:
 		sens *= float(Cfg.get_v("sens_ads"))
 	var inv_y := -1.0 if bool(Cfg.get_v("invert")) else 1.0
@@ -1982,6 +2021,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		_was_firing = firing
 		if not firing:
 			lp.bloom = maxf(lp.bloom - delta * 4.0, 0.0)
+		hud.cross_bloom = lp.bloom
 		if _snap_t > 0.0:
 			_snap_t -= delta
 		if firing or _shot_pending or _snap_t > 0.0:
@@ -2022,17 +2062,22 @@ func _local_update(lp: Player, delta: float) -> void:
 		base = vehicles[t.car].global_position + Vector3(0, 0.6, 0)
 	elif t != lp:
 		target_len = 4.5
-	if t == lp and lp.scoped:
-		target_len = 0.9
+	# mirando (com ou sem acessório): primeira pessoa, no olho, olhando pela mira da arma
+	var fp := t == lp and lp.scoped and lp.air == 0 and lp.car < 0
+	if fp:
+		target_len = 0.0
 		fov = 75.0 / zoom
 	if not playing and t == lp:
 		target_len = 5.0
-	cam_yaw.position = base + Vector3(0, 1.55 if not (t and t.crouch) else 1.1, 0)
+		fp = false
+	if lp.model:
+		lp.model.visible = not fp
+	cam_yaw.position = base + Vector3(0, (1.62 if fp else 1.55) if not (t and t.crouch) else (1.15 if fp else 1.1), 0)
 	cam_yaw.rotation.y = cy if t == lp else lerp_angle(cam_yaw.rotation.y, cy, minf(1.0, 6.0 * delta))
 	cam_pitch.rotation.x = cp
 	# ombro da câmera: se tem parede do lado, encosta a câmera no centro (não vê através da parede)
-	var side := 0.55
-	if t and t.air == 0:
+	var side := 0.0 if fp else 0.55
+	if t and t.air == 0 and not fp:
 		var from := cam_yaw.global_position
 		var right := cam_pitch.global_transform.basis * Vector3(0.55 + 0.35, 0.15, 0)
 		var q := PhysicsRayQueryParameters3D.create(from, from + right, 1)
@@ -2064,8 +2109,10 @@ func _local_update(lp: Player, delta: float) -> void:
 	hud.armor = lp.armor
 	hud.heals = [lp.count("bandage") + lp.count("drink"), lp.count("med")]
 	hud.grenades = lp.count("grenade")
+	hud.gren_left = (GREN_FUSE - gren_t) if gren_t >= 0.0 else -1.0
 	hud.overlay = lp.scoped and bool(w["overlay"])
 	hud.red_dot = lp.scoped and not bool(w["overlay"]) and ("holo" in lp.cur_att() or "scope2" in lp.cur_att())
+	hud.iron = lp.scoped and not hud.overlay and not hud.red_dot
 	hud.can_scope = float(w["zoom"]) > 1.0
 	hud.reloading = lp.reload_t > 0.0
 	var sl := [{"id": "fist", "att": [], "ammo": 0, "max": 0}]
@@ -2107,7 +2154,7 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 				continue
 			var ang := fwd.angle_to(d / dist)
 			# cone em graus "de tamanho de gente": quanto mais longe, mais fino
-			var lim := clampf(atan2(3.2, dist), 0.03, 0.42)
+			var lim := clampf(atan2(4.4, dist), 0.04, 0.5)
 			if ang > lim:
 				continue
 			var score := ang + lp.position.distance_to(o.position) * 0.0025
@@ -2132,9 +2179,9 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 		return
 	var wy := atan2(-dir.x, -dir.z)
 	var wp := asin(clampf(dir.y, -1.0, 1.0))
-	var k := minf(1.0, (24.0 if head else 20.0) * delta)
+	var k := minf(1.0, (34.0 if head else 30.0) * delta)
 	if _snap_t > 0.0:
-		k = minf(1.0, 40.0 * delta)
+		k = minf(1.0, 56.0 * delta)
 	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
@@ -2275,8 +2322,14 @@ func _on_action(act: String) -> void:
 			lp.sprint = false
 		"car":
 			_car_toggle(lp)
-		"grenade":
+		"grenade_hold":
+			_grenade_hold(lp)
+		"grenade_throw":
 			_throw_grenade(lp)
+		"gren_cancel":
+			if gren_t >= 0.0:
+				gren_t = -1.0
+				sfx("equip", -4.0)
 		"sprint":
 			lp.sprint = not lp.sprint
 			if lp.sprint and lp.crouch:
@@ -2464,10 +2517,7 @@ func _local_fire(lp: Player) -> void:
 			sfx("punch_hit")
 		return
 	_shot_fx(lp, ends, wid, true)
-	# coice: sobe a mira e puxa pro lado, mais forte quanto mais tempo segurando
-	var kick := float(w["recoil"]) * (1.0 + lp.bloom * 0.35)
-	cam_pitch_v = minf(cam_pitch_v + kick, 1.25)
-	cam_yaw_v += randf_range(-0.45, 0.45) * kick * (0.6 + lp.bloom * 0.4)
+	# sem coice: a mira não sobe; segurando o dedo o tiro só vai abrindo (bloom)
 	if w["type"] == "bolt" or w["type"] == "sniper":
 		get_tree().create_timer(0.35).timeout.connect(func(): sfx("bolt", -4.0))
 	if lp.mag[wid] <= 0:
@@ -2503,8 +2553,8 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 		if not ("silencer" in att) and cam and cam.global_position.distance_to(from) < 60.0:
 			var fl := OmniLight3D.new()
 			fl.light_color = Color(1.0, 0.75, 0.45)
-			fl.light_energy = 1.6
-			fl.omni_range = 3.5
+			fl.light_energy = 0.8
+			fl.omni_range = 2.2
 			fl.shadow_enabled = false
 			add_child(fl)
 			fl.global_position = from
@@ -3057,13 +3107,12 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 		return 1
 	if not Weapons.ITEMS.has(kind):
 		return 0
-	# itens que empilham (bandagem, kit)
-	var st := Weapons.stack_of(kind)
+	# cabe o quanto sobrar de espaço (por quantidade)
 	var others := {}
 	for k in p.inv:
 		if k != kind:
 			others[k] = p.inv[k]
-	var room := (p.capacity() - Weapons.slots_used(others)) * st - p.count(kind)
+	var room := floori((p.capacity() - Weapons.slots_used(others)) / Weapons.weight(kind) + 0.001) - p.count(kind)
 	var take := clampi(room, 0, n)
 	if take <= 0:
 		return 0
@@ -3685,7 +3734,7 @@ func on_inv(id: int, inv: Dictionary, armor: float, vest_lv: int, helmet: int, b
 		elif helmet > int(_seen_gear[1]):
 			hud.center("Capacete nível %d equipado" % helmet, 1.2)
 		elif bag > int(_seen_gear[2]):
-			hud.center("Mochila nível %d: %d vagas" % [bag, Weapons.BAGS[bag]], 1.5)
+			hud.center("Mochila nível %d: espaço %d" % [bag, Weapons.BAGS[bag]], 1.5)
 		_seen_inv = inv.duplicate()
 		_seen_gear = [vest_lv, helmet, bag, armor]
 	p.inv = inv
@@ -3731,3 +3780,6 @@ func spawn_item(i: int, pos: Vector3, kind: String, n: int, extra, list: Array, 
 		items_avail.append(true)
 	if not dedicated:
 		_make_item_node(i)
+		# barulho de item caindo no chão (largou da mochila / trocou de arma)
+		if nm == "" and in_game and not _quiet_spawn and sfxn:
+			sfxn.play_at("drop", pos, -3.0, 30.0)

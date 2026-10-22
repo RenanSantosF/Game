@@ -20,6 +20,9 @@ const DEFAULTS := {
 var game: Node
 var mode := "ground"       # lobby, plane, fall, glide, ground, dead, end
 var move_vec := Vector2.ZERO
+var cross_bloom := 0.0
+var iron := false
+var gren_left := -1.0     # segundos até a granada na mão explodir (-1 = sem granada na mão)
 var fire_held := false
 var _look := Vector2.ZERO
 var touches := {}    # dedo -> "joy" | "look" | "fire" | "btn" | "gui" | "drag:<botão>"
@@ -704,6 +707,8 @@ func _buttons() -> Dictionary:
 				return b
 			if grenades > 0:
 				b["grenade"] = [Vector2(s.x * 0.66, s.y * 0.88), 34.0, "grenade"]
+			if gren_left >= 0.0:
+				b["gren_cancel"] = [Vector2(s.x * 0.66, s.y * 0.72), 28.0, "close"]
 			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
 				if k == "scope" and not can_scope:
 					continue
@@ -825,6 +830,11 @@ func _down(i: int, p: Vector2) -> void:
 	if b == "fire" or b == "fire2":
 		touches[i] = "fire"
 		return
+	if b == "grenade":
+		# segura pra tirar o pino; solta pra jogar
+		touches[i] = "gren"
+		action.emit("grenade_hold")
+		return
 	if b != "":
 		touches[i] = "btn"
 		action.emit(b)
@@ -862,6 +872,8 @@ func _up(i: int) -> void:
 	if r == "joy":
 		joy_active = false
 		move_vec = Vector2.ZERO
+	if r == "gren":
+		action.emit("grenade_throw")
 
 
 func _drag(i: int, p: Vector2, rel: Vector2) -> void:
@@ -1303,11 +1315,20 @@ func _draw_pad() -> void:
 			pad.draw_arc(c, s.y * 0.46, 0, TAU, 64, Color(0, 0, 0, 0.9), 10.0)
 			pad.draw_rect(Rect2(0, 0, c.x - s.y * 0.46, s.y), Color(0, 0, 0, 0.92))
 			pad.draw_rect(Rect2(c.x + s.y * 0.46, 0, s.x, s.y), Color(0, 0, 0, 0.92))
+		elif iron:
+			# mira de ferro (sem acessório): alça atrás e massa de mira na frente
+			var dk := Color(0.08, 0.08, 0.08, 0.95)
+			pad.draw_rect(Rect2(c.x - 9, c.y + 2, 18, s.y * 0.2), dk)
+			pad.draw_arc(c + Vector2(0, 26), 46.0, PI * 1.08, PI * 1.92, 24, dk, 10.0)
+			pad.draw_rect(Rect2(c.x - 70, c.y + 28, 52, 14), dk)
+			pad.draw_rect(Rect2(c.x + 18, c.y + 28, 52, 14), dk)
+			pad.draw_circle(c, 2.0, Color(1, 0.3, 0.2))
 		elif red_dot:
 			pad.draw_arc(c, 14.0, 0, TAU, 24, Color(0.1, 0.1, 0.1, 0.6), 2.0)
 			pad.draw_circle(c, 2.5, Color(1, 0.15, 0.1))
 		else:
-			var g := 7.0
+			# a mira abre junto com o tiro (segurando o dedo)
+			var g := 7.0 + cross_bloom * 9.0
 			var L := 11.0
 			pad.draw_line(c + Vector2(g, 0), c + Vector2(g + L, 0), white, 2.0)
 			pad.draw_line(c - Vector2(g, 0), c - Vector2(g + L, 0), white, 2.0)
@@ -1328,6 +1349,13 @@ func _draw_pad() -> void:
 		var side := Vector2(-dv.y, dv.x)
 		pad.draw_colored_polygon(PackedVector2Array([tip + dv * 14.0, tip + side * 12.0, tip - side * 12.0]), Color(1, 0.15, 0.1, al * 0.85))
 		pad.draw_arc(c, 108.0, a - PI / 2.0 - 0.22, a - PI / 2.0 + 0.22, 12, Color(1, 0.15, 0.1, al * 0.5), 4.0)
+	# granada sem pino na mão: contagem bem visível
+	if gren_left >= 0.0:
+		var gt := "GRANADA  %d" % ceili(gren_left)
+		var gw := font.get_string_size(gt, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x
+		var gc := Color(1, 0.25, 0.15) if gren_left < 1.3 else Color(1, 0.85, 0.3)
+		pad.draw_string_outline(font, Vector2(c.x - gw / 2.0, c.y + 90), gt, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, Color(0, 0, 0, 0.8))
+		pad.draw_string(font, Vector2(c.x - gw / 2.0, c.y + 90), gt, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, gc)
 	# cura em andamento
 	if heal_k >= 0.0:
 		pad.draw_arc(c, 44.0, -PI / 2.0, -PI / 2.0 + TAU * heal_k, 40, Color(0.4, 1, 0.5, 0.9), 6.0)

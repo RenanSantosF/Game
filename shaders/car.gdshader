@@ -1,14 +1,14 @@
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
-// Carros (modelos do Car Kit da Kenney, CC0): paleta da textura com cores mais sóbrias.
-// COLOR.r = parte pintada (cor vem de "paint"). Os carros não têm vidro.
-uniform sampler2D tex : source_color, filter_linear_mipmap;
+// Carros (tools/prepare_cars2.gd): cor da textura original no vértice; UV2.x = 1 marca a pintura
+// (cada carro com sua cor, vem de "paint"). Os carros não têm vidro.
 uniform vec3 paint : source_color = vec3(0.5, 0.1, 0.08);
 uniform float dirt = 0.25;     // poeira de guerra
 uniform float rust = 0.0;      // carcaça abandonada: ferrugem
 varying vec3 wpos;
 varying vec3 wnrm;
+varying float painted;
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(41.3, 289.1))) * 15731.743);
@@ -24,17 +24,16 @@ float vnoise(vec2 p) {
 void vertex() {
 	wpos = VERTEX;
 	wnrm = NORMAL;
+	painted = UV2.x;
+	COLOR.rgb = pow(COLOR.rgb, vec3(2.2));
 }
 
 void fragment() {
-	vec3 c = texture(tex, UV).rgb;
-	float l = dot(c, vec3(0.3, 0.59, 0.11));
-	vec3 base = mix(vec3(l), c, 0.45) * 0.8;
+	vec3 base = COLOR.rgb;
 	float rough = 0.75;
 	float spec = 0.3;
-	if (COLOR.r > 0.5) {
-		// tinta: mantém o degradê da paleta como sombreado
-		base = paint * (0.55 + 0.6 * l);
+	if (painted > 0.5) {
+		base = paint;
 		rough = 0.38;
 		spec = 0.55;
 	}

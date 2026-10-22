@@ -365,7 +365,7 @@ func _pick(p: Vector2) -> void:
 	add_panel.visible = false
 	var from := cam.project_ray_origin(p)
 	var to := from + cam.project_ray_normal(p) * 600.0
-	var q := PhysicsRayQueryParameters3D.create(from, to)
+	var q := PhysicsRayQueryParameters3D.create(from, to, 1 | World.BUSH_LAYER)
 	var r := world.get_world_3d().direct_space_state.intersect_ray(q)
 	if r.is_empty():
 		_select("")

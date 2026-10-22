@@ -1516,6 +1516,7 @@ func _build_added() -> void:
 
 
 const NAT_KINDS := ["oak", "pine", "tall", "bush", "rock", "log"]
+const BUSH_LAYER := 1 << 9
 
 
 # árvore/pedra/moita/tronco: aplica o ajuste à mão e guarda (ou, no editor, vira um nó próprio)
@@ -1543,6 +1544,9 @@ func _nat(kind: String, xf: Transform3D, sets: Dictionary, key := "", e_over = n
 		n.add_child(mi)
 		var bd := StaticBody3D.new()
 		bd.collision_mask = 0
+		if kind == "bush":
+			# só pra tocar no editor: camada própria, o boneco passa por dentro
+			bd.collision_layer = BUSH_LAYER
 		n.add_child(bd)
 		_nat_col(kind, x2, bd)
 		nat_reg[key][2] = n
@@ -1564,7 +1568,7 @@ func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
 			cs.position = xf.origin + Vector3(0, 3.0 * sc.x, 0)
 			body.add_child(cs)
 		"rock":
-			_rock_col(body, sc, r, xf.origin)
+			_rock_col(body, xf)
 		"log":
 			var cs := CollisionShape3D.new()
 			var cy := CylinderShape3D.new()
@@ -1735,19 +1739,27 @@ func _build_nature() -> void:
 
 
 # colisão arredondada (casco convexo de um elipsoide) pra não entrar na pedra
-func _rock_col(body: StaticBody3D, sc: Vector3, r: float, gp: Vector3) -> void:
+# colisão da pedra = casco convexo do próprio desenho dela (não dá pra entrar com parte do corpo)
+var _rock_pts := PackedVector3Array()
+
+
+func _rock_col(body: StaticBody3D, xf: Transform3D) -> void:
+	if _rock_pts.is_empty():
+		var m: Mesh = _nat_meshes["rock"] if _nat_meshes.has("rock") else _tree_meshes()["rock"]
+		var seen := {}
+		for v: Vector3 in (m.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array):
+			var k := Vector3i(roundi(v.x * 200.0), roundi(v.y * 200.0), roundi(v.z * 200.0))
+			if not seen.has(k):
+				seen[k] = true
+				_rock_pts.append(v)
 	var pts := PackedVector3Array()
-	for i in 5:
-		var la := lerpf(-PI / 2.0, PI / 2.0, i / 4.0)
-		var n := 1 if i == 0 or i == 4 else 8
-		for k in n:
-			var lo := TAU * k / n
-			pts.append(Vector3(cos(la) * cos(lo) * sc.x, sin(la) * sc.y, cos(la) * sin(lo) * sc.z) * 0.53)
+	for v in _rock_pts:
+		pts.append(xf.basis * v * 1.02)
 	var sh := ConvexPolygonShape3D.new()
 	sh.points = pts
 	var cs := CollisionShape3D.new()
 	cs.shape = sh
-	cs.transform = Transform3D(Basis(Vector3.UP, r), gp)
+	cs.position = xf.origin
 	body.add_child(cs)
 
 
