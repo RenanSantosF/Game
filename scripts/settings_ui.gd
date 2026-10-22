@@ -68,6 +68,7 @@ func _ready() -> void:
 	_slider(vb, "Volume", "volume", 0.0, 1.0)
 	_slider(vb, "Volume da música", "music_vol", 0.0, 1.0)
 	_hint(vb, "Música: \"Devoted Guard\" (vitalezzz, CC0) e \"Heavy Metal Riffs - Monolith\" (Tri-Tachyon, CC-BY 4.0), do OpenGameArt.org.")
+	_hint(vb, "Carros: \"Low Poly American Muscle\" (T Allen Studios, CC-BY 4.0) e \"GAZ-67 lowpoly\" (Artie31, CC0), do OpenGameArt.org.")
 	vb.add_child(_button("VOLTAR", close))
 
 

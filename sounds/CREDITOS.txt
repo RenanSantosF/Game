@@ -20,7 +20,12 @@ Música do lobby (OpenGameArt.org):
   (https://creativecommons.org/licenses/by/4.0/) — https://opengameart.org/content/heavy-metal-riffs-monolith
   (volume igualado e emenda do loop feitas pro jogo)
 
-Modelos dos carros: "Car Kit" de Kenney (www.kenney.nl), CC0 — repintados pelo jogo.
+Modelos dos carros (convertidos por tools/prepare_cars2.gd, sem vidros e repintados pelo jogo):
+- Carro rápido: "Low Poly American Muscle" — T Allen Studios, CC-BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/) — https://opengameart.org/content/low-poly-american-muscle-car
+- Jipe: "GAZ-67 lowpoly" — Artie31 (Artyom Shebunin), CC0 — https://opengameart.org/content/lowpoly-soviet-jeep
+- Carros parados de enfeite: "Car Kit" de Kenney (www.kenney.nl), CC0.
+Personagem: modelo do autor do jogo (feito no Meshy), reduzido por tools/prepare_man.gd.
 Modelos das armas, lunetas, silenciador e coronha: "Ultimate Gun Pack" de Quaternius, CC0
 (https://opengameart.org/content/low-poly-guns-pack) — convertidos por tools/prepare_guns.gd.
 

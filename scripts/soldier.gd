@@ -1,7 +1,7 @@
 class_name Soldier
 extends Node3D
 
-# Boneco do jogador (models/soldier.scn, preparado por tools/prepare_soldier.gd a partir do modelo do Meshy).
+# Boneco do jogador (models/soldier.scn, preparado por tools/prepare_man.gd a partir do modelo do Meshy, com textura).
 # Animações do arquivo (parado, andar, correr, no ar, morrer) + ajustes por código:
 # braços alcançam a arma (cinemática inversa), agachar dobra as pernas, o tronco acompanha a mira.
 
@@ -38,11 +38,8 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	mat.set_shader_parameter("c_pants", pants)
 	mat.set_shader_parameter("c_boots", boots)
 	mat.set_shader_parameter("c_hair", hair)
-	mat.set_shader_parameter("tex", U.atlas())
-	var h := absi(hash(shirt))
-	mat.set_shader_parameter("camo", 1.0 if h % 3 == 0 else 0.0)
-	mat.set_shader_parameter("sleeves", 0.0 if h % 5 == 1 else 1.0)
-	mat.set_shader_parameter("gloves", 1.0 if h % 4 == 2 else 0.0)
+	# quem tira a camisa verde-oliva fica com a jaqueta e o jeans originais da textura
+	mat.set_shader_parameter("tint", 0.0 if shirt.is_equal_approx(Color(0.32, 0.36, 0.24)) else 1.0)
 	for k in 2:
 		var mi: MeshInstance3D = body.find_child("Body%d" % k, true, false)
 		mi.material_override = mat
@@ -66,13 +63,21 @@ func play(n: String, blend := 0.18, speed := 1.0) -> void:
 	ap.speed_scale = speed
 
 
+# ajuste dos acessórios (medidos no boneco antigo, que tinha a mesma altura): deslocamento e tamanho
+const FIT := {"vest": [Vector3(0, -0.08, 0.0), Vector3(1.06, 1.0, 1.1)], "bag": [Vector3(0, -0.11, -0.06), Vector3.ONE],
+	"helmet": [Vector3(0, 0.012, 0.0), Vector3(1.06, 1.0, 1.06)]}
+
+
 # anexa um objeto (colete, capacete, mochila feitos no espaço do boneco) num osso
-func attach(bone: String, node: Node3D) -> void:
+func attach(bone: String, node: Node3D, fit := "") -> void:
 	var ba := BoneAttachment3D.new()
 	ba.bone_name = "mixamorig_" + bone
 	sk.add_child(ba)
 	var rest: Transform3D = body.transform * (sk.get_parent() as Node3D).transform * sk.get_bone_global_rest(b[bone])
-	node.transform = rest.affine_inverse()
+	# acerta o acessório no corpo (escala em volta do osso e desloca)
+	var f: Array = FIT.get(fit, [Vector3.ZERO, Vector3.ONE])
+	var fx := Transform3D(Basis.from_scale(f[1]), rest.origin + f[0]) * Transform3D(Basis(), -rest.origin)
+	node.transform = rest.affine_inverse() * fx
 	ba.add_child(node)
 
 

@@ -8,7 +8,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 1. **Sala de espera (lobby)**: um pátio cercado fora do mapa, com todo mundo junto (bots também). Ninguém leva dano; você recebe uma M4A1 e uma Glock só pra aquecer a mira (somem ao entrar no avião).
 2. **Avião**: o avião cruza o mapa por uma rota sorteada (sempre por cima do mapa). Toque em **SALTAR** quando quiser.
 3. **Queda**: queda livre guiada pelo joystick; o paraquedas abre sozinho perto do chão (ou toque em **PARAQUEDAS**).
-4. **Loot**: todo mundo começa sem arma e sem equipamento, só com os punhos. Munição não é infinita: cada arma usa um tipo (9 mm, 5.56, 7.62, calibre 12) e a munição aparece do lado das armas e solta pelo mapa. Armas, acessórios, coletes, capacetes, mochilas, bandagens e kits ficam nas casas, nas caixas, perto de pedras e na base militar. Quem morre vira uma **caixa** com tudo o que tinha.
+4. **Loot**: todo mundo começa sem arma e sem equipamento, só com os punhos. Munição não é infinita: cada arma usa um dos 4 tipos (SMG, fuzil, sniper e calibre 12) e a munição aparece do lado das armas e solta pelo mapa. Armas, acessórios, coletes, capacetes, mochilas, bandagens e kits ficam nas casas, nas caixas, perto de pedras e na base militar. Quem morre vira uma **caixa** com tudo o que tinha.
 5. **Zona**: o círculo azul fecha em 7 etapas; o branco no mapa mostra a próxima. Fora dele você perde vida.
 6. **Vitória**: não tem renascimento. O último de pé vence.
 
@@ -16,19 +16,20 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Conteúdo
 
-- Boneco animado (modelo feito no Meshy, reduzido pra celular): anda, corre, pula, agacha, morre; braços seguram a arma
+- Personagem com textura (modelo feito no Meshy, reduzido pra celular por tools/prepare_man.gd): jaqueta e calça mudam de cor por jogador; anda, corre, pula, agacha, morre; braços seguram a arma
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
-- Granada (botão aparece quando você tem), energético, mais kits e bandagens
+- Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta. Energético, kits e bandagens
 - Cenário de começo de guerra: casas com rombo na parede, fuligem e telhado queimado, paredes encardidas, ruas com buracos, rachaduras e entulho, barricadas de madeira em X, caixotes militares com arma em cima
 - Cinco cidades bem no alto de morro, com rampa longa e suave cheia de cobertura (pedras, sacos de areia, barricadas, caixotes, carcaças) pra trocar tiro subindo e descendo
 - Duas cidades com chão de cimento; casas de laje com escada maciça por fora pra subir no teto
-- Carros (Car Kit da Kenney, CC0, repintados com poeira): esportivo (rápido) e jeep aberto (mais lento), sem vidro (dá pra ver e acertar quem dirige), rodas com suspensão que acompanham o terreno, barulho de batida (batida não tira vida, só tiro e granada); explodem; botão do carro pra entrar e sair; dá pra atropelar
+- Carros (muscle car da T Allen Studios, CC-BY 4.0, e jipe GAZ-67 da Artie31, CC0, repintados com poeira): esportivo (rápido) e jipe aberto (mais lento, mas sobe morro e anda fora da estrada), cada um com o seu ronco, sem vidro (dá pra ver e acertar quem dirige), rodas com suspensão que acompanham o terreno, barulho de batida (batida não tira vida, só tiro e granada); explodem; botão do carro pra entrar e sair; dá pra atropelar
+- Cada cidade com a sua cara (cor das paredes, telhado e um marco no meio: monumento, moinho, ônibus ou caixa d'água) e mais casas
 - Casas nunca ficam tortas: o chão fica plano embaixo delas e de todos os objetos; cercas acompanham o terreno
 - Armas detalhadas (Ultimate Gun Pack da Quaternius, CC0) com luneta, holográfica e silenciador encaixados; dano cai com a distância (SMG e 12 fortes de perto e fracas de longe)
 - Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
-- Cada arma com coice e dispersão própria: os primeiros tiros são precisos e, segurando o dedo, o tiro abre (a AK abre muito)
-- Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com rua asfaltada, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
+- Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
+- Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com ruas curvas, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
 - Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco
 - Casas quase todas térreas (algumas de dois andares, com escada e sacada), varandas, muros baixos, cercas, carros e picapes abandonados
@@ -37,7 +38,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Acessórios: coronha (menos coice), carregador estendido, mira holográfica, luneta 4x e silenciador
 - Duas armas principais + pistola. Painel de armas como no FF: a da mão grande em cima, as outras pequenas embaixo (ícones brancos com o nome). Toque na arma da mão pra guardar
 - Botão de **correr** do lado do minimapa: só com o joystick anda mais devagar; com ele corre (de mãos livres corre mais). No ar não dá pra mudar a direção do pulo
-- **Mochila** níveis 1, 2 e 3 (sem mochila cabe pouco). Tela da mochila com ícones: toque num item pra usar/equipar/largar, ou **arraste o acessório até a arma** pra equipar e da arma pra mochila pra tirar; arraste pra fora da mochila pra largar. Tocar fora fecha
+- **Mochila** níveis 1, 2 e 3 por quantidade (cada item pesa: munição pouco, kit e colete mais). Tela da mochila com ícones: toque num item pra usar/equipar/largar, ou **arraste o acessório até a arma** pra equipar e da arma pra mochila pra tirar; arraste pra fora da mochila pra largar. Tocar fora fecha
 - Itens por perto aparecem numa faixa horizontal embaixo (5 por vez; arraste pro lado pra ver mais); toque pra pegar
 - Bússola no topo (N, NE, L, SE, S, SO, O, NO) e minimapa com uma seta só (pra onde a câmera olha)
 - Botões só com ícones
@@ -143,7 +144,8 @@ scripts/mb.gd          monta várias peças numa malha só (desempenho)
 shaders/               material do mundo, terreno e água
 tools/gen_assets.py    gera textures/atlas.png e sounds/*.wav (python3 + numpy + pillow)
 tools/prepare_guns.gd  converte as armas CC0 de models_src/guns pra models/guns/*.res e gera scripts/gun_info.gd
-tools/prepare_cars.gd  converte os carros CC0 de models_src/cars pra models/car*.res
+tools/prepare_cars2.gd converte o muscle car e o jipe de models_src pra models/car*.res
+tools/prepare_man.gd   reduz o personagem (com tools/decimate_man.py e tools/man_mask.py) pra models/soldier.scn
 tools/render_keyart.gd arte da tela de carregamento (depois tools/keyart_post.py -> art/loading.jpg)
 .github/workflows/apk.yml   compilação automática do APK
 ```
