@@ -45,9 +45,157 @@ func body(pos: Vector3, yaw: float) -> StaticBody3D:
 	var b := StaticBody3D.new()
 	b.collision_mask = 0
 	b.position = pos
-	b.rotation.y = yaw
-	w.add_child(b)
+	b.rotation.y = yaw + _dyaw
+	if _scale != 1.0:
+		b.scale = Vector3.ONE * _scale
+	if _skip:
+		# objeto apagado no editor: monta "de mentira" (o sorteio continua igual) e joga fora
+		_ghosts.append(b)
+		return b
+	(_cur if _cur else w).add_child(b)
 	return b
+
+
+# ---------------- ajustes feitos à mão (editor de cenário) ----------------
+
+const NO_YAW := ["barrel", "water_tower", "silo", "radio_tower", "well"]
+const AB := ["low_wall", "fence"]
+
+var edits: Dictionary = {}     # chave -> ajuste ("e" de MapEdits)
+var editor := false            # editor: cada objeto vira um nó separado pra poder mexer
+var no_items := false
+var reg := {}                  # editor: chave -> dados pra remontar o objeto
+var _used := {}
+var _depth := 0
+var _scale := 1.0
+var _dyaw := 0.0
+var _skip := false
+var _ghosts: Array = []
+var _cur: Node3D = null
+
+
+# posição e giro originais do objeto (pros muros/cercas: o meio da linha)
+static func obj_origin(kind: String, args: Array) -> Array:
+	if kind in AB:
+		var a: Vector2 = args[0]
+		var c: Vector2 = args[1]
+		return [Vector3((a.x + c.x) / 2.0, float(args[2]), (a.y + c.y) / 2.0), -atan2(c.y - a.y, c.x - a.x)]
+	var yaw := 0.0
+	if args.size() > 1 and typeof(args[1]) == TYPE_FLOAT:
+		yaw = args[1]
+	return [args[0], yaw]
+
+
+static func _apply_args(kind: String, args: Array, o: Array, e: Dictionary) -> Array:
+	var a2 := args.duplicate()
+	if e.is_empty():
+		return a2
+	var np: Vector3 = MapEdits.v3(e["p"]) if e.has("p") else o[0]
+	var dr := float(e.get("r", 0.0))
+	if kind in AB:
+		var mid := Vector2(o[0].x, o[0].z)
+		var s := float(e.get("s", 1.0))
+		var c2 := Vector2(np.x, np.z)
+		a2[0] = c2 + ((args[0] as Vector2) - mid).rotated(-dr) * s
+		a2[1] = c2 + ((args[1] as Vector2) - mid).rotated(-dr) * s
+		a2[2] = np.y
+		return a2
+	a2[0] = np
+	if not kind in NO_YAW and args.size() > 1 and typeof(args[1]) == TYPE_FLOAT:
+		a2[1] = float(args[1]) + dr
+	return a2
+
+
+func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
+	if _depth > 0:
+		callv("_k_" + kind, args)
+		return
+	var o := obj_origin(kind, args)
+	if key == "":
+		key = MapEdits.key(kind, o[0])
+		while _used.has(key):
+			key += "'"
+	_used[key] = true
+	var e: Dictionary = e_over if e_over != null else edits.get(key, {})
+	var st := rng.state
+	var vst := vrng.state
+	var a2 := _apply_args(kind, args, o, e)
+	_skip = bool(e.get("d", false))
+	_scale = 1.0 if kind in AB else float(e.get("s", 1.0))
+	_dyaw = float(e.get("r", 0.0)) if kind in NO_YAW else 0.0
+	var hs := w.houses.size()
+	var its := w.items.size()
+	var saved := mb
+	if _skip or editor:
+		mb = MB.new()
+	if editor and not _skip:
+		_cur = Node3D.new()
+		_cur.set_meta("key", key)
+		w.add_child(_cur)
+	_depth += 1
+	callv("_k_" + kind, a2)
+	_depth -= 1
+	if _skip or no_items:
+		w.items.resize(its)
+	if _skip:
+		w.houses.resize(hs)
+		for g in _ghosts:
+			g.free()
+	elif editor and not headless and mb.count > 0:
+		var mi := MeshInstance3D.new()
+		mi.mesh = mb.commit()
+		mi.material_override = U.wmat()
+		mi.visibility_range_end = 450.0
+		_cur.add_child(mi)
+	_ghosts.clear()
+	mb = saved
+	if editor:
+		reg[key] = {"kind": kind, "args": args, "st": st, "vst": vst, "node": _cur, "o": o}
+	_cur = null
+	_skip = false
+	_scale = 1.0
+	_dyaw = 0.0
+
+
+# editor: remonta um objeto depois de mexer nele (mesmo sorteio de antes)
+func rebuild(key: String, e_over = null) -> void:
+	var info: Dictionary = reg[key]
+	if info["node"]:
+		(info["node"] as Node).free()
+	rng.state = info["st"]
+	vrng.state = info["vst"]
+	no_items = true
+	_obj(info["kind"], info["args"], key, e_over)
+	no_items = false
+
+
+# argumentos de um objeto novo (adicionado no editor) a partir de posição e giro
+func new_args(kind: String, pos: Vector3, yaw: float, extra: Array) -> Array:
+	if kind in AB:
+		var d := Vector2(cos(-yaw), sin(-yaw)) * 2.0
+		var c := Vector2(pos.x, pos.z)
+		return [c - d, c + d, pos.y]
+	if kind in NO_YAW:
+		return [pos]
+	var args := [pos, yaw]
+	if kind == "house":
+		args.append(extra[0] if extra.size() > 0 else w._house_spec(rng))
+	else:
+		args.append_array(extra)
+	return args
+
+
+# objeto adicionado no editor ("a" de MapEdits)
+func add_new(ent: Dictionary) -> void:
+	rng.seed = int(ent.get("n", 1))
+	vrng.seed = int(ent.get("n", 1)) + 7
+	var kind: String = ent["k"]
+	var pos := MapEdits.v3(ent["p"])
+	var args := new_args(kind, pos, float(ent.get("r", 0.0)), ent.get("x", []))
+	var e := {"s": ent.get("s", 1.0)}
+	if kind in NO_YAW:
+		e["r"] = ent.get("r", 0.0)
+	_obj(kind, args, "+%d" % int(ent.get("n", 1)), e)
 
 
 func col_box(root: Node3D, size: Vector3, pos: Vector3, rot := Basis()) -> void:
@@ -169,6 +317,10 @@ func _gable(root: Node3D, wdt: float, dpt: float, y: float, rise: float, layer: 
 
 # Casa genérica. spec: w, d, floors, style, roof ("tile"/"metal"/"flat"), rooms, balcony, porch
 func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
+	_obj("house", [pos, yaw, spec])
+
+
+func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var wd: float = spec.get("w", 8.0)
 	var dp: float = spec.get("d", 7.0)
 	var floors: int = spec.get("floors", 1)
@@ -371,6 +523,10 @@ func _stairs(root: Node3D, wd: float, dp: float, fh: float, stair_x: float) -> v
 
 
 func shack(pos: Vector3, yaw: float) -> void:
+	_obj("shack", [pos, yaw])
+
+
+func _k_shack(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var wd := rng.randf_range(4.5, 5.5)
 	var dp := rng.randf_range(3.8, 4.4)
@@ -391,6 +547,10 @@ func shack(pos: Vector3, yaw: float) -> void:
 
 
 func warehouse(pos: Vector3, yaw: float) -> void:
+	_obj("warehouse", [pos, yaw])
+
+
+func _k_warehouse(pos: Vector3, yaw: float) -> void:
 	house(pos, yaw, {"w": rng.randf_range(13.0, 16.0), "d": rng.randf_range(9.0, 11.0), "fh": 4.6, "style": "metal",
 		"roof": "metal", "door_w": 4.0})
 	var bs := Basis(Vector3.UP, yaw)
@@ -399,6 +559,10 @@ func warehouse(pos: Vector3, yaw: float) -> void:
 
 
 func church(pos: Vector3, yaw: float) -> void:
+	_obj("church", [pos, yaw])
+
+
+func _k_church(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var wd := 9.0
 	var dp := 17.0
@@ -445,16 +609,28 @@ func _tower_side(root: Node3D, x: float, tz: float, tw: float, th: float, col: C
 
 
 func barracks(pos: Vector3, yaw: float) -> void:
+	_obj("barracks", [pos, yaw])
+
+
+func _k_barracks(pos: Vector3, yaw: float) -> void:
 	house(pos, yaw, {"w": 16.0, "d": 7.0, "style": "concrete", "roof": "flat", "rooms": 2, "door_w": 1.6})
 
 
 func store(pos: Vector3, yaw: float) -> void:
+	_obj("store", [pos, yaw])
+
+
+func _k_store(pos: Vector3, yaw: float) -> void:
 	house(pos, yaw, {"w": 10.0, "d": 8.0, "style": "concrete", "roof": "flat", "door_w": 2.6})
 
 
 # ---------------- coberturas e objetos ----------------
 
 func crates(pos: Vector3, yaw: float, loot := true) -> void:
+	_obj("crates", [pos, yaw, loot])
+
+
+func _k_crates(pos: Vector3, yaw: float, loot := true) -> void:
 	var root := body(pos, yaw)
 	var col := Color(1, 1, 1).darkened(rng.randf() * 0.25)
 	w.claim(Vector2(pos.x, pos.z), 2.5)
@@ -467,6 +643,10 @@ func crates(pos: Vector3, yaw: float, loot := true) -> void:
 
 
 func barrel(pos: Vector3) -> void:
+	_obj("barrel", [pos])
+
+
+func _k_barrel(pos: Vector3) -> void:
 	var root := body(pos, 0.0)
 	var cols := [Color(0.35, 0.45, 0.6), Color(0.6, 0.25, 0.15), Color(0.4, 0.45, 0.3)]
 	var c: Color = cols[rng.randi() % cols.size()]
@@ -477,6 +657,10 @@ func barrel(pos: Vector3) -> void:
 
 
 func container(pos: Vector3, yaw: float, open := false, stack := false) -> void:
+	_obj("container", [pos, yaw, open, stack])
+
+
+func _k_container(pos: Vector3, yaw: float, open := false, stack := false) -> void:
 	var root := body(pos, yaw)
 	var cols := [Color(0.75, 0.3, 0.2), Color(0.3, 0.45, 0.65), Color(0.4, 0.55, 0.35), Color(0.85, 0.65, 0.3), Color(0.7, 0.7, 0.7)]
 	var c: Color = cols[rng.randi() % cols.size()]
@@ -499,6 +683,10 @@ func container(pos: Vector3, yaw: float, open := false, stack := false) -> void:
 
 
 func sandbags(pos: Vector3, yaw: float, length := 3.0) -> void:
+	_obj("sandbags", [pos, yaw, length])
+
+
+func _k_sandbags(pos: Vector3, yaw: float, length := 3.0) -> void:
 	var root := body(pos, yaw)
 	var c := Color(0.72, 0.64, 0.48)
 	w.claim(Vector2(pos.x, pos.z), length * 0.6)
@@ -514,6 +702,10 @@ func sandbags(pos: Vector3, yaw: float, length := 3.0) -> void:
 
 
 func barrier(pos: Vector3, yaw: float) -> void:
+	_obj("barrier", [pos, yaw])
+
+
+func _k_barrier(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	piece(root, Vector3(3.0, 0.5, 0.7), Vector3(0, 0.25, 0), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.5)
 	piece(root, Vector3(3.0, 0.5, 0.35), Vector3(0, 0.75, 0), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.5)
@@ -521,6 +713,10 @@ func barrier(pos: Vector3, yaw: float) -> void:
 
 # barricada de madeira em X (cavalo de frisa): dois cavaletes cruzados ligados por uma viga
 func barricade(pos: Vector3, yaw: float, length := 3.2) -> void:
+	_obj("barricade", [pos, yaw, length])
+
+
+func _k_barricade(pos: Vector3, yaw: float, length := 3.2) -> void:
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), length * 0.55)
 	col_box(root, Vector3(length, 1.15, 0.9), Vector3(0, 0.58, 0))
@@ -540,6 +736,10 @@ func barricade(pos: Vector3, yaw: float, length := 3.2) -> void:
 
 # caixote militar com uma arma em cima (e a munição do lado, também em cima)
 func gun_crate(pos: Vector3, yaw: float, kind := "") -> void:
+	_obj("gun_crate", [pos, yaw, kind])
+
+
+func _k_gun_crate(pos: Vector3, yaw: float, kind := "") -> void:
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), 1.6)
 	var olive := Color(0.55, 0.62, 0.42).darkened(rng.randf() * 0.2)
@@ -568,6 +768,10 @@ func rubble(pos: Vector3, r: float, n := 6, col := Color(0.72, 0.6, 0.5)) -> voi
 
 
 func low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -> void:
+	_obj("low_wall", [a, b, y, style, h])
+
+
+func _k_low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -> void:
 	var mid := (a + b) / 2.0
 	var ln := a.distance_to(b)
 	var root := body(Vector3(mid.x, y, mid.y), -atan2(b.y - a.y, b.x - a.x))
@@ -578,6 +782,10 @@ func low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -> v
 
 
 func fence(a: Vector2, b: Vector2, y: float) -> void:
+	_obj("fence", [a, b, y])
+
+
+func _k_fence(a: Vector2, b: Vector2, y: float) -> void:
 	var mid := (a + b) / 2.0
 	var ln := a.distance_to(b)
 	var root := body(Vector3(mid.x, y, mid.y), -atan2(b.y - a.y, b.x - a.x))
@@ -621,6 +829,10 @@ func fence_ring(pts: Array, gaps: Array, use_wall := false) -> void:
 
 
 func ruin(pos: Vector3, yaw: float) -> void:
+	_obj("ruin", [pos, yaw])
+
+
+func _k_ruin(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var wd := rng.randf_range(7.0, 11.0)
 	var dp := rng.randf_range(6.0, 9.0)
@@ -653,6 +865,10 @@ func ruin(pos: Vector3, yaw: float) -> void:
 
 
 func watchtower(pos: Vector3, yaw: float) -> void:
+	_obj("watchtower", [pos, yaw])
+
+
+func _k_watchtower(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var h := 6.0
 	var s := 3.2
@@ -686,6 +902,10 @@ func watchtower(pos: Vector3, yaw: float) -> void:
 
 
 func water_tower(pos: Vector3) -> void:
+	_obj("water_tower", [pos])
+
+
+func _k_water_tower(pos: Vector3) -> void:
 	var root := body(pos, rng.randf() * TAU)
 	var h := 9.0
 	w.claim(Vector2(pos.x, pos.z), 4.0)
@@ -700,6 +920,10 @@ func water_tower(pos: Vector3) -> void:
 
 
 func silo(pos: Vector3) -> void:
+	_obj("silo", [pos])
+
+
+func _k_silo(pos: Vector3) -> void:
 	var root := body(pos, 0.0)
 	w.claim(Vector2(pos.x, pos.z), 3.5)
 	if not headless:
@@ -710,6 +934,10 @@ func silo(pos: Vector3) -> void:
 
 
 func hay(pos: Vector3, yaw: float) -> void:
+	_obj("hay", [pos, yaw])
+
+
+func _k_hay(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	col_box(root, Vector3(1.4, 1.4, 1.5), Vector3(0, 0.7, 0))
 	if not headless:
@@ -718,6 +946,10 @@ func hay(pos: Vector3, yaw: float) -> void:
 
 
 func logs(pos: Vector3, yaw: float) -> void:
+	_obj("logs", [pos, yaw])
+
+
+func _k_logs(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), 4.0)
 	col_box(root, Vector3(5.0, 1.4, 2.0), Vector3(0, 0.7, 0))
@@ -732,6 +964,10 @@ func logs(pos: Vector3, yaw: float) -> void:
 
 
 func radio_tower(pos: Vector3) -> void:
+	_obj("radio_tower", [pos])
+
+
+func _k_radio_tower(pos: Vector3) -> void:
 	var root := body(pos, rng.randf() * TAU)
 	var h := 30.0
 	w.claim(Vector2(pos.x, pos.z), 6.0)
@@ -758,6 +994,10 @@ func radio_tower(pos: Vector3) -> void:
 
 
 func well(pos: Vector3) -> void:
+	_obj("well", [pos])
+
+
+func _k_well(pos: Vector3) -> void:
 	var root := body(pos, rng.randf() * TAU)
 	col_box(root, Vector3(1.6, 0.9, 1.6), Vector3(0, 0.45, 0))
 	if not headless:
@@ -772,6 +1012,10 @@ func well(pos: Vector3) -> void:
 
 
 func pole(pos: Vector3, yaw: float) -> void:
+	_obj("pole", [pos, yaw])
+
+
+func _k_pole(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	col_box(root, Vector3(0.3, 8, 0.3), Vector3(0, 4, 0))
 	if not headless:
@@ -781,6 +1025,10 @@ func pole(pos: Vector3, yaw: float) -> void:
 
 
 func pier(pos: Vector3, yaw: float, length: float, y: float) -> void:
+	_obj("pier", [pos, yaw, length, y])
+
+
+func _k_pier(pos: Vector3, yaw: float, length: float, y: float) -> void:
 	var root := body(Vector3(pos.x, y, pos.z), yaw)
 	var wood := Color(0.85, 0.78, 0.68)
 	piece(root, Vector3(2.4, 0.15, length), Vector3(0, 0, -length / 2.0), wood, U.WOOD, 0.5)
@@ -791,6 +1039,10 @@ func pier(pos: Vector3, yaw: float, length: float, y: float) -> void:
 
 
 func boat(pos: Vector3, yaw: float) -> void:
+	_obj("boat", [pos, yaw])
+
+
+func _k_boat(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var c: Color = [Color(0.9, 0.9, 0.88), Color(0.35, 0.5, 0.6), Color(0.6, 0.25, 0.2)][rng.randi() % 3]
 	col_box(root, Vector3(1.6, 0.7, 4.0), Vector3(0, 0.35, 0))
@@ -805,6 +1057,10 @@ func boat(pos: Vector3, yaw: float) -> void:
 
 
 func wagon(pos: Vector3, yaw: float) -> void:
+	_obj("wagon", [pos, yaw])
+
+
+func _k_wagon(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	var cols := [Color(0.6, 0.3, 0.2), Color(0.35, 0.4, 0.32), Color(0.4, 0.42, 0.5)]
 	var c: Color = cols[rng.randi() % cols.size()]
@@ -939,6 +1195,10 @@ static func _cabin(m: MB, W: float, y0: float, y1: float, z0: float, z1: float, 
 
 
 func car(pos: Vector3, yaw: float) -> void:
+	_obj("car", [pos, yaw])
+
+
+func _k_car(pos: Vector3, yaw: float) -> void:
 	var kind := 0 if rng.randf() < 0.65 else 1
 	var tint: Color = CAR_TINTS[rng.randi() % CAR_TINTS.size()]
 	var wreck := rng.randf() < 0.35

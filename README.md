@@ -42,6 +42,17 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Números de dano subindo, seta discreta mostrando de onde veio o tiro, contador de vivos e abates
 - Texturas realistas geradas pelo próprio projeto (grama, terra, pedra, reboco, tijolo, telha, madeira, metal, asfalto, casca, folhagem)
 
+## Editor de cenário (pelo celular)
+
+No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
+
+- Analógico (esquerda) anda; arrastar no lado direito olha em volta; ▲ ▼ sobe e desce; x1/x4 muda a velocidade
+- Toque rápido num objeto (casa, muro, cerca, barricada, caixote, carro, pedra, árvore, moita...) pra selecionar
+- Painel: FRENTE/TRÁS/ESQ/DIR move (segurar repete), GIRA, SOBE/DESCE, MAIOR/MENOR, CHÃO (encosta no chão), AQUI (leva pra onde a mira do meio aponta), DUPLICAR, APAGAR
+- **+ ADICIONAR** coloca peças novas na mira do meio; **DESFAZER** volta o último passo
+- Tudo fica salvo no aparelho e já vale no treino (o minimapa acompanha as casas). **COPIAR** copia as alterações em texto: cole no chat do Claude pra elas irem pro jogo de todo mundo (`data/map_edits.json`). **LIMPAR** (toque duas vezes) apaga as alterações do aparelho
+- Partida em rede usa só as alterações que vão no jogo, pra todo mundo ver o mesmo mapa
+
 ## Configurações
 
 - **Mira assistida**: CONTROLE TOTAL (sem ajuda), GRUDA SEM MIRA (puxa só no tiro sem mirar) ou GRUDA SEMPRE (padrão). Arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
@@ -116,6 +127,8 @@ scripts/main.gd        menu, fluxo da partida, câmera, mira assistida, servidor
 scripts/player.gd      personagem (modelo, animação, pulo de janela, queda) e IA dos bots
 scripts/world.gd       relevo, localidades, estradas, lagoa, trem, vegetação, minimapa
 scripts/build.gd       construções e objetos (casas, sobrados, galpões, torres, carros...)
+scripts/map_editor.gd  editor de cenário dentro do jogo
+scripts/map_edits.gd   ajustes feitos à mão no mapa (data/map_edits.json + arquivo do aparelho)
 scripts/hud.gd         controles de toque, barra de armas, lista de itens, mochila, mapa, editor de botões
 scripts/settings_ui.gd tela de configurações
 scripts/cfg.gd         configurações salvas no aparelho

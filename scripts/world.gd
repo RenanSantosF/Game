@@ -79,6 +79,12 @@ var _lobby_cover: Array = []
 var car_spots: Array = []   # carros dirigíveis: [posição, yaw, tipo, cor]
 var b: Build
 var _wts := PackedColorArray()
+var edit_data: Dictionary = MapEdits.empty()   # ajustes feitos à mão (MapEdits)
+var editor := false                            # montando pro editor de cenário
+var nat_reg := {}                              # editor: chave -> [tipo, transformação original, nó]
+var _nat_used := {}
+var _nat_body: StaticBody3D
+var _nat_meshes := {}
 
 
 func build(is_headless: bool, q := 1) -> void:
@@ -92,12 +98,21 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 	quality = q
 	return [
 		["Gerando o relevo", _step_relief],
-		["Traçando rodovias e estradas", func(): _make_highways(); _make_roads(); b = Build.new(self)],
+		["Traçando rodovias e estradas", func():
+			_make_highways()
+			_make_roads()
+			b = Build.new(self)
+			b.edits = edit_data["e"]
+			b.editor = editor],
 		["Moldando o terreno", func(): _wts = _build_terrain()],
 		["Construindo as cidades", func():
 			for i in towns.size():
 				_build_loc(i)],
-		["Colocando carros e objetos", func(): _build_highway_props(); _car_spots(); _build_extras()],
+		["Colocando carros e objetos", func():
+			_build_highway_props()
+			_car_spots()
+			_build_extras()
+			_build_added()],
 		["Plantando árvores", _build_nature],
 		["Arrumando a área de aquecimento", func(): _build_bounds(); _build_lobby()],
 		["Desenhando o mapa", func():
@@ -1455,6 +1470,101 @@ func _tree_meshes() -> Dictionary:
 	return out
 
 
+# objetos colocados à mão no editor (os de construção; árvores e pedras vão em _build_nature)
+func _build_added() -> void:
+	b.begin(SEED + 777)
+	for ent in edit_data["a"]:
+		if not ent.get("k", "") in NAT_KINDS:
+			b.add_new(ent)
+	b.finish()
+
+
+const NAT_KINDS := ["oak", "pine", "tall", "bush", "rock", "log"]
+
+
+# árvore/pedra/moita/tronco: aplica o ajuste à mão e guarda (ou, no editor, vira um nó próprio)
+func _nat(kind: String, xf: Transform3D, sets: Dictionary, key := "", e_over = null) -> void:
+	if key == "":
+		key = MapEdits.key(kind, xf.origin)
+		while _nat_used.has(key):
+			key += "'"
+	_nat_used[key] = true
+	var e: Dictionary = e_over if e_over != null else edit_data["e"].get(key, {})
+	if editor:
+		nat_reg[key] = [kind, xf, null]
+	if bool(e.get("d", false)):
+		return
+	var x2 := MapEdits.nat_apply(xf, e)
+	if editor and not headless:
+		var n := Node3D.new()
+		n.set_meta("key", key)
+		add_child(n)
+		var mi := MeshInstance3D.new()
+		mi.mesh = _nat_meshes[kind]
+		mi.material_override = U.wmat()
+		mi.transform = x2
+		mi.visibility_range_end = 260.0
+		n.add_child(mi)
+		var bd := StaticBody3D.new()
+		bd.collision_mask = 0
+		n.add_child(bd)
+		_nat_col(kind, x2, bd)
+		nat_reg[key][2] = n
+		return
+	sets[kind].append(x2)
+	_nat_col(kind, x2, _nat_body)
+
+
+func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
+	var sc := Vector3(xf.basis.x.length(), xf.basis.y.length(), xf.basis.z.length())
+	var r := atan2(-xf.basis.x.z, xf.basis.x.x)
+	match kind:
+		"oak", "pine", "tall":
+			var cs := CollisionShape3D.new()
+			var cyl := CylinderShape3D.new()
+			cyl.radius = 0.5 * sc.x
+			cyl.height = 6.0 * sc.x
+			cs.shape = cyl
+			cs.position = xf.origin + Vector3(0, 3.0 * sc.x, 0)
+			body.add_child(cs)
+		"rock":
+			_rock_col(body, sc, r, xf.origin)
+		"log":
+			var cs := CollisionShape3D.new()
+			var cy := CylinderShape3D.new()
+			cy.radius = 0.45 * sc.x
+			cy.height = 7.0 * sc.x
+			cs.shape = cy
+			cs.transform = Transform3D(Basis(Vector3.UP, r) * Basis(Vector3.FORWARD, PI / 2.0), xf.origin + Vector3(0, 0.45 * sc.x, 0))
+			body.add_child(cs)
+		"bush":
+			# moita não segura bala; só no editor tem caixa pra dar pra tocar nela
+			if editor:
+				var cs := CollisionShape3D.new()
+				var bx := BoxShape3D.new()
+				bx.size = Vector3(1.2, 1.0, 1.2) * sc.x
+				cs.shape = bx
+				cs.position = xf.origin + Vector3(0, 0.5 * sc.x, 0)
+				body.add_child(cs)
+
+
+static func _nat_default_basis(k: String) -> Basis:
+	match k:
+		"rock":
+			return Basis.from_scale(Vector3(2.6, 1.7, 2.2))
+		"bush":
+			return Basis.from_scale(Vector3.ONE * 1.7)
+	return Basis()
+
+
+# editor: refaz uma árvore/pedra depois de mexer
+func nat_rebuild(key: String, e_over = null) -> void:
+	var info: Array = nat_reg[key]
+	if info[2]:
+		(info[2] as Node).free()
+	_nat(info[0], info[1], {}, key, e_over)
+
+
 func _build_nature() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED + 999
@@ -1462,6 +1572,9 @@ func _build_nature() -> void:
 	var body := StaticBody3D.new()
 	body.collision_mask = 0
 	add_child(body)
+	_nat_body = body
+	if not headless:
+		_nat_meshes = _tree_meshes()
 	var lim := PLAY + 10.0
 	# pedras grandes das pedreiras
 	for e in _big_rocks:
@@ -1469,8 +1582,7 @@ func _build_nature() -> void:
 		var s: float = e[1]
 		var sc := Vector3(s, s * float(e[3]), s * rng.randf_range(0.7, 1.1))
 		var gp := Vector3(p.x, height(p.x, p.y) + sc.y * 0.1, p.y)
-		sets["rock"].append(Transform3D(Basis(Vector3.UP, e[2]) * Basis.from_scale(sc), gp))
-		_rock_col(body, sc, e[2], gp)
+		_nat("rock", Transform3D(Basis(Vector3.UP, e[2]) * Basis.from_scale(sc), gp), sets)
 	var tries := 0
 	var trees := 0
 	while trees < 950 and tries < 30000:
@@ -1494,19 +1606,13 @@ func _build_nature() -> void:
 		# base afundada no ponto mais baixo em volta do tronco (sem flutuar no barranco)
 		var gy := low_h(p, 0.5 * s) - 0.1
 		var xf := Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(x, gy, z))
-		sets[kind].append(xf)
+		_nat(kind, xf, sets)
 		trees += 1
 		claim(p, 1.2)
-		var cs := CollisionShape3D.new()
-		var cyl := CylinderShape3D.new()
-		cyl.radius = 0.5 * s
-		cyl.height = 6.0 * s
-		cs.shape = cyl
-		cs.position = Vector3(x, gy + 3.0 * s, z)
-		body.add_child(cs)
 	# moitas: escondem, mas a bala passa
 	tries = 0
-	while sets["bush"].size() < 500 and tries < 8000:
+	var bushes := 0
+	while bushes < 500 and tries < 8000:
 		tries += 1
 		var x := rng.randf_range(-lim, lim)
 		var z := rng.randf_range(-lim, lim)
@@ -1514,10 +1620,12 @@ func _build_nature() -> void:
 		if _near_town(p, -6.0) or road_dist(x, z) < 3.0 or hw_dist(x, z) < 6.0 or not is_free(p, 1.0) or height(x, z) < WATER_Y + 0.4:
 			continue
 		var s := rng.randf_range(1.3, 2.2)
-		sets["bush"].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, height(x, z) - 0.1, z)))
+		_nat("bush", Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, height(x, z) - 0.1, z)), sets)
+		bushes += 1
 	# pedras: cobertura que segura bala (algumas enormes)
 	tries = 0
-	while sets["rock"].size() < 380 and tries < 9000:
+	var rocks := 0
+	while rocks < 380 and tries < 9000:
 		tries += 1
 		var x := rng.randf_range(-lim, lim)
 		var z := rng.randf_range(-lim, lim)
@@ -1529,8 +1637,8 @@ func _build_nature() -> void:
 		var sc := Vector3(s, s * rng.randf_range(0.5, 0.85), s * rng.randf_range(0.7, 1.1))
 		var r := rng.randf() * TAU
 		var gp := Vector3(x, height(x, z) + sc.y * 0.08, z)
-		sets["rock"].append(Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(sc), gp))
-		_rock_col(body, sc, r, gp)
+		_nat("rock", Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(sc), gp), sets)
+		rocks += 1
 		claim(p, s * 0.55)
 		if rng.randf() < 0.3:
 			var off := Vector3(cos(r), 0, sin(r)) * (maxf(sc.x, sc.z) * 0.6 + 0.8)
@@ -1539,7 +1647,8 @@ func _build_nature() -> void:
 			add_item(ip, loot_kind(rng, false), null, null)
 	# troncos caídos
 	tries = 0
-	while sets["log"].size() < 90 and tries < 3000:
+	var logs := 0
+	while logs < 90 and tries < 3000:
 		tries += 1
 		var x := rng.randf_range(-lim, lim)
 		var z := rng.randf_range(-lim, lim)
@@ -1548,18 +1657,18 @@ func _build_nature() -> void:
 			continue
 		var r := rng.randf() * TAU
 		var gp := Vector3(x, low_h(p, 3.5) - 0.1, z)
-		sets["log"].append(Transform3D(Basis(Vector3.UP, r), gp))
-		var cs := CollisionShape3D.new()
-		var cy := CylinderShape3D.new()
-		cy.radius = 0.45
-		cy.height = 7.0
-		cs.shape = cy
-		cs.transform = Transform3D(Basis(Vector3.UP, r) * Basis(Vector3.FORWARD, PI / 2.0), gp + Vector3(0, 0.45, 0))
-		body.add_child(cs)
+		_nat("log", Transform3D(Basis(Vector3.UP, r), gp), sets)
+		logs += 1
 		claim(p, 4.0)
+	# árvores e pedras colocadas à mão
+	for ent in edit_data["a"]:
+		var k: String = ent.get("k", "")
+		if k in NAT_KINDS:
+			var sc := float(ent.get("s", 1.0))
+			_nat(k, Transform3D(Basis(Vector3.UP, float(ent.get("r", 0.0))) * _nat_default_basis(k) * sc, MapEdits.v3(ent["p"])), sets, "+%d" % int(ent.get("n", 1)), {})
 	if headless:
 		return
-	if quality >= 1:
+	if quality >= 1 and not editor:
 		var gl := PLAY - 5.0
 		var gcount := 22000 if quality == 1 else 50000
 		tries = 0
@@ -1574,7 +1683,7 @@ func _build_nature() -> void:
 				continue
 			var s := rng.randf_range(0.7, 1.5)
 			sets["grass"].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, h - 0.05, z)))
-	var meshes := _tree_meshes()
+	var meshes := _nat_meshes
 	var tint := RandomNumberGenerator.new()
 	tint.seed = SEED + 3
 	for k in sets:

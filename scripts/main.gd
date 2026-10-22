@@ -39,6 +39,7 @@ var items_root: Node3D
 var local_id := 0
 var dedicated := false
 var in_game := false
+var map_editing := false
 var training := false
 var rng := RandomNumberGenerator.new()
 var players_root: Node3D
@@ -276,6 +277,7 @@ func _build_menu() -> void:
 		open_settings()
 		settings.edit_buttons.emit()))
 	left.add_child(_menu_side("gear", "CONFIGURAÇÕES", func(): open_settings()))
+	left.add_child(_menu_side("hand", "EDITAR MAPA", func(): start_editor()))
 	var rep := _last_log()
 	if rep != "" and _crashed_loading(rep) and int(Cfg.get_v("quality")) > 0:
 		Cfg.set_v("quality", 0)
@@ -964,6 +966,33 @@ func start_host(online: bool) -> void:
 	_all("phase_set", [LOBBY, phase_t])
 
 
+# editor de cenário (scripts/map_editor.gd): mapa sem jogadores, câmera livre
+func start_editor() -> void:
+	_save_cfg()
+	_step("editor de cenário")
+	await _show_loading()
+	training = true
+	map_editing = true
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	local_id = multiplayer.get_unique_id()
+	await _build_world()
+	_menu_music_off()
+	if menu:
+		menu.queue_free()
+		menu = null
+	if menu_stage:
+		menu_stage.queue_free()
+		menu_stage = null
+		menu_sol = null
+		menu_fire = null
+		menu_flame = null
+		menu_news = null
+	var ed := MapEditor.new()
+	ed.game = self
+	ed.world = world
+	add_child(ed)
+
+
 func start_join(addr: String) -> void:
 	if addr == "":
 		status_lbl.text = "Digite o IP do servidor."
@@ -1008,6 +1037,9 @@ func _build_world() -> void:
 	_step("montando o mapa")
 	world = World.new()
 	world.name = "World"
+	world.editor = map_editing
+	# ajustes feitos à mão: o do aparelho só vale no treino/editor; em rede todos usam o que vai no jogo
+	world.edit_data = MapEdits.load_data(training or map_editing)
 	add_child(world)
 	var steps := world.build_steps(dedicated, int(Cfg.get_v("quality")))
 	# quem entra numa sala monta tudo de uma vez (as mensagens da rede não podem chegar no meio)
@@ -1020,6 +1052,8 @@ func _build_world() -> void:
 		(steps[i][1] as Callable).call()
 	_load_progress(1.0, "Pronto!")
 	_step("mapa pronto")
+	if map_editing:
+		return
 	n_static = world.items.size()
 	items_avail = []
 	for i in world.items.size():
