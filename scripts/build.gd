@@ -15,7 +15,9 @@ const FRAME := Color(0.5, 0.36, 0.25)
 var w: World
 var mb: MB
 var rng := RandomNumberGenerator.new()
-var vrng := RandomNumberGenerator.new()    # sorteios só visuais (o servidor sem tela não usa, então não pode mexer no rng)
+var vrng := RandomNumberGenerator.new()
+var theme_tints: Array = []           # cores das paredes da cidade (vazio = sorteio geral)
+var theme_roof := Color(1, 1, 1)      # tom do telhado da cidade    # sorteios só visuais (o servidor sem tela não usa, então não pode mexer no rng)
 var headless := false
 static var _car_cache := {}
 
@@ -60,7 +62,7 @@ func body(pos: Vector3, yaw: float) -> StaticBody3D:
 
 const NO_YAW := ["barrel", "water_tower", "silo", "radio_tower", "well"]
 # raio de chão plano embaixo de cada coisa (o terreno se ajeita; nada fica flutuando nem inclinado)
-const FOOT := {"shack": 3.8, "warehouse": 10.0, "church": 11.0, "barracks": 9.8, "store": 7.2, "ruin": 6.5,
+const FOOT := {"monument": 2.4, "windmill": 1.8, "bus": 5.6, "shack": 3.8, "warehouse": 10.0, "church": 11.0, "barracks": 9.8, "store": 7.2, "ruin": 6.5,
 	"watchtower": 2.8, "water_tower": 3.2, "silo": 3.4, "radio_tower": 4.2, "well": 1.8,
 	"crates": 1.9, "barrel": 0.7, "container": 3.8, "barrier": 1.9, "barricade": 2.0, "gun_crate": 2.0,
 	"hay": 1.6, "logs": 3.2, "car": 3.0}
@@ -329,7 +331,8 @@ func _style_tex(style: String) -> Array:
 			return [U.METAL, 0.3, Color(0.92, 0.95, 1.0).darkened(rng.randf() * 0.2)]
 		"concrete":
 			return [U.CONCRETE, 0.3, Color(0.95, 0.95, 0.92)]
-	return [U.PLASTER, 0.3, PLASTER_TINTS[rng.randi() % PLASTER_TINTS.size()]]
+	var tints: Array = theme_tints if not theme_tints.is_empty() else PLASTER_TINTS
+	return [U.PLASTER, 0.3, (tints[rng.randi() % tints.size()] as Color).darkened(rng.randf() * 0.08)]
 
 
 func _gable(root: Node3D, wdt: float, dpt: float, y: float, rise: float, layer: int, col: Color, wall_col: Color, wall_layer: int) -> void:
@@ -434,7 +437,7 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	# telhado
 	match roof:
 		"tile":
-			_gable(root, wd, dp, top, 1.4 if wd < 11.0 else 1.8, U.ROOF, Color(1, 1, 1).darkened(rng.randf() * 0.2), col, lay)
+			_gable(root, wd, dp, top, 1.4 if wd < 11.0 else 1.8, U.ROOF, theme_roof.darkened(rng.randf() * 0.2), col, lay)
 		"metal":
 			_gable(root, wd, dp, top, 0.9, U.METAL, Color(0.9, 0.92, 0.95), col, lay)
 		"burnt":
@@ -805,6 +808,91 @@ func rubble(pos: Vector3, r: float, n := 6, col := Color(0.72, 0.6, 0.5)) -> voi
 		var o := Vector2(vrng.randf_range(-r, r), vrng.randf_range(-r, r))
 		var sz := Vector3(vrng.randf_range(0.15, 0.45), vrng.randf_range(0.08, 0.22), vrng.randf_range(0.15, 0.45))
 		mb.blob(Transform3D(Basis(Vector3.UP, vrng.randf() * TAU).scaled(sz), pos + Vector3(o.x, sz.y * 0.4, o.y)), 5, 3, col.darkened(vrng.randf() * 0.3), vrng, 0.35, false)
+
+
+func monument(pos: Vector3, yaw: float) -> void:
+	_obj("monument", [pos, yaw])
+
+
+# marco: pedestal de pedra com estátua de soldado (silhueta) e placa
+func _k_monument(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), 3.5)
+	var st := Color(0.72, 0.7, 0.66)
+	piece(root, Vector3(3.2, 0.4, 3.2), Vector3(0, 0.2, 0), st.darkened(0.1), U.CONCRETE, 0.4)
+	piece(root, Vector3(1.6, 2.2, 1.6), Vector3(0, 1.5, 0), st, U.CONCRETE, 0.4)
+	if headless:
+		return
+	var br := Color(0.32, 0.36, 0.3)
+	mb.tex(U.METAL, 1.5)
+	var t := root.transform
+	mb.box(t * Transform3D(Basis(), Vector3(0, 3.35, 0)), Vector3(0.55, 1.1, 0.35), br)
+	mb.blob(t * Transform3D(Basis.from_scale(Vector3(0.17, 0.2, 0.17)), Vector3(0, 4.1, 0)), 8, 5, br)
+	for sx in [-0.14, 0.14]:
+		mb.box(t * Transform3D(Basis(), Vector3(sx, 2.5, 0)), Vector3(0.2, 0.8, 0.22), br)
+	mb.box(t * Transform3D(Basis(Vector3.RIGHT, 0.6), Vector3(0.35, 3.7, -0.25)), Vector3(0.06, 0.06, 1.1), br.darkened(0.2))
+	mb.box(t * Transform3D(Basis(), Vector3(-0.38, 3.4, 0)), Vector3(0.16, 0.8, 0.18), br)
+	mb.tex(U.PLAIN, 2.0)
+	mb.box(t * Transform3D(Basis(), Vector3(0, 1.2, -0.81)), Vector3(1.0, 0.45, 0.02), Color(0.55, 0.45, 0.25))
+
+
+func windmill(pos: Vector3, yaw: float) -> void:
+	_obj("windmill", [pos, yaw])
+
+
+# catavento de fazenda: torre de ferro alta com hélice
+func _k_windmill(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), 2.5)
+	col_box(root, Vector3(1.6, 9.0, 1.6), Vector3(0, 4.5, 0))
+	if headless:
+		return
+	var m := Color(0.45, 0.45, 0.47)
+	var t := root.transform
+	mb.tex(U.METAL, 1.0)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var a := Vector3(sx * 1.0, 0, sz * 1.0)
+			var e := Vector3(sx * 0.2, 9.0, sz * 0.2)
+			var d := e - a
+			mb.box(t * Transform3D(Basis(Quaternion(Vector3.UP, d.normalized())), (a + e) / 2.0), Vector3(0.1, d.length(), 0.1), m)
+	for k in 4:
+		var hy := 2.0 + k * 2.0
+		var hw := lerpf(1.0, 0.2, hy / 9.0)
+		mb.box(t * Transform3D(Basis(), Vector3(0, hy, hw)), Vector3(hw * 2.0, 0.06, 0.06), m)
+		mb.box(t * Transform3D(Basis(), Vector3(0, hy, -hw)), Vector3(hw * 2.0, 0.06, 0.06), m)
+	mb.box(t * Transform3D(Basis(), Vector3(0, 9.2, 0.3)), Vector3(0.3, 0.3, 1.2), m.darkened(0.2))
+	mb.box(t * Transform3D(Basis(), Vector3(0, 9.3, 1.3)), Vector3(0.05, 0.9, 1.0), m)
+	for k in 12:
+		var a := TAU * k / 12.0
+		mb.box(t * Transform3D(Basis(Vector3.FORWARD, a), Vector3(0, 9.2, -0.45) + Vector3(sin(a), cos(a), 0) * 0.9), Vector3(0.28, 1.5, 0.03), Color(0.75, 0.75, 0.72))
+
+
+func bus(pos: Vector3, yaw: float) -> void:
+	_obj("bus", [pos, yaw])
+
+
+# ônibus queimado atravessado (cobertura grande no meio da cidade)
+func _k_bus(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), 6.0)
+	var L := 10.5
+	var c := Color(0.32, 0.26, 0.2)
+	piece(root, Vector3(2.5, 1.6, L), Vector3(0, 1.3, 0), c, U.METAL, 0.4)
+	piece(root, Vector3(2.5, 0.12, L), Vector3(0, 3.05, 0), c.darkened(0.1), U.METAL, 0.4)
+	for sx in [-1.0, 1.0]:
+		for z in range(-4, 5):
+			piece(root, Vector3(0.1, 0.9, 0.12), Vector3(sx * 1.2, 2.55, z * 1.2), c.darkened(0.2), U.METAL, 0.5)
+	if headless:
+		return
+	mb.tex(U.PLAIN, 1.0)
+	var t := root.transform
+	for z in [-3.4, 3.4]:
+		for sx in [-1.0, 1.0]:
+			mb.cyl(t * Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(sx * 1.05, 0.48, z)), 0.48, 0.48, 0.3, 10, Color(0.08, 0.08, 0.08))
+	mb.tex(U.METAL, 0.8)
+	for k in 8:
+		mb.box(t * Transform3D(Basis(Vector3.UP, vrng.randf() * TAU), Vector3(vrng.randf_range(-1.0, 1.0), 2.15, vrng.randf_range(-4.5, 4.5))), Vector3(0.5, 0.04, 0.6), Color(0.12, 0.1, 0.09))
 
 
 func low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -> void:

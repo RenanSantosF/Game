@@ -108,6 +108,10 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			for i in towns.size():
 				_build_loc(i)],
 		["Colocando carros e objetos", func():
+			# o sorteio daqui em diante não depende de como as cidades foram montadas
+			# (mantém no lugar os objetos que o jogador já ajustou no editor)
+			b.rng.state = 8992035089481542627
+			b.vrng.state = 8532983171605503413
 			_build_highway_props()
 			_car_spots()
 			_build_extras()
@@ -695,6 +699,8 @@ func _house_spec(rng: RandomNumberGenerator, big := false) -> Dictionary:
 func _house_spec0(rng: RandomNumberGenerator, big := false) -> Dictionary:
 	var r := rng.randf()
 	var styles := ["plaster", "plaster", "plaster", "brick", "wood"]
+	if not _theme_styles.is_empty():
+		styles = _theme_styles
 	var st: String = styles[rng.randi() % styles.size()]
 	if r > 0.8:
 		# casa de laje com escada por fora pra subir no teto
@@ -708,9 +714,29 @@ func _house_spec0(rng: RandomNumberGenerator, big := false) -> Dictionary:
 	return {"w": rng.randf_range(7.0, 9.0), "d": rng.randf_range(6.0, 7.5), "style": st, "porch": rng.randf() < 0.35}
 
 
+# Cada cidade com a sua cara (cores das paredes, telhado, estilo e um marco no centro),
+# pra dar pra saber onde está só de olhar.
+const THEMES := {
+	"Vila Ferrugem": {"tints": [Color(0.86, 0.55, 0.38), Color(0.78, 0.48, 0.32), Color(0.9, 0.68, 0.5)], "roof": Color(0.55, 0.32, 0.22), "styles": ["plaster", "plaster", "metal"], "mark": "tank"},
+	"Arraial do Sapo": {"tints": [Color(0.7, 0.85, 0.62), Color(0.62, 0.78, 0.55), Color(0.82, 0.9, 0.72)], "roof": Color(0.4, 0.45, 0.3), "styles": ["plaster", "wood", "wood"], "mark": "windmill"},
+	"Brejo Seco": {"tints": [Color(0.86, 0.78, 0.58), Color(0.8, 0.7, 0.5), Color(0.9, 0.84, 0.66)], "roof": Color(0.6, 0.5, 0.36), "styles": ["plaster", "wood", "brick"], "mark": "bus"},
+	"Pouso Velho": {"tints": [Color(0.97, 0.97, 0.95), Color(0.92, 0.94, 0.98), Color(0.95, 0.95, 0.92)], "roof": Color(0.36, 0.42, 0.62), "styles": ["plaster", "plaster", "plaster"], "mark": ""},
+	"Vale do Corvo": {"tints": [Color(0.55, 0.55, 0.58), Color(0.48, 0.48, 0.5), Color(0.62, 0.6, 0.6)], "roof": Color(0.25, 0.25, 0.28), "styles": ["brick", "brick", "plaster"], "mark": "monument"},
+	"Bela Poeira": {"tints": [Color(0.96, 0.8, 0.62), Color(0.94, 0.72, 0.58), Color(0.98, 0.88, 0.7)], "roof": Color(0.85, 0.42, 0.3), "styles": ["plaster", "plaster", "brick"], "mark": "monument"},
+	"Chapada Ventania": {"tints": [Color(0.7, 0.82, 0.92), Color(0.62, 0.75, 0.88), Color(0.82, 0.9, 0.96)], "roof": Color(0.3, 0.38, 0.5), "styles": ["plaster", "plaster", "wood"], "mark": "windmill"},
+	"Colônia Caracol": {"tints": [Color(0.9, 0.72, 0.8), Color(0.82, 0.7, 0.88), Color(0.95, 0.82, 0.86)], "roof": Color(0.55, 0.3, 0.4), "styles": ["plaster", "plaster", "brick"], "mark": "monument"},
+	"Rancho Poeira": {"tints": [Color(0.75, 0.58, 0.42), Color(0.68, 0.52, 0.38), Color(0.8, 0.66, 0.5)], "roof": Color(0.42, 0.3, 0.22), "styles": ["wood", "wood", "plaster"], "mark": "tank"},
+	"Vila Cachorro Magro": {"tints": [Color(0.98, 0.88, 0.45), Color(0.95, 0.8, 0.4), Color(0.98, 0.92, 0.6)], "roof": Color(0.7, 0.35, 0.2), "styles": ["plaster", "plaster", "wood"], "mark": "bus"},
+}
+
+
 func _build_loc(ti: int) -> void:
 	var t: Dictionary = towns[ti]
 	b.begin(SEED + ti * 31)
+	var th: Dictionary = THEMES.get(t["name"], {})
+	b.theme_tints = th.get("tints", [])
+	b.theme_roof = th.get("roof", Color(1, 1, 1))
+	_theme_styles = th.get("styles", [])
 	var c: Vector2 = t["pos"]
 	var y: float = t["h"]
 	var r: float = t["r"]
@@ -750,7 +776,33 @@ func _build_loc(ti: int) -> void:
 		_war_props(c, y, r)
 	if t["name"] in HILL_TOWNS:
 		_slope_cover(c, y, r)
+	var mark: String = th.get("mark", "")
+	if mark != "":
+		_landmark(mark, c, y)
+	b.theme_tints = []
+	b.theme_roof = Color(1, 1, 1)
+	_theme_styles = []
 	b.finish()
+
+
+var _theme_styles: Array = []
+
+
+# marco no centro da cidade (procura um lugar livre perto do meio)
+func _landmark(kind: String, c: Vector2, y: float) -> void:
+	for k in 12:
+		var p := c + Vector2(cos(k * 2.4), sin(k * 2.4)) * (k * 1.6)
+		if is_free(p, 3.5):
+			match kind:
+				"monument":
+					b.monument(_p3(p, y), b.rng.randf() * TAU)
+				"windmill":
+					b.windmill(_p3(p, y), b.rng.randf() * TAU)
+				"bus":
+					b.bus(_p3(p, y), b.rng.randf() * TAU)
+				"tank":
+					b.water_tower(_p3(p, y))
+			return
 
 
 # começo de guerra: barricadas de madeira, caixotes com arma e sacos de areia pela cidade
@@ -827,7 +879,7 @@ func _face(from: Vector2, to: Vector2) -> float:
 
 func _vila(c: Vector2, y: float, r: float, church: bool) -> void:
 	var rng := b.rng
-	var n := rng.randi_range(5, 8)
+	var n := rng.randi_range(8, 11)
 	var a0 := rng.randf() * TAU
 	if church:
 		b.church(_p3(c, y), rng.randf() * TAU)
@@ -835,9 +887,12 @@ func _vila(c: Vector2, y: float, r: float, church: bool) -> void:
 		b.well(_p3(c + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3)), y))
 	for k in n:
 		var ang := a0 + TAU * k / n + rng.randf_range(-0.3, 0.3)
-		var dist := r * rng.randf_range(0.5, 0.85)
+		# duas voltas de casas (por dentro e por fora), sem encostar uma na outra
+		var dist := r * (rng.randf_range(0.42, 0.58) if k % 2 == 0 else rng.randf_range(0.72, 0.92))
 		var p := c + Vector2(cos(ang), sin(ang)) * dist
 		var yaw := _face(p, c) + rng.randf_range(-0.45, 0.45)
+		if not is_free(p, 4.5):
+			continue
 		if rng.randf() < 0.15:
 			b.shack(_p3(p, y), yaw)
 		else:
@@ -927,6 +982,40 @@ func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
 			b.mb.cyl(Transform3D(Basis(), Vector3(bp.x, top + 0.007, bp.y)), b.vrng.randf_range(1.0, 2.0), 0.9, 0.01, 10, Color(0.13, 0.12, 0.11), true, false, null, 0.35, b.vrng)
 
 
+# curva suave (Bézier) entre a e c passando perto de m, em n pedaços
+func _curve(a: Vector2, m: Vector2, c: Vector2, n: int) -> Array:
+	var pts := []
+	for k in n + 1:
+		var t := float(k) / n
+		pts.append(a.lerp(m, t).lerp(m.lerp(c, t), t))
+	return pts
+
+
+# ponto e direção a uma distância ao longo do caminho
+func _along(pts: Array, d: float) -> Array:
+	for k in pts.size() - 1:
+		var a: Vector2 = pts[k]
+		var e: Vector2 = pts[k + 1]
+		var l := a.distance_to(e)
+		if d <= l or k == pts.size() - 2:
+			return [a.lerp(e, clampf(d / maxf(l, 0.001), 0.0, 1.0)), (e - a).normalized()]
+		d -= l
+	return [pts[0], Vector2.RIGHT]
+
+
+# rua curva: pedaços retos curtos que se sobrepõem um pouco nas emendas
+func _street_path(pts: Array, y: float) -> void:
+	for k in pts.size() - 1:
+		var a: Vector2 = pts[k]
+		var e: Vector2 = pts[k + 1]
+		var d := (e - a).normalized()
+		_street(a - d * 0.8, e + d * 0.8, y)
+		# reserva o espaço da rua pra nenhuma casa cair em cima
+		var l := a.distance_to(e)
+		for i in int(l / 3.0) + 1:
+			claim(a + d * minf(i * 3.0, l), 3.2)
+
+
 # chão de cimento em toda a cidade (plano)
 func _plaza(c: Vector2, y: float, r: float) -> void:
 	if headless:
@@ -959,40 +1048,54 @@ func _bairro(c: Vector2, y: float, r: float, big: bool) -> void:
 	var th := rng.randf() * TAU
 	var dir := Vector2(cos(th), sin(th))
 	var side := Vector2(-dir.y, dir.x)
-	var streets := [[c - dir * r, c + dir * r, dir, side]]
-	if big or rng.randf() < 0.5:
-		var off := rng.randf_range(-r * 0.25, r * 0.25)
-		streets.append([c + dir * off - side * r * 0.85, c + dir * off + side * r * 0.85, side, -dir])
-	for s in streets:
-		_street(s[0], s[1], y)
-		var sa: Vector2 = s[0]
-		var sb: Vector2 = s[1]
-		var sd: Vector2 = s[2]
-		var sn: Vector2 = s[3]
-		var L := sa.distance_to(sb)
+	# rua principal em curva (atravessa a cidade) e uma ou duas ruas que saem dela, também curvas
+	var bend := r * rng.randf_range(0.25, 0.45) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var main := _curve(c - dir * r, c + side * bend, c + dir * r, 9)
+	var paths := [main]
+	var nb := 3 if big else (2 if rng.randf() < 0.5 else 1)
+	for k in nb:
+		var at: Vector2 = main[[2, 6, 4][k]]
+		var sg := 1.0 if k % 2 == 0 else -1.0
+		var tip := at + side * sg * r * 0.9 + dir * rng.randf_range(-r * 0.3, r * 0.3)
+		# a rua termina dentro da cidade
+		tip = c + (tip - c).limit_length(r * 0.82)
+		paths.append(_curve(at, at.lerp(tip, 0.5) + dir * rng.randf_range(-r * 0.25, r * 0.25), tip, 6))
+	for path in paths:
+		_street_path(path, y)
+	for path in paths:
+		var pts: Array = path
+		var L := 0.0
+		for k in pts.size() - 1:
+			L += (pts[k] as Vector2).distance_to(pts[k + 1])
 		var x := 6.0
 		while x < L - 6.0:
+			var q := _along(pts, x)
+			var pnt: Vector2 = q[0]
+			var tg: Vector2 = q[1]
+			var nrm := Vector2(-tg.y, tg.x)
 			for sgn in [-1.0, 1.0]:
-				if rng.randf() < 0.18:
+				if rng.randf() < 0.1:
 					continue
 				var spec := _house_spec(rng, big)
-				var off: float = 4.4 + spec["d"] / 2.0 + rng.randf_range(0.5, 2.5)
-				var p: Vector2 = sa + sd * x + sn * sgn * off
-				if not is_free(p, maxf(spec["w"], spec["d"]) * 0.45):
+				var off: float = 4.4 + spec["d"] / 2.0 + rng.randf_range(0.5, 2.0)
+				var p: Vector2 = pnt + nrm * sgn * off
+				if not is_free(p, maxf(spec["w"], spec["d"]) * 0.45) or road_dist(p.x, p.y) < 3.0:
 					continue
-				var yaw := _face(p, p - sn * sgn)
+				var yaw := _face(p, pnt)
 				if big and rng.randf() < 0.12:
 					b.store(_p3(p, y), yaw)
 				else:
 					b.house(_p3(p, y), yaw, spec)
 				if rng.randf() < 0.3:
-					var fa: Vector2 = p - sn * sgn * (spec["d"] / 2.0 + 1.6) - sd * (spec["w"] / 2.0)
-					b.low_wall(fa, fa + sd * spec["w"] * 0.35, y)
-			x += rng.randf_range(12.5, 16.0)
+					var fa: Vector2 = pnt + nrm * sgn * (off - spec["d"] / 2.0 - 1.6) - tg * (spec["w"] / 2.0)
+					b.low_wall(fa, fa + tg * spec["w"] * 0.35, y)
+			x += rng.randf_range(10.5, 13.0)
 		for k in rng.randi_range(2, 4):
-			var p: Vector2 = sa + sd * rng.randf_range(8.0, L - 8.0) + sn * (2.0 if rng.randf() < 0.5 else -2.0)
+			var q := _along(pts, rng.randf_range(8.0, maxf(L - 8.0, 9.0)))
+			var tg: Vector2 = q[1]
+			var p: Vector2 = q[0] + Vector2(-tg.y, tg.x) * (2.0 if rng.randf() < 0.5 else -2.0)
 			if is_free(p, 2.5):
-				b.car(_p3(p, y), atan2(-sd.x, -sd.y) + (PI if rng.randf() < 0.5 else 0.0) + rng.randf_range(-0.1, 0.1))
+				b.car(_p3(p, y), atan2(-tg.x, -tg.y) + (PI if rng.randf() < 0.5 else 0.0) + rng.randf_range(-0.1, 0.1))
 	if big:
 		# praça com caixa d'água, barreiras e caixotes
 		b.water_tower(_p3(c + side * 9.0 + dir * 9.0, y))
@@ -1005,7 +1108,7 @@ func _bairro(c: Vector2, y: float, r: float, big: bool) -> void:
 
 func _esparso(c: Vector2, y: float, r: float) -> void:
 	var rng := b.rng
-	var n := rng.randi_range(3, 5)
+	var n := rng.randi_range(6, 8)
 	var placed := []
 	var tries := 0
 	while placed.size() < n and tries < 60:
@@ -1013,7 +1116,7 @@ func _esparso(c: Vector2, y: float, r: float) -> void:
 		var p := c + Vector2(rng.randf_range(-r * 0.8, r * 0.8), rng.randf_range(-r * 0.8, r * 0.8))
 		var ok := true
 		for q in placed:
-			if p.distance_to(q) < 16.0:
+			if p.distance_to(q) < 13.0:
 				ok = false
 		if not ok:
 			continue
@@ -1590,7 +1693,12 @@ func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
 
 static func added_nat_xf(ent: Dictionary) -> Transform3D:
 	var k: String = ent["k"]
-	var b := Basis.from_euler(Vector3(float(ent.get("tx", 0.0)), float(ent.get("r", 0.0)), float(ent.get("tz", 0.0)))) * _nat_default_basis(k) * float(ent.get("s", 1.0))
+	var base := _nat_default_basis(k)
+	if ent.has("b"):
+		# forma guardada (pedra/tronco que veio do mapa gerado)
+		var m: Array = ent["b"]
+		base = Basis(Vector3(m[0], m[1], m[2]), Vector3(m[3], m[4], m[5]), Vector3(m[6], m[7], m[8]))
+	var b := Basis.from_euler(Vector3(float(ent.get("tx", 0.0)), float(ent.get("r", 0.0)), float(ent.get("tz", 0.0)))) * base * float(ent.get("s", 1.0))
 	return Transform3D(b, MapEdits.v3(ent["p"]))
 
 
