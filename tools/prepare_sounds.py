@@ -20,16 +20,16 @@ RATE = 44100
 
 GUNS = {  # som -> (pasta da biblioteca, duração do recorte, eco, grave)
     "shot_pistol": ("Walther PPQ", 0.5, 0.5, 0.15),
-    "shot_deagle": ("1911", 0.6, 0.7, 0.35),
+    "shot_deagle": ("1911", 0.8, 1.0, 0.55),
     "shot_smg": ("Carl Gustav M45", 0.35, 0.4, 0.1),
     "shot_ump": ("PPSh", 0.35, 0.45, 0.15),
     "shot_rifle": ("AR-15", 0.6, 0.8, 0.3),
     "shot_scar": ("SKS", 0.6, 0.85, 0.35),
-    "shot_ak": ("AK-47", 0.6, 0.9, 0.45),
-    "shot_shotgun": ("Mossberg", 0.8, 1.0, 0.6),
-    "shot_m1014": ("Nova", 0.8, 0.9, 0.55),
-    "shot_bolt": ("Mosin Nagant", 0.9, 1.3, 0.6),
-    "shot_sniper": ("Tikka", 1.0, 1.5, 0.7),
+    "shot_ak": ("AK-47", 0.7, 1.1, 0.55),
+    "shot_shotgun": ("Mossberg", 1.3, 1.9, 1.1),
+    "shot_m1014": ("Nova", 1.2, 1.7, 1.0),
+    "shot_bolt": ("Mosin Nagant", 1.5, 2.2, 1.0),
+    "shot_sniper": ("Tikka", 1.8, 2.6, 1.2),
 }
 
 

@@ -53,6 +53,8 @@ var hit_head := false
 var hit_kill := false
 var hp := 200.0
 var sprinting := false
+var can_scope := true
+var can_leave := true
 var armor := 0.0
 var heals := [0, 0]        # bandagens, kits
 var overlay := false       # luneta (tela preta em volta)
@@ -83,6 +85,7 @@ var _pick_sig := ""
 var _pick_n := 0
 var _bag_sig := ""
 var _slot_rects := []
+var _slots_bottom := 160.0
 
 
 func _ready() -> void:
@@ -440,12 +443,19 @@ func set_pickups(list: Array) -> void:
 func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := false) -> PanelContainer:
 	var t := PanelContainer.new()
 	var selected: bool = not bag_sel.is_empty() and bag_sel.get("t") == data.get("t") and bag_sel.get("kind") == data.get("kind") and int(bag_sel.get("slot", -9)) == int(data.get("slot", -9))
-	t.add_theme_stylebox_override("panel", _tile_style(Color(1, 0.8, 0.3, 0.35) if selected else Color(0.62, 0.66, 0.62, 0.32), Color(1, 0.85, 0.35, 0.9) if selected else Color(1, 1, 1, 0.22)))
+	var lv := Weapons.level_of(kind)
+	var border: Color = Weapons.RARITY[lv] if lv >= 2 else Color(1, 1, 1, 0.22)
+	var st := _tile_style(Color(1, 0.8, 0.3, 0.35) if selected else Color(0.62, 0.66, 0.62, 0.32), Color(1, 0.85, 0.35, 0.9) if selected else border)
+	if lv >= 2 and not selected:
+		st.set_border_width_all(2)
+	t.add_theme_stylebox_override("panel", st)
 	t.custom_minimum_size = Vector2(sz, sz)
 	var tr := TextureRect.new()
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tr.texture = icons.get(("w_" if white else "") + kind, icons.get(kind))
+	if data.has("icon"):
+		tr.texture = icons.get(data["icon"])
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	t.add_child(tr)
 	if n > 1:
@@ -477,6 +487,16 @@ func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := fals
 	return t
 
 
+# vaga vazia com o desenho do que vai nela
+func _empty_slot(cat: String, sz: float) -> Control:
+	var e := Panel.new()
+	e.custom_minimum_size = Vector2(sz, sz)
+	e.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.25), Color(1, 1, 1, 0.08)))
+	e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	e.draw.connect(func(): glyph(e, "slot_" + cat, e.size / 2.0, sz * 0.3, Color(1, 1, 1, 0.28)))
+	return e
+
+
 func _act_btn(kind: String, cb: Callable) -> void:
 	bag_act.add_child(_icon_btn(kind, 46.0, cb, Color(1, 1, 1, 0.12)))
 
@@ -484,7 +504,7 @@ func _act_btn(kind: String, cb: Callable) -> void:
 func refresh_bag(p: Player) -> void:
 	if not bag_open or p == null:
 		return
-	var sig := "%s|%s|%s|%d|%s|%s|%d|%s" % [str(p.guns), str(p.inv), p.armor, int(p.helmet), p.bag, p.sel, icons.size(), str(bag_sel)]
+	var sig := "%s|%s|%s|%d|%d|%s|%s|%d|%s" % [str(p.guns), str(p.inv), p.armor, p.vest_lv, p.helmet, p.bag, p.sel, icons.size(), str(bag_sel)]
 	if sig == _bag_sig:
 		return
 	_bag_sig = sig
@@ -509,7 +529,7 @@ func refresh_bag(p: Player) -> void:
 		var card := PanelContainer.new()
 		var active := i == p.sel
 		card.add_theme_stylebox_override("panel", _tile_style(Color(1, 1, 1, 0.1 if active else 0.05), Color(1, 0.85, 0.35, 0.9) if active else Color(1, 1, 1, 0.15)))
-		card.custom_minimum_size = Vector2(0, 62)
+		card.custom_minimum_size = Vector2(0, 84)
 		var slot := i
 		card.set_drag_forwarding(
 			func(_p): return {"t": "gun", "kind": id, "slot": slot} if id != "" else null,
@@ -525,7 +545,7 @@ func refresh_bag(p: Player) -> void:
 		hb.add_theme_constant_override("separation", 6)
 		card.add_child(hb)
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(104, 52)
+		tr.custom_minimum_size = Vector2(150, 74)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr.texture = icons.get("w_" + id) if id != "" else null
@@ -546,38 +566,42 @@ func refresh_bag(p: Player) -> void:
 		ar.add_theme_constant_override("separation", 3)
 		col.add_child(ar)
 		if id != "":
-			for a in Weapons.ATTS:
-				if not Weapons.fits(a, id):
-					continue
-				if a in g["att"]:
-					ar.add_child(_item_tile(a, 1, {"t": "att", "kind": a, "slot": i}, 30.0))
+			# uma vaga por tipo de acessório que a arma aceita (ícone próprio de cada tipo)
+			var allowed: Array = Weapons.FITS.get(Weapons.get_w(id)["type"], [])
+			var cats := []
+			for c in ["sight", "muzzle", "mag", "stock"]:
+				if c in allowed or (c == "sight" and (allowed.has("holo") or allowed.has("scope8"))):
+					cats.append(c)
+			for c in cats:
+				var have := ""
+				for a in g["att"]:
+					if Weapons.att_cat(a) == c:
+						have = a
+				if have != "":
+					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 40.0))
 				else:
-					var empty := Panel.new()
-					empty.custom_minimum_size = Vector2(30, 30)
-					empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.25), Color(1, 1, 1, 0.08)))
-					empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
-					ar.add_child(empty)
+					ar.add_child(_empty_slot(c, 40.0))
 		bag_left.add_child(card)
 	# equipamento vestido
 	var gear := HBoxContainer.new()
 	gear.add_theme_constant_override("separation", 6)
 	bag_left.add_child(gear)
-	if p.armor > 0.0:
-		gear.add_child(_item_tile("vest", int(p.armor), {"t": "gear", "kind": "vest"}, 50.0))
-	if p.helmet:
-		gear.add_child(_item_tile("helmet", 1, {"t": "gear", "kind": "helmet"}, 50.0))
-	if p.bag > 0:
-		gear.add_child(_item_tile("bag%d" % p.bag, 1, {"t": "none", "kind": "bag"}, 50.0))
+	for gk in ["vest", "helmet", "bag"]:
+		var lv: int = {"vest": p.vest_lv if p.armor > 0.0 else 0, "helmet": p.helmet, "bag": p.bag}[gk]
+		if lv > 0:
+			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 76.0))
+		else:
+			gear.add_child(_empty_slot(gk, 76.0))
 	# itens soltos
 	for k in p.inv:
 		var kind: String = k
 		var n: int = p.inv[k]
 		if n <= 0:
 			continue
-		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 64.0))
+		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 72.0))
 	for i in maxi(0, p.capacity() - used):
 		var empty := Panel.new()
-		empty.custom_minimum_size = Vector2(64, 64)
+		empty.custom_minimum_size = Vector2(72, 72)
 		empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.22), Color(1, 1, 1, 0.06)))
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bag_grid.add_child(empty)
@@ -591,7 +615,7 @@ func refresh_bag(p: Player) -> void:
 		return
 	var d := bag_sel
 	var nm2 := Label.new()
-	nm2.text = Weapons.item_name(d["kind"]) if d["t"] != "gun" else Weapons.item_name(d["kind"]).to_upper()
+	nm2.text = Weapons.item_name(d.get("icon", d["kind"])) if d["t"] != "gun" else Weapons.item_name(d["kind"]).to_upper()
 	nm2.add_theme_font_size_override("font_size", 16)
 	nm2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bag_act.add_child(nm2)
@@ -648,11 +672,14 @@ func _buttons() -> Dictionary:
 	var fp := btn_pos("fire", s)
 	match mode:
 		"plane":
-			b["leave"] = [fp[0], 80.0, "leave"]
+			if can_leave:
+				b["leave"] = [fp[0], 80.0, "leave"]
 		"fall":
 			b["chute"] = [fp[0], 70.0, "chute"]
 		"ground", "lobby":
 			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
+				if k == "scope" and not can_scope:
+					continue
 				var bp := btn_pos(k, s)
 				b[k] = [bp[0], bp[1], _btn_icon(k)]
 			if can_start:
@@ -758,6 +785,10 @@ func _down(i: int, p: Vector2) -> void:
 		elif b != "":
 			touches[i] = "btn"
 			_edit_cmd(b)
+		elif _hit_slot(p) >= 0:
+			# painel das armas: dá pra mudar o tamanho (MENOR/MAIOR)
+			edit_sel = "slots"
+			touches[i] = "btn"
 		return
 	if b == "fire" or b == "fire2":
 		touches[i] = "fire"
@@ -814,7 +845,10 @@ func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 func _edit_cmd(b: String) -> void:
 	match b:
 		"e_small", "e_big":
-			if edit_sel != "":
+			if edit_sel == "slots":
+				var sc0 := slot_scale()
+				layout["slots"] = [0.0, 0.0, clampf(sc0 + (-0.1 if b == "e_small" else 0.1), 0.7, 1.5)]
+			elif edit_sel != "":
 				var d: Array = DEFAULTS[edit_sel]
 				var cur: Array = layout.get(edit_sel, [d[0], d[1], 1.0])
 				var sc: float = clampf(float(cur[2]) + (-0.1 if b == "e_small" else 0.1), 0.6, 1.8)
@@ -872,9 +906,9 @@ func _process(delta: float) -> void:
 	feed_box.position = Vector2(14, under + 50)
 	feed_box.size = Vector2(420, 10)
 	# faixa de coleta: proporção 100 x 20, cabem 5 itens
-	var pw := clampf(s.x * 0.4, 360.0, 560.0)
+	var pw := clampf(s.x * 0.36, 340.0, 480.0)
 	var ph := pw * 0.2
-	pick_panel.position = Vector2(s.x * 0.465 - pw * 0.5, s.y - ph - 72.0)
+	pick_panel.position = Vector2(s.x - pw - 14.0, _slots_bottom + 34.0)
 	pick_panel.size = Vector2(pw, ph)
 	pick_panel.custom_minimum_size = pick_panel.size
 	pick_scroll.custom_minimum_size = Vector2(pw - 12, ph - 12)
@@ -1027,6 +1061,25 @@ func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
 			for i in 4:
 				ci.draw_rect(Rect2(c + Vector2(-r * 0.45 + i * r * 0.23, -r * 0.75), Vector2(r * 0.18, r * 0.7)), col)
 			ci.draw_line(c + Vector2(-r * 0.45, r * 0.25), c + Vector2(-r * 0.85, -r * 0.2), col, w * 1.6)
+		"slot_sight":
+			ci.draw_arc(c, r * 0.7, 0, TAU, 24, col, w)
+			ci.draw_line(c + Vector2(-r, 0), c + Vector2(r, 0), col, w * 0.7)
+			ci.draw_line(c + Vector2(0, -r), c + Vector2(0, r), col, w * 0.7)
+		"slot_muzzle":
+			ci.draw_rect(Rect2(c + Vector2(-r, -r * 0.25), Vector2(r * 2.0, r * 0.5)), col, false, w)
+			for x in [-0.4, 0.0, 0.4]:
+				ci.draw_line(c + Vector2(r * x, -r * 0.25), c + Vector2(r * x, r * 0.25), col, w * 0.6)
+		"slot_mag":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.35, -r), c + Vector2(r * 0.25, -r), c + Vector2(r * 0.55, r), c + Vector2(-r * 0.05, r)]), col)
+		"slot_stock":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r, -r * 0.2), c + Vector2(r * 0.4, -r * 0.2), c + Vector2(r, r * 0.6), c + Vector2(r * 0.4, r * 0.6), c + Vector2(r * 0.1, r * 0.15), c + Vector2(-r, r * 0.15)]), col)
+		"slot_vest":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.7, -r * 0.8), c + Vector2(-r * 0.3, -r * 0.8), c + Vector2(0, -r * 0.5), c + Vector2(r * 0.3, -r * 0.8), c + Vector2(r * 0.7, -r * 0.8), c + Vector2(r * 0.8, r * 0.9), c + Vector2(-r * 0.8, r * 0.9)]), col)
+		"slot_helmet":
+			ci.draw_arc(c + Vector2(0, r * 0.3), r * 0.8, PI, TAU, 16, col, w * 2.0)
+			ci.draw_line(c + Vector2(-r, r * 0.35), c + Vector2(r, r * 0.35), col, w * 1.5)
+		"slot_bag":
+			glyph(ci, "bag", c, r, col)
 		_:
 			ci.draw_circle(c, r * 0.3, col)
 
@@ -1052,11 +1105,12 @@ func _draw_skull(c: Vector2, r: float, col: Color) -> void:
 # Painel de armas estilo FF: a da mão grande em cima; as outras pequenas embaixo, lado a lado.
 func _draw_slots(font: Font, s: Vector2) -> void:
 	_slot_rects.clear()
-	if slots.is_empty() or not (mode == "ground" or mode == "lobby"):
+	if slots.is_empty() or not (mode == "ground" or mode == "lobby" or edit_mode):
 		return
+	var sc := slot_scale()
 	var right := s.x - 14.0
-	var bw := 236.0
-	var bh := 86.0
+	var bw := 236.0 * sc
+	var bh := 86.0 * sc
 	var big := Rect2(right - bw, 12.0, bw, bh)
 	var cur: int = clampi(sel, 0, slots.size() - 1)
 	var others := []
@@ -1067,8 +1121,16 @@ func _draw_slots(font: Font, s: Vector2) -> void:
 	var gap := 4.0
 	var sw := (bw - gap * (others.size() - 1)) / others.size()
 	for k in others.size():
-		var r := Rect2(big.position.x + k * (sw + gap), big.end.y + 5.0, sw, 46.0)
+		var r := Rect2(big.position.x + k * (sw + gap), big.end.y + 5.0, sw, 46.0 * sc)
 		_slot_cell(font, r, others[k], false)
+	_slots_bottom = big.end.y + 5.0 + 46.0 * sc
+	if edit_mode:
+		var all := Rect2(big.position, Vector2(bw, _slots_bottom - big.position.y))
+		pad.draw_rect(all.grow(4), Color(0.2, 0.6, 1.0, 0.35) if edit_sel == "slots" else Color(1, 1, 1, 0.12))
+
+
+func slot_scale() -> float:
+	return float(layout.get("slots", [0.0, 0.0, 1.0])[2])
 
 
 func _slot_cell(font: Font, r: Rect2, i: int, active: bool) -> void:
@@ -1143,12 +1205,13 @@ func _draw_pad() -> void:
 	var white := Color(1, 1, 1, 0.9)
 	if edit_mode:
 		pad.draw_rect(Rect2(Vector2.ZERO, s), Color(0, 0, 0, 0.35))
-		var msg := "Arraste os botões. Toque num botão e use MENOR/MAIOR pra mudar o tamanho."
+		var msg := "Arraste os botões. Toque num botão (ou no painel das armas) e use − / + pra mudar o tamanho."
 		var mw := font.get_string_size(msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
 		pad.draw_string(font, Vector2(c.x - mw / 2.0, 120), msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color.WHITE)
 		var b := _buttons()
 		for k in b:
 			_draw_btn(font, k, b[k][0], b[k][1], b[k][2])
+		_draw_slots(font, s)
 		return
 	if big_map:
 		var bb := _buttons()
@@ -1264,6 +1327,16 @@ func _draw_mini() -> void:
 	var sc := MINI / MINI_M
 	var o := mini.size / 2.0
 	_draw_zone(mini, mp, sc, o)
+	# nomes das cidades que aparecem no minimapa
+	var font := ThemeDB.fallback_font
+	for t in game.world.towns:
+		var q := _w2map(t["pos"], mp, sc, o)
+		if q.x < -40 or q.y < -10 or q.x > mini.size.x + 40 or q.y > mini.size.y + 10:
+			continue
+		var nm: String = t["name"]
+		var tw := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		mini.draw_string_outline(font, q + Vector2(-tw / 2.0, 4), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.85))
+		mini.draw_string(font, q + Vector2(-tw / 2.0, 4), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.95))
 	# passos de inimigos por perto
 	for st in steps:
 		var q := _w2map(st[0], mp, sc, o)

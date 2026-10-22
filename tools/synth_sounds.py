@@ -86,20 +86,17 @@ t = t_(0.35)
 tink = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in [(2900, 14, 1.0), (4350, 18, 0.6), (6150, 24, 0.4), (8100, 30, 0.2)])
 save("headshot", tink + bp(noise(0.35), 4000, 10000) * np.exp(-t * 120) * 0.4, 0.6)
 
-# abate: impacto grave + duas notas de sino subindo, com eco
-t = t_(0.9)
-def bell(f, start, dur=0.8):
-    x = np.zeros_like(t)
-    tt = t_(dur)
-    s = sum(np.sin(2 * np.pi * f * m * tt) * np.exp(-tt * d) * a for m, d, a in [(1, 5, 1.0), (2.0, 7, 0.5), (3.01, 10, 0.25), (4.2, 14, 0.15)])
-    s *= np.minimum(1, tt / 0.004)
-    o = int(start * R)
-    n = min(len(s), len(x) - o)
-    x[o:o + n] += s[:n]
-    return x
-boom = np.sin(2 * np.pi * (90 - 40 * t) * t) * np.exp(-t * 12) * 0.9
-kill = boom + bell(988, 0.02) * 0.55 + bell(1480, 0.13) * 0.6
-save("kill", reverb(kill, 0.7, 0.25), 0.75)
+# abate: pancada grave e agressiva (soco no peito + estalo seco + estrondo distorcido), sem sininho
+t = t_(1.1)
+sub = np.sin(2 * np.pi * np.cumsum(55 + 140 * np.exp(-t * 18)) / R) * np.exp(-t * 5.5)
+thump = lp(noise(1.1), 180) * np.exp(-t * 22) * 3.0
+crack = bp(noise(1.1), 1800, 7000) * np.exp(-t * 90) * 1.4
+metal = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in [(310, 16, 0.5), (523, 20, 0.35), (911, 26, 0.25)])
+o = int(0.06 * R)
+tail = np.zeros_like(t)
+tail[o:] = (lp(noise(1.1), 400) * np.exp(-t * 4.0))[:len(t) - o] * 0.9
+kill = np.tanh((sub * 1.6 + thump + crack + metal * 0.6 + tail) * 2.2)
+save("kill", reverb(kill, 0.9, 0.3), 0.85)
 
 # vento em queda livre: rugido forte com rajadas
 d = 3.0

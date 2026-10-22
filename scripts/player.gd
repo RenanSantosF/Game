@@ -46,7 +46,8 @@ var wish := Vector3.ZERO  # direção desejada no mundo (comprimento até 1)
 var shown_wid := "glock"
 var air := 0             # 0 = no chão, 1 = queda livre, 2 = paraquedas, 3 = no avião
 var armor := 0.0
-var helmet := false
+var helmet := 0          # nível do capacete (0 = sem)
+var vest_lv := 0          # nível do colete
 var bag := 0             # nível da mochila (0 = sem mochila)
 var sprint := false
 var stun_t := 0.0        # atordoado depois de cair de alto
@@ -104,6 +105,8 @@ var b_ignore := {}
 var b_skill := 1.0
 var b_far := false
 var _vault_drop := false
+var bloom := 0.0
+var regen := 0.0
 var _breath := 0.0
 var _crouch_k := 0.0
 var _wall_chk := 0.0
@@ -234,16 +237,28 @@ static func _gear(kind: String) -> Mesh:
 		return _shared[kind]
 	var m := MB.new()
 	match kind:
-		"vest":
+		"vest1", "vest2", "vest3":
+			var lv := int(kind.substr(4))
+			var vc: Color = [OLIVE, Color(0.62, 0.55, 0.4), Color(0.13, 0.13, 0.14)][lv - 1]
 			m.tex(U.FABRIC, 3.0)
-			m.box(Transform3D(Basis(), Vector3(0, 1.3, -0.005)), Vector3(0.47, 0.42, 0.29), OLIVE)
-			m.box(Transform3D(Basis(), Vector3(0, 1.2, -0.155)), Vector3(0.38, 0.13, 0.04), OLIVE.darkened(0.2))
-			for sx in [-0.12, 0.12]:
-				m.box(Transform3D(Basis(), Vector3(sx, 1.53, -0.02)), Vector3(0.08, 0.06, 0.26), OLIVE.darkened(0.1))
-		"helmet":
+			m.box(Transform3D(Basis(), Vector3(0, 1.28, -0.005)), Vector3(0.42, 0.38, 0.27), vc)
+			m.box(Transform3D(Basis(), Vector3(0, 1.18, -0.145)), Vector3(0.36, 0.12, 0.04), vc.darkened(0.2))
+			for sx in [-0.11, 0.11]:
+				m.box(Transform3D(Basis(), Vector3(sx, 1.49, -0.02)), Vector3(0.07, 0.06, 0.24), vc.darkened(0.1))
+			if lv >= 2:
+				m.box(Transform3D(Basis(), Vector3(0, 1.3, -0.15)), Vector3(0.32, 0.22, 0.03), vc.darkened(0.3))
+			if lv == 3:
+				for k in 3:
+					m.box(Transform3D(Basis(), Vector3(-0.11 + k * 0.11, 1.17, -0.17)), Vector3(0.08, 0.09, 0.04), vc.lightened(0.12))
+		"helmet1", "helmet2", "helmet3":
+			var lv := int(kind.substr(6))
+			var hc: Color = [Color(0.48, 0.45, 0.33), OLIVE, Color(0.12, 0.12, 0.13)][lv - 1]
 			m.tex(U.PLAIN, 3.0)
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.14, 0.12, 0.155)), Vector3(0, 1.735, 0.005)), 10, 5, OLIVE)
-			m.box(Transform3D(Basis(), Vector3(0, 1.685, -0.005)), Vector3(0.29, 0.025, 0.32), OLIVE.darkened(0.15))
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.13, 0.11 if lv > 1 else 0.08, 0.145)), Vector3(0, 1.665, 0.01)), 10, 5, hc)
+			if lv >= 2:
+				m.box(Transform3D(Basis(), Vector3(0, 1.625, 0.0)), Vector3(0.27, 0.02, 0.3), hc.darkened(0.15))
+			if lv == 3:
+				m.box(Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0, 1.62, -0.14)), Vector3(0.2, 0.06, 0.015), Color(0.2, 0.35, 0.45))
 		"bag":
 			m.tex(U.FABRIC, 3.0)
 			m.box(Transform3D(Basis(), Vector3(0, 1.25, 0.21)), Vector3(0.34, 0.44, 0.17), Color(0.45, 0.4, 0.3))
@@ -313,7 +328,7 @@ func _build_model() -> void:
 	model.add_child(sol)
 	sol.setup(skin, shirt, pants, BOOTS[rng.randi() % BOOTS.size()], hair)
 	vest_mi = MeshInstance3D.new()
-	vest_mi.mesh = _gear("vest")
+	vest_mi.mesh = _gear("vest1")
 	vest_mi.material_override = U.wmat()
 	sol.attach("Spine2", vest_mi)
 	bag_mi = MeshInstance3D.new()
@@ -321,7 +336,7 @@ func _build_model() -> void:
 	bag_mi.material_override = U.wmat()
 	sol.attach("Spine2", bag_mi)
 	helmet_mi = MeshInstance3D.new()
-	helmet_mi.mesh = _gear("helmet")
+	helmet_mi.mesh = _gear("helmet1")
 	helmet_mi.material_override = U.wmat()
 	sol.attach("Head", helmet_mi)
 	if cap_hat:
@@ -361,8 +376,12 @@ func _build_model() -> void:
 func refresh_gear() -> void:
 	if not visual or model == null:
 		return
-	vest_mi.visible = armor > 0.0
-	helmet_mi.visible = helmet
+	vest_mi.visible = armor > 0.0 and vest_lv > 0
+	if vest_mi.visible:
+		vest_mi.mesh = _gear("vest%d" % vest_lv)
+	helmet_mi.visible = helmet > 0
+	if helmet_mi.visible:
+		helmet_mi.mesh = _gear("helmet%d" % helmet)
 	bag_mi.visible = bag > 0
 
 
@@ -439,7 +458,9 @@ func reset_state(pos: Vector3) -> void:
 	heal_t = 0.0
 	vault_t = -1.0
 	armor = 0.0
-	helmet = false
+	helmet = 0
+	vest_lv = 0
+	regen = 0.0
 	bag = 0
 	stun_t = 0.0
 	sprint = false
@@ -560,10 +581,10 @@ func _move(delta: float) -> void:
 				game.sfx("chute")
 		_keep_in()
 		return
-	# andar normal é mais lento; com o botão de correr fica rápido (mãos livres corre mais)
-	var spd := 4.4
+	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
+	var spd := lerpf(1.6, 5.0, clampf((dir.length() - 0.15) / 0.75, 0.0, 1.0))
 	if sprint:
-		spd = 7.0 if (sel < 0 or cur_wid() == "fist") else 6.4
+		spd = 7.0 if (sel < 0 or cur_wid() == "fist") else 6.5
 	if crouch:
 		spd = 2.8
 	if scoped:
@@ -583,10 +604,10 @@ func _move(delta: float) -> void:
 	if on_floor:
 		velocity.x = dir.x * spd
 		velocity.z = dir.z * spd
-	# corpo vira pra onde anda, ou pra mira quando está atirando
-	if not is_bot:
+	# corpo vira pra onde anda, ou pra mira quando está atirando (no ar não gira)
+	if not is_bot and on_floor:
 		if aim_t > 0.0 or scoped:
-			yaw = lerp_angle(yaw, game.cam_yaw_v, minf(1.0, 18.0 * delta))
+			yaw = lerp_angle(yaw, game.cam_yaw_v, minf(1.0, 28.0 * delta))
 		elif dir.length() > 0.15:
 			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 10.0 * delta))
 	if not on_floor:
@@ -605,12 +626,13 @@ func _move(delta: float) -> void:
 	if is_on_floor() and not _was_floor and _air_time > 0.35:
 		game.sfx_at("land", global_position, is_local)
 		# queda alta: dano e um tempinho sem conseguir andar (pular da janela de cima = ~1 s)
-		if _fall_v > 9.5:
-			stun_t = clampf(0.45 + (_fall_v - 9.5) * 0.12, 0.45, 1.4)
-		if _vault_drop and _fall_v > 6.0:
+		# só trava em queda de altura considerável (mais de ~4 m); descer ladeira pulando não trava
+		if _fall_v > 13.5:
+			stun_t = clampf(0.5 + (_fall_v - 13.5) * 0.12, 0.5, 1.4)
+		if _vault_drop and _fall_v > 10.5:
 			stun_t = maxf(stun_t, 1.0)
-		if _fall_v > 14.0:
-			game.fall_damage(self, (_fall_v - 14.0) * 9.0)
+		if _fall_v > 16.0:
+			game.fall_damage(self, (_fall_v - 16.0) * 10.0)
 		_vault_drop = false
 	if is_on_floor():
 		_air_time = 0.0
@@ -803,7 +825,7 @@ func _animate(delta: float, sim: bool) -> void:
 func _bot(delta: float) -> void:
 	if air == 3:
 		wish = Vector3.ZERO
-		if game.plane_frac() >= b_jump_at:
+		if game.plane_frac() >= game.plane_j0() + b_jump_at * (game.plane_j1() - game.plane_j0()):
 			game.server_bot_jump(self)
 		return
 	if air == 1 or air == 2:
@@ -1104,10 +1126,10 @@ func wants(kind: String) -> bool:
 			return count("bandage") < 10 and free_slots() > 0
 		"med":
 			return count("med") < 4 and free_slots() > 0
-		"vest":
-			return armor < 50.0
-		"helmet":
-			return not helmet
+		"vest1", "vest2", "vest3":
+			return Weapons.level_of(kind) > vest_lv or armor < 40.0
+		"helmet1", "helmet2", "helmet3":
+			return Weapons.level_of(kind) > helmet
 		"box":
 			return true
 	return false
@@ -1118,6 +1140,12 @@ func _bot_plan() -> void:
 	var zr: float = game.zone_goal_r()
 	var me := Vector2(position.x, position.z)
 	var outside := me.distance_to(zc) > zr * 0.85
+	# ainda tem tempo até a zona fechar? então dá pra lootear antes de correr pra ela
+	if outside and game.z_stage >= 0:
+		var left: float = float(game.z_wait) + float(game.z_shrink) - float(game.z_t)
+		var need := (me.distance_to(zc) - zr * 0.8) / 4.5
+		if left > need + 70.0 and not has_any_gun():
+			outside = false
 	b_dest_t -= 0.3
 	if outside:
 		b_item = -1
@@ -1127,7 +1155,7 @@ func _bot_plan() -> void:
 		return
 	if b_item < 0:
 		var best := -1
-		var bd := 55.0 if has_any_gun() else 110.0
+		var bd := 60.0 if has_any_gun() else 180.0
 		for i in game.items_avail.size():
 			if not game.items_avail[i] or b_ignore.has(i):
 				continue
@@ -1173,6 +1201,9 @@ func _bot_pick_target() -> void:
 		if dd < 160.0:
 			b_far = false
 		if dd >= bd or (far_out and dd > 12.0):
+			continue
+		# sem arma não compra briga de longe: vai atrás de arma primeiro
+		if not has_any_gun() and dd > 7.0:
 			continue
 		# agachado em moita fica mais difícil de ver de longe
 		if o.crouch and dd > 35.0:

@@ -59,9 +59,13 @@ func render_all() -> void:
 			size = maxf(L * 1.1, 0.3)
 			center = Vector3(L * 0.42, 0.0, 0)
 		else:
-			node = Weapons.build_item(id)
+			node = Weapons.build_item(id, false)
 			node.rotation = Vector3(0.6, 0.6, 0)
 			size = 0.95 if id == "box" else 0.6
+			if Weapons.is_att(id):
+				node.rotation = Vector3(0.35, 0.9, 0)
+				size = 0.3 if Weapons.att_cat(id) != "sight" or id == "holo" else 0.42
+				center = Vector3(0, 0.04, 0)
 			center = Vector3(0, 0.12, 0)
 		vp.add_child(node)
 		cam.size = size

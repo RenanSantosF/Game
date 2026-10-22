@@ -1515,49 +1515,84 @@ func _build_bounds() -> void:
 
 
 # Mapa visto de cima (minimapa)
+# Mapa visto de cima (minimapa e mapa grande): 1024 px, com estradas, rodovias, trilho,
+# casas e lagoa desenhados nítidos por cima do relevo
+const MAP_PX := 1024
+
+
 func _build_map(wts: PackedColorArray) -> void:
 	var n := RES + 1
 	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	var cg := Color(0.36, 0.44, 0.22)
-	var cd := Color(0.55, 0.46, 0.33)
-	var cr := Color(0.5, 0.49, 0.46)
-	var cs := Color(0.7, 0.64, 0.48)
-	var cw := Color(0.22, 0.36, 0.42)
+	var cg := Color(0.4, 0.5, 0.25)
+	var cd := Color(0.6, 0.52, 0.38)
+	var cr := Color(0.55, 0.54, 0.5)
+	var cs := Color(0.76, 0.7, 0.52)
 	for j in n:
 		for i in n:
 			var c: Color = wts[j * n + i]
 			var gw := clampf(1.0 - c.r - c.g - c.b, 0.0, 1.0)
 			var col := cg * gw + cd * c.r + cr * c.g + cs * c.b
-			col = col.lightened((c.a - 0.5) * 0.15)
-			if _hs[j * n + i] < WATER_Y - 0.1 and Vector2(-SIZE / 2.0 + i * SIZE / RES, -SIZE / 2.0 + j * SIZE / RES).distance_to(LAKE_C) < LAKE_R + 40.0:
-				col = cw
+			col = col.lightened((c.a - 0.5) * 0.12)
+			# relevo: morro mais claro, baixada mais escura (dá noção de altura)
+			col = col.lightened(clampf(_hs[j * n + i] / 120.0, -0.15, 0.2))
 			img.set_pixel(i, j, col)
-	img.resize(512, 512, Image.INTERPOLATE_BILINEAR)
-	var px := 512.0 / SIZE
-	for h in houses:
-		var bs := Basis(Vector3.UP, h["yaw"])
-		var hw: float = h["w"] / 2.0
-		var hd: float = h["d"] / 2.0
-		var steps := 6
-		for a in steps:
-			for c in steps:
-				var lp := Vector3(-hw + (a + 0.5) * 2.0 * hw / steps, 0, -hd + (c + 0.5) * 2.0 * hd / steps)
-				var wp: Vector3 = bs * lp
-				var q: Vector2 = (h["pos"] + Vector2(wp.x, wp.z) + Vector2(SIZE, SIZE) / 2.0) * px
-				img.fill_rect(Rect2i(int(q.x) - 1, int(q.y) - 1, 3, 3), Color(0.3, 0.25, 0.22))
-	# rodovias asfaltadas
+	img.resize(MAP_PX, MAP_PX, Image.INTERPOLATE_CUBIC)
+	var px := MAP_PX / SIZE
+	var off := Vector2(SIZE, SIZE) / 2.0
+	# lagoa com borda nítida
+	var lc := (LAKE_C + off) * px
+	var lr := (LAKE_R + 1.0) * px
+	for y in range(int(lc.y - lr), int(lc.y + lr) + 1):
+		for x in range(int(lc.x - lr), int(lc.x + lr) + 1):
+			var d := Vector2(x, y).distance_to(lc)
+			if d < lr and x >= 0 and y >= 0 and x < MAP_PX and y < MAP_PX:
+				img.set_pixel(x, y, Color(0.2, 0.42, 0.55) if d < lr - 2.0 else Color(0.85, 0.82, 0.65))
+	# estradas de terra
+	for r in roads:
+		_map_line(img, (r[0] + off) * px, (r[1] + off) * px, 2, Color(0.72, 0.6, 0.42))
+	# trilho
+	for i in RAIL.size() - 1:
+		_map_line(img, (RAIL[i] + off) * px, (RAIL[i + 1] + off) * px, 1, Color(0.35, 0.3, 0.27))
+	# rodovias asfaltadas com faixa no meio
 	for line in hw_pts:
 		for i in line.size() - 1:
-			var a: Vector2 = line[i][0]
-			var c: Vector2 = line[i + 1][0]
-			var k := int(a.distance_to(c))
-			for t in k + 1:
-				var q: Vector2 = (a.lerp(c, float(t) / maxf(k, 1)) + Vector2(SIZE, SIZE) / 2.0) * px
-				img.fill_rect(Rect2i(int(q.x) - 2, int(q.y) - 2, 5, 5), Color(0.26, 0.26, 0.28))
-		for e in line:
-			var q: Vector2 = (Vector2(e[0]) + Vector2(SIZE, SIZE) / 2.0) * px
-			img.set_pixel(clampi(int(q.x), 0, 511), clampi(int(q.y), 0, 511), Color(0.85, 0.75, 0.3))
+			_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 3, Color(0.25, 0.25, 0.27))
+		for i in line.size() - 1:
+			if i % 2 == 0:
+				_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 0, Color(0.95, 0.82, 0.3))
+	# casas: retângulos certinhos (telhado escuro com borda)
+	for h in houses:
+		var yaw: float = h["yaw"]
+		var hw: float = h["w"] / 2.0
+		var hd: float = h["d"] / 2.0
+		var c: Vector2 = (Vector2(h["pos"]) + off) * px
+		var ext := (hw + hd) * px + 2.0
+		var rot := Vector2(cos(yaw), sin(yaw))
+		for y in range(int(c.y - ext), int(c.y + ext) + 1):
+			for x in range(int(c.x - ext), int(c.x + ext) + 1):
+				if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
+					continue
+				var d := (Vector2(x, y) - c) / px
+				# casa gira no sentido do Basis(UP, yaw): x' = x cos + z sin ; z' = -x sin + z cos
+				var lx := d.x * rot.x - d.y * rot.y
+				var lz := d.x * rot.y + d.y * rot.x
+				if absf(lx) <= hw and absf(lz) <= hd:
+					var edge := absf(lx) > hw - 0.7 or absf(lz) > hd - 0.7
+					img.set_pixel(x, y, Color(0.2, 0.17, 0.15) if edge else Color(0.55, 0.36, 0.3))
+	img.generate_mipmaps()
 	map_tex = ImageTexture.create_from_image(img)
+
+
+func _map_line(img: Image, a: Vector2, b: Vector2, r: int, col: Color) -> void:
+	var n := int(a.distance_to(b)) + 1
+	for t in n + 1:
+		var p := a.lerp(b, float(t) / n)
+		var x := int(p.x)
+		var y := int(p.y)
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if dx * dx + dy * dy <= r * r + r and x + dx >= 0 and y + dy >= 0 and x + dx < MAP_PX and y + dy < MAP_PX:
+					img.set_pixel(x + dx, y + dy, col)
 
 
 func _build_env() -> void:

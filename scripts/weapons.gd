@@ -6,20 +6,21 @@ extends RefCounted
 # slot 0 = arma principal (2 vagas), slot 1 = pistola. Vida de cada jogador: 200.
 const DATA := {
 	"fist": {"name": "Soco", "dmg": 25.0, "rate": 2.2, "mag": 1, "reload": 0.0, "spread": 0.0, "range": 2.2, "pellets": 1, "head": 1.5, "zoom": 1.0, "recoil": 0.0, "len": 0.0, "type": "fist", "slot": 2, "ammo": ""},
-	"glock": {"name": "Glock 17", "dmg": 30.0, "rate": 4.5, "mag": 17, "reload": 1.5, "spread": 1.6, "range": 60.0, "pellets": 1, "head": 1.8, "zoom": 1.0, "recoil": 0.012, "len": 0.2, "type": "pistol", "slot": 1, "ammo": "a9"},
-	"deagle": {"name": "Desert Eagle", "dmg": 72.0, "rate": 2.0, "mag": 7, "reload": 1.9, "spread": 1.8, "range": 80.0, "pellets": 1, "head": 2.0, "zoom": 1.0, "recoil": 0.045, "len": 0.27, "type": "pistol", "slot": 1, "ammo": "a9"},
-	"mp5": {"name": "MP5", "dmg": 27.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 2.4, "range": 70.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0, "ammo": "a9"},
-	"ump45": {"name": "UMP-45", "dmg": 34.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 2.2, "range": 75.0, "pellets": 1, "head": 1.6, "zoom": 1.3, "recoil": 0.01, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9"},
-	"m4a1": {"name": "M4A1", "dmg": 38.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 1.6, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556"},
-	"scar": {"name": "SCAR-L", "dmg": 41.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 1.5, "range": 170.0, "pellets": 1, "head": 1.8, "zoom": 1.8, "recoil": 0.014, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556"},
-	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 2.2, "range": 160.0, "pellets": 1, "head": 1.8, "zoom": 1.5, "recoil": 0.02, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a762"},
-	"r870": {"name": "Remington 870", "dmg": 21.0, "rate": 1.2, "mag": 6, "reload": 3.0, "spread": 5.5, "range": 32.0, "pellets": 8, "head": 1.5, "zoom": 1.0, "recoil": 0.05, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
-	"m1014": {"name": "M1014", "dmg": 17.0, "rate": 3.2, "mag": 7, "reload": 3.2, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.5, "zoom": 1.0, "recoil": 0.04, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
-	"kar98": {"name": "Kar98k", "dmg": 120.0, "rate": 0.9, "mag": 5, "reload": 3.0, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 2.5, "zoom": 3.0, "recoil": 0.05, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
-	"awm": {"name": "AWM", "dmg": 150.0, "rate": 0.75, "mag": 5, "reload": 3.4, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.2, "zoom": 4.0, "recoil": 0.06, "len": 1.2, "type": "sniper", "slot": 0, "ammo": "a762"},
+	"glock": {"name": "Glock 17", "dmg": 30.0, "rate": 4.5, "mag": 17, "reload": 1.5, "spread": 1.2, "range": 60.0, "pellets": 1, "head": 2.2, "zoom": 1.0, "recoil": 0.014, "len": 0.2, "type": "pistol", "slot": 1, "ammo": "a9", "bloom": 0.25, "bloom_max": 2.0},
+	"deagle": {"name": "Desert Eagle", "dmg": 72.0, "rate": 1.8, "mag": 7, "reload": 1.9, "spread": 1.0, "range": 80.0, "pellets": 1, "head": 2.5, "zoom": 1.0, "recoil": 0.06, "len": 0.27, "type": "pistol", "slot": 1, "ammo": "a9", "bloom": 0.7, "bloom_max": 3.0},
+	"mp5": {"name": "MP5", "dmg": 27.0, "rate": 12.0, "mag": 30, "reload": 2.2, "spread": 1.7, "range": 70.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.008, "len": 0.62, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.1, "bloom_max": 1.5},
+	"ump45": {"name": "UMP-45", "dmg": 34.0, "rate": 9.5, "mag": 25, "reload": 2.3, "spread": 1.5, "range": 75.0, "pellets": 1, "head": 1.9, "zoom": 1.3, "recoil": 0.011, "len": 0.65, "type": "smg", "slot": 0, "ammo": "a9", "bloom": 0.13, "bloom_max": 1.7},
+	"m4a1": {"name": "M4A1", "dmg": 38.0, "rate": 10.0, "mag": 30, "reload": 2.4, "spread": 0.9, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556", "bloom": 0.15, "bloom_max": 2.2},
+	"scar": {"name": "SCAR-L", "dmg": 41.0, "rate": 9.0, "mag": 30, "reload": 2.5, "spread": 0.9, "range": 170.0, "pellets": 1, "head": 2.2, "zoom": 1.8, "recoil": 0.015, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556", "bloom": 0.2, "bloom_max": 2.6},
+	"ak47": {"name": "AK-47", "dmg": 50.0, "rate": 8.5, "mag": 30, "reload": 2.6, "spread": 1.1, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.5, "recoil": 0.024, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a762", "bloom": 0.5, "bloom_max": 4.5},
+	"r870": {"name": "Remington 870", "dmg": 24.0, "rate": 0.85, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.09, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"m1014": {"name": "M1014", "dmg": 19.0, "rate": 1.7, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.075, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"kar98": {"name": "Kar98k", "dmg": 125.0, "rate": 0.75, "mag": 5, "reload": 3.2, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 3.0, "zoom": 3.0, "recoil": 0.06, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
+	"awm": {"name": "AWM", "dmg": 160.0, "rate": 0.6, "mag": 5, "reload": 4.2, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.6, "zoom": 4.0, "recoil": 0.08, "len": 1.2, "type": "sniper", "slot": 0, "ammo": "a762"},
 }
 
 # Itens que não são armas. stack = quantos cabem numa vaga da mochila; count = quanto vem no chão.
+# Colete, capacete, mochila, coronha e carregador têm nível 1, 2 e 3 (cor diferente no chão).
 const ITEMS := {
 	"a9": {"name": "Munição 9mm", "stack": 60, "count": 30, "kind": "ammo"},
 	"a556": {"name": "Munição 5.56", "stack": 60, "count": 30, "kind": "ammo"},
@@ -27,31 +28,56 @@ const ITEMS := {
 	"a12": {"name": "Cartucho 12", "stack": 30, "count": 12, "kind": "ammo"},
 	"bandage": {"name": "Bandagem", "stack": 10, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
 	"med": {"name": "Kit médico", "stack": 4, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
-	"vest": {"name": "Colete", "kind": "gear"},
-	"helmet": {"name": "Capacete", "kind": "gear"},
+	"vest1": {"name": "Colete nível 1", "kind": "gear", "level": 1},
+	"vest2": {"name": "Colete nível 2", "kind": "gear", "level": 2},
+	"vest3": {"name": "Colete nível 3", "kind": "gear", "level": 3},
+	"helmet1": {"name": "Capacete nível 1", "kind": "gear", "level": 1},
+	"helmet2": {"name": "Capacete nível 2", "kind": "gear", "level": 2},
+	"helmet3": {"name": "Capacete nível 3", "kind": "gear", "level": 3},
 	"bag1": {"name": "Mochila nível 1", "kind": "gear", "level": 1},
 	"bag2": {"name": "Mochila nível 2", "kind": "gear", "level": 2},
 	"bag3": {"name": "Mochila nível 3", "kind": "gear", "level": 3},
-	"stock": {"name": "Coronha", "stack": 1, "count": 1, "kind": "att", "fits": ["smg", "rifle", "scar", "ak", "shotgun"]},
-	"extmag": {"name": "Carregador estendido", "stack": 1, "count": 1, "kind": "att", "fits": ["pistol", "smg", "rifle", "scar", "ak", "bolt", "sniper"]},
-	"holo": {"name": "Mira holográfica", "stack": 1, "count": 1, "kind": "att", "fits": ["smg", "rifle", "scar", "ak", "shotgun"]},
-	"scope4": {"name": "Luneta 4x", "stack": 1, "count": 1, "kind": "att", "fits": ["rifle", "scar", "ak", "bolt"]},
-	"silencer": {"name": "Silenciador", "stack": 1, "count": 1, "kind": "att", "fits": ["pistol", "smg", "rifle", "scar", "ak", "bolt", "sniper"]},
+	"stock1": {"name": "Coronha nível 1", "stack": 1, "count": 1, "kind": "att", "cat": "stock", "level": 1},
+	"stock2": {"name": "Coronha nível 2", "stack": 1, "count": 1, "kind": "att", "cat": "stock", "level": 2},
+	"stock3": {"name": "Coronha nível 3", "stack": 1, "count": 1, "kind": "att", "cat": "stock", "level": 3},
+	"mag1": {"name": "Carregador nível 1", "stack": 1, "count": 1, "kind": "att", "cat": "mag", "level": 1},
+	"mag2": {"name": "Carregador nível 2", "stack": 1, "count": 1, "kind": "att", "cat": "mag", "level": 2},
+	"mag3": {"name": "Carregador nível 3", "stack": 1, "count": 1, "kind": "att", "cat": "mag", "level": 3},
+	"holo": {"name": "Mira holográfica", "stack": 1, "count": 1, "kind": "att", "cat": "sight", "level": 1},
+	"scope2": {"name": "Mira 2x", "stack": 1, "count": 1, "kind": "att", "cat": "sight", "level": 2},
+	"scope4": {"name": "Luneta 4x", "stack": 1, "count": 1, "kind": "att", "cat": "sight", "level": 3},
+	"scope8": {"name": "Luneta 8x", "stack": 1, "count": 1, "kind": "att", "cat": "sight", "level": 3},
+	"silencer": {"name": "Silenciador", "stack": 1, "count": 1, "kind": "att", "cat": "muzzle", "level": 2},
 }
-const ATTS := ["stock", "extmag", "holo", "scope4", "silencer"]
+const ATTS := ["stock1", "stock2", "stock3", "mag1", "mag2", "mag3", "holo", "scope2", "scope4", "scope8", "silencer"]
+# o que cada tipo de arma aceita (escopeta não tem mira nem silenciador)
+const FITS := {
+	"pistol": ["mag", "holo", "muzzle"],
+	"smg": ["stock", "mag", "holo", "scope2", "muzzle"],
+	"rifle": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
+	"scar": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
+	"ak": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
+	"shotgun": ["stock", "mag"],
+	"bolt": ["mag", "scope8", "muzzle"],
+	"sniper": ["mag", "scope8", "muzzle"],
+}
 const AMMO := ["a9", "a556", "a762", "a12"]
 const BAGS := [6, 10, 14, 18]       # vagas sem mochila e com mochila nível 1, 2 e 3
+const VEST_ABSORB := [0.0, 0.3, 0.42, 0.55]    # quanto do dano no corpo o colete segura
+const HELMET_ABSORB := [0.0, 0.25, 0.38, 0.5]  # quanto do dano na cabeça o capacete segura
+# cor de raridade (destaque no chão): nível 1 branco, 2 azul, 3 roxo; armas dourado
+const RARITY := [Color(0.9, 0.9, 0.9), Color(0.85, 0.85, 0.85), Color(0.3, 0.6, 1.0), Color(0.75, 0.35, 1.0)]
 
 # Loot espalhado pelo mapa (repetido = mais comum)
 const LOOT := [
 	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
 	"bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med",
 	"a9", "a9", "a9", "a556", "a556", "a556", "a762", "a762", "a762", "a12", "a12",
-	"vest", "vest", "helmet", "helmet", "bag1", "bag1", "bag2", "bag3",
-	"stock", "extmag", "holo", "scope4", "silencer",
+	"vest1", "vest1", "vest2", "vest3", "helmet1", "helmet1", "helmet2", "helmet3", "bag1", "bag1", "bag2", "bag3",
+	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "holo", "holo", "scope2", "scope4", "scope8", "silencer",
 ]
 const LOOT_GUNS := ["mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "mp5", "m4a1", "ak47", "ump45", "glock"]
-const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest", "helmet", "scope4", "extmag", "med", "bag2", "bag3", "a556", "a762"]
+const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest2", "vest3", "helmet2", "helmet3", "scope4", "scope8", "mag3", "stock3", "med", "bag2", "bag3", "a556", "a762"]
 
 const SCOPES := ["kar98", "awm"]   # armas com luneta própria (mira preta na tela inteira)
 
@@ -85,6 +111,40 @@ static func is_bag(kind: String) -> bool:
 	return kind.begins_with("bag") and ITEMS.has(kind)
 
 
+static func is_vest(kind: String) -> bool:
+	return kind.begins_with("vest") and ITEMS.has(kind)
+
+
+static func is_helmet(kind: String) -> bool:
+	return kind.begins_with("helmet") and ITEMS.has(kind)
+
+
+static func level_of(kind: String) -> int:
+	if ITEMS.has(kind):
+		return int(ITEMS[kind].get("level", 0))
+	return 0
+
+
+static func att_cat(att: String) -> String:
+	return str(ITEMS[att].get("cat", "")) if ITEMS.has(att) else ""
+
+
+# acessório da mesma categoria que já está na arma (pra trocar)
+static func same_cat(att: String, list: Array) -> String:
+	var c := att_cat(att)
+	for a in list:
+		if att_cat(a) == c:
+			return a
+	return ""
+
+
+static func att_level(att: Array, cat: String) -> int:
+	for a in att:
+		if att_cat(a) == cat:
+			return level_of(a)
+	return 0
+
+
 static func ammo_of(gun: String) -> String:
 	return str(get_w(gun).get("ammo", ""))
 
@@ -92,7 +152,11 @@ static func ammo_of(gun: String) -> String:
 static func fits(att: String, gun: String) -> bool:
 	if not is_att(att) or not is_gun(gun):
 		return false
-	return get_w(gun)["type"] in ITEMS[att]["fits"]
+	var allowed: Array = FITS.get(get_w(gun)["type"], [])
+	var c := att_cat(att)
+	if c == "sight":
+		return att in allowed
+	return c in allowed
 
 
 static func item_name(kind: String) -> String:
@@ -130,21 +194,34 @@ static func slots_used(inv: Dictionary) -> int:
 # status da arma com os acessórios
 static func stat(id: String, att: Array) -> Dictionary:
 	var w: Dictionary = get_w(id).duplicate()
-	if "stock" in att:
-		w["recoil"] = float(w["recoil"]) * 0.55
-		w["spread"] = float(w["spread"]) * 0.85
-	if "extmag" in att:
-		w["mag"] = ceili(float(w["mag"]) * 1.5)
-		w["reload"] = float(w["reload"]) * 0.9
+	w["bloom"] = float(w.get("bloom", 0.0))
+	w["bloom_max"] = float(w.get("bloom_max", 0.0))
+	var sl := att_level(att, "stock")
+	if sl > 0:
+		var k: float = [1.0, 0.8, 0.68, 0.55][sl]
+		w["recoil"] = float(w["recoil"]) * k
+		w["bloom"] = float(w["bloom"]) * k
+		w["spread"] = float(w["spread"]) * (0.95 - sl * 0.03)
+	var ml := att_level(att, "mag")
+	if ml > 0:
+		w["mag"] = ceili(float(w["mag"]) * [1.0, 1.25, 1.45, 1.7][ml])
+		w["reload"] = float(w["reload"]) * (1.0 - ml * 0.05)
 	w["ads"] = 0.4
 	w["overlay"] = id in SCOPES
 	if "holo" in att:
 		w["zoom"] = maxf(float(w["zoom"]), 1.7)
 		w["ads"] = 0.25
+	if "scope2" in att:
+		w["zoom"] = 2.2
+		w["ads"] = 0.18
 	if "scope4" in att:
 		w["zoom"] = 4.0
 		w["overlay"] = true
 		w["ads"] = 0.05
+	if "scope8" in att:
+		w["zoom"] = 8.0
+		w["overlay"] = true
+		w["ads"] = 0.03
 	w["silenced"] = "silencer" in att
 	return w
 
@@ -194,18 +271,18 @@ static func mesh_for(id: String, att: Array = []) -> Mesh:
 				_b(m, Vector3(0, -0.075, -L * 0.25), Vector3(0.03, 0.13, 0.05), POLY, 0.15)
 			else:
 				_b(m, Vector3(0, -0.07, -L * 0.25), Vector3(0.028, 0.13, 0.05), METAL, 0.12)
-			if "extmag" in att:
-				_b(m, Vector3(0, -0.15, -L * 0.27), Vector3(0.03, 0.08, 0.05), METAL, 0.2)
+			if att_level(att, "mag") > 0:
+				_b(m, Vector3(0, -0.15, -L * 0.27), Vector3(0.03, 0.05 + att_level(att, "mag") * 0.025, 0.05), METAL, 0.2)
 			if t == "ak":
 				m.tex(U.WOOD, 8.0)
 				_b(m, Vector3(0, -0.01, 0.17), Vector3(0.04, 0.075, 0.26), WOOD, -0.08)
 				m.tex(U.PLAIN, 6.0)
-			elif t == "smg" and not ("stock" in att):
+			elif t == "smg" and att_level(att, "stock") == 0:
 				_b(m, Vector3(0, 0.0, 0.14), Vector3(0.035, 0.06, 0.2), POLY)
 			else:
 				_b(m, Vector3(0, -0.005, 0.12), Vector3(0.02, 0.03, 0.14), METAL)
 				_b(m, Vector3(0, -0.01, 0.22), Vector3(0.042, 0.09, 0.08), furn)
-			if not ("holo" in att or "scope4" in att):
+			if att_level(att, "sight") == 0:
 				if t == "rifle" or t == "scar":
 					_b(m, Vector3(0, 0.07, -L * 0.12), Vector3(0.022, 0.02, 0.1), METAL)
 					_tube(m, Vector3(0, 0.09, -L * 0.07), 0.016, 0.1, METAL)
@@ -251,8 +328,11 @@ static func mesh_for(id: String, att: Array = []) -> Mesh:
 		_b(m, Vector3(0, 0.075, -L * 0.1), Vector3(0.04, 0.02, 0.07), METAL)
 		_b(m, Vector3(0, 0.1, -L * 0.13), Vector3(0.04, 0.035, 0.012), METAL)
 		_b(m, Vector3(0, 0.1, -L * 0.07), Vector3(0.04, 0.035, 0.012), METAL)
-	if "scope4" in att and t != "bolt":
-		_tube(m, Vector3(0, 0.1, 0.02), 0.022, 0.28, METAL, 8)
+	if "scope2" in att:
+		_tube(m, Vector3(0, 0.095, -L * 0.02), 0.02, 0.12, METAL, 8)
+		_b(m, Vector3(0, 0.072, -L * 0.08), Vector3(0.015, 0.03, 0.03), METAL)
+	if ("scope4" in att or "scope8" in att) and t != "bolt":
+		_tube(m, Vector3(0, 0.1, 0.02), 0.022 if "scope4" in att else 0.026, 0.28 if "scope4" in att else 0.36, METAL, 8)
 		_b(m, Vector3(0, 0.072, -0.1), Vector3(0.015, 0.03, 0.03), METAL)
 	if "silencer" in att:
 		_tube(m, Vector3(0, 0.03 if t != "pistol" else 0.025, -L * (1.0 if t != "pistol" else 0.92)), 0.02, 0.16, METAL, 8)
@@ -296,13 +376,27 @@ static func item_mesh(kind: String) -> Mesh:
 			m.tex(U.FABRIC, 6.0)
 			for k in 3:
 				m.cyl(Transform3D(Basis(), Vector3(k * 0.13 - 0.13, 0, 0)), 0.055, 0.055, 0.1, 10, Color(0.95, 0.93, 0.88))
-		"vest":
+		"vest1", "vest2", "vest3":
+			# nível 1: tecido verde; 2: areia com placas; 3: preto tático com placas e bolsos
+			var lv := int(kind.substr(4))
+			var vc: Color = [olive, Color(0.62, 0.55, 0.4), Color(0.13, 0.13, 0.14)][lv - 1]
 			m.tex(U.FABRIC, 3.0)
-			m.boxp(Vector3(0, 0.06, 0), Vector3(0.5, 0.12, 0.6), olive)
-			m.boxp(Vector3(0, 0.13, -0.12), Vector3(0.4, 0.04, 0.2), olive.darkened(0.15))
-			m.boxp(Vector3(0, 0.13, 0.15), Vector3(0.3, 0.04, 0.16), olive.darkened(0.2))
-		"helmet":
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.18, 0.15, 0.21)), Vector3(0, 0.02, 0)), 10, 4, olive)
+			m.boxp(Vector3(0, 0.06, 0), Vector3(0.5, 0.12, 0.6), vc)
+			m.boxp(Vector3(0, 0.13, -0.12), Vector3(0.4, 0.04, 0.2), vc.darkened(0.15))
+			if lv >= 2:
+				m.boxp(Vector3(0, 0.135, 0.12), Vector3(0.36, 0.05, 0.26), vc.darkened(0.25))
+			if lv == 3:
+				for k in 3:
+					m.boxp(Vector3(-0.14 + k * 0.14, 0.17, -0.12), Vector3(0.1, 0.05, 0.12), vc.lightened(0.1))
+		"helmet1", "helmet2", "helmet3":
+			# nível 1: capacete leve de tecido; 2: aço verde; 3: preto com viseira
+			var lv := int(kind.substr(6))
+			var hc: Color = [Color(0.48, 0.45, 0.33), olive, Color(0.12, 0.12, 0.13)][lv - 1]
+			m.blob(Transform3D(Basis.from_scale(Vector3(0.18, 0.15 if lv > 1 else 0.11, 0.21)), Vector3(0, 0.02, 0)), 10, 4, hc)
+			if lv >= 2:
+				m.boxp(Vector3(0, 0.0, 0), Vector3(0.38, 0.02, 0.44), hc.darkened(0.2))
+			if lv == 3:
+				m.boxp(Vector3(0, 0.03, -0.2), Vector3(0.28, 0.08, 0.02), Color(0.2, 0.35, 0.45))
 		"bag1", "bag2", "bag3":
 			var lv := int(kind.substr(3))
 			var bc: Color = [Color(0.45, 0.4, 0.3), Color(0.3, 0.36, 0.25), Color(0.2, 0.22, 0.25)][lv - 1]
@@ -325,18 +419,76 @@ static func item_mesh(kind: String) -> Mesh:
 			m.tex(U.PLAIN, 4.0)
 			m.boxp(Vector3(0, 0.3, -0.31), Vector3(0.3, 0.12, 0.02), Color(0.9, 0.75, 0.2))
 		_:
-			# acessórios: caixinha com uma faixa de cor
-			var cols := {"stock": Color(0.3, 0.3, 0.3), "extmag": Color(0.6, 0.5, 0.2), "holo": Color(0.2, 0.5, 0.6), "scope4": Color(0.25, 0.3, 0.55), "silencer": Color(0.45, 0.45, 0.45)}
-			m.boxp(Vector3(0, 0.06, 0), Vector3(0.3, 0.12, 0.2), Color(0.2, 0.2, 0.2))
-			m.boxp(Vector3(0, 0.121, 0), Vector3(0.3, 0.005, 0.06), cols.get(kind, Color.WHITE))
+			# acessórios: a peça de verdade, com a cor do nível
+			var lvc: Color = RARITY[clampi(level_of(kind), 1, 3)]
+			match att_cat(kind):
+				"stock":
+					m.boxp(Vector3(0, 0.05, 0), Vector3(0.05, 0.1, 0.26), POLY)
+					m.boxp(Vector3(0, 0.05, 0.14), Vector3(0.06, 0.13, 0.06), POLY)
+				"mag":
+					var hh := 0.12 + level_of(kind) * 0.04
+					m.boxp(Vector3(0, 0.03, 0), Vector3(hh, 0.05, 0.08), METAL)
+				"sight":
+					if kind == "holo":
+						m.boxp(Vector3(0, 0.02, 0), Vector3(0.05, 0.03, 0.09), METAL)
+						m.boxp(Vector3(0, 0.06, 0.03), Vector3(0.05, 0.05, 0.012), METAL)
+					else:
+						var ln := 0.14 if kind == "scope2" else (0.26 if kind == "scope4" else 0.34)
+						m.cyl(Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3(0, 0.04, ln / 2.0)), 0.03, 0.03, ln, 8, METAL)
+				_:
+					m.cyl(Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3(0, 0.03, 0.09)), 0.025, 0.025, 0.18, 8, METAL)
+			m.boxp(Vector3(0, 0.002, 0), Vector3(0.12, 0.004, 0.02), lvc)
 	var mesh := m.commit()
 	_cache[key] = mesh
 	return mesh
 
 
+# anel discreto em volta do item no chão, na cor da raridade (ajuda a achar sem poluir)
+static func _ring(kind: String) -> MeshInstance3D:
+	var lv := level_of(kind)
+	var col: Color = RARITY[lv] if lv >= 2 else Color(1, 1, 1)
+	if is_gun(kind):
+		col = Color(1.0, 0.75, 0.3)
+	col.a = 0.42 if lv >= 2 else (0.28 if is_gun(kind) else 0.16)
+	var key := "ring_" + col.to_html()
+	if not _cache.has(key):
+		var m := ArrayMesh.new()
+		var v := PackedVector3Array()
+		var seg := 24
+		for i in seg:
+			var a0 := TAU * i / seg
+			var a1 := TAU * (i + 1) / seg
+			var r0 := 0.3
+			var r1 := 0.325
+			var p00 := Vector3(cos(a0) * r0, 0, sin(a0) * r0)
+			var p01 := Vector3(cos(a1) * r0, 0, sin(a1) * r0)
+			var p10 := Vector3(cos(a0) * r1, 0, sin(a0) * r1)
+			var p11 := Vector3(cos(a1) * r1, 0, sin(a1) * r1)
+			v.append_array([p00, p11, p10, p00, p01, p11])
+		var arr := []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = v
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.albedo_color = col
+		m.surface_set_material(0, mat)
+		_cache[key] = m
+	var mi := MeshInstance3D.new()
+	mi.mesh = _cache[key]
+	mi.position.y = 0.02
+	mi.visibility_range_end = 30.0
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
 # Modelo de item no chão (arma deitada, kit, colete, capacete, caixa)
-static func build_item(kind: String) -> Node3D:
+static func build_item(kind: String, ring := true) -> Node3D:
 	var root := Node3D.new()
+	if kind != "box" and ring:
+		root.add_child(_ring(kind))
 	if is_gun(kind):
 		var g := build_model(kind)
 		g.rotation = Vector3(0, 0, PI / 2.0)

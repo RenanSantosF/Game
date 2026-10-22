@@ -2,3 +2,4 @@
 build/
 server/Godot_*
 *.tmp
+tests_tmp/

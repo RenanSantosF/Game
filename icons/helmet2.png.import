@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cv1u5di8j3lg5"
-path="res://.godot/imported/extmag.png-b8f62c81636215f11ab65df1282ed1a6.ctex"
+uid="uid://c3gi4284t6qlm"
+path="res://.godot/imported/helmet2.png-346ca3a985f1b0da455c05afdee95ffe.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/extmag.png"
-dest_files=["res://.godot/imported/extmag.png-b8f62c81636215f11ab65df1282ed1a6.ctex"]
+source_file="res://icons/helmet2.png"
+dest_files=["res://.godot/imported/helmet2.png-346ca3a985f1b0da455c05afdee95ffe.ctex"]
 
 [params]
 

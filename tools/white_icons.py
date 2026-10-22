@@ -54,3 +54,45 @@ base.putalpha(sh.point(lambda v: int(v * 0.55)))
 base.alpha_composite(im)
 base.save(os.path.join(root, "w_fist.png"))
 print("ok")
+
+
+# selo de nível (I, II, III) com a cor da raridade nos itens com nível
+LEVELED = {"vest": 3, "helmet": 3, "bag": 3, "stock": 3, "mag": 3}
+COLS = {1: (225, 225, 225), 2: (80, 150, 255), 3: (190, 90, 255)}
+for base, n in LEVELED.items():
+    for lv in range(1, n + 1):
+        path = os.path.join(root, "%s%d.png" % (base, lv))
+        if not os.path.exists(path):
+            continue
+        im = Image.open(path).convert("RGBA")
+        # clareia peças escuras pra ler no fundo escuro
+        px = im.load()
+        for y in range(im.size[1]):
+            for x in range(im.size[0]):
+                r, g, b, a = px[x, y]
+                if a > 0:
+                    px[x, y] = (min(255, int(r * 1.35 + 25)), min(255, int(g * 1.35 + 25)), min(255, int(b * 1.35 + 25)), a)
+        d = ImageDraw.Draw(im)
+        c = COLS[lv]
+        x0, y0 = 200, 8
+        d.rounded_rectangle([x0, y0, x0 + 48, y0 + 30], radius=6, fill=c + (235,))
+        txt = "I" * lv
+        tx = x0 + 24 - len(txt) * 4
+        for i in range(lv):
+            d.rectangle([tx + i * 8, y0 + 7, tx + i * 8 + 4, y0 + 23], fill=(20, 20, 25, 255))
+        im.save(path)
+print("selos ok")
+
+# clareia os acessórios sem nível (peças pretas no fundo escuro)
+for k in ["holo", "scope2", "scope4", "scope8", "silencer"]:
+    path = os.path.join(root, k + ".png")
+    if not os.path.exists(path):
+        continue
+    im = Image.open(path).convert("RGBA")
+    px = im.load()
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            r, g, b, a = px[x, y]
+            if a > 0:
+                px[x, y] = (min(255, int(r * 1.6 + 60)), min(255, int(g * 1.6 + 60)), min(255, int(b * 1.6 + 60)), a)
+    im.save(path)
