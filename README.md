@@ -4,6 +4,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Como é a partida
 
+0. **Menu**: cenário 3D com o seu boneco segurando um fuzil; arraste pra girar.
 1. **Sala de espera (lobby)**: um pátio cercado fora do mapa, com todo mundo junto (bots também). Ninguém leva dano; você recebe uma M4A1 e uma Glock só pra aquecer a mira (somem ao entrar no avião).
 2. **Avião**: o avião cruza o mapa por uma rota sorteada (sempre por cima do mapa). Toque em **SALTAR** quando quiser.
 3. **Queda**: queda livre guiada pelo joystick; o paraquedas abre sozinho perto do chão (ou toque em **PARAQUEDAS**).
@@ -15,7 +16,10 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Conteúdo
 
-- Vida 200 (colete e capacete reduzem o dano); dano de queda quando pula de muito alto
+- Boneco animado (modelo feito no Meshy, reduzido pra celular): anda, corre, pula, agacha, morre; braços seguram a arma
+- Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
+- Carros: sedã (rápido) e picape (mais lenta) espalhados perto das cidades; botão do carro pra entrar e sair; dá pra atropelar
+- Cada arma com coice e dispersão própria: os primeiros tiros são precisos e, segurando o dedo, o tiro abre (a AK abre muito)
 - Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com rua asfaltada, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
 - Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco

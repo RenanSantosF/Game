@@ -72,6 +72,7 @@ var _rl_h := PackedFloat32Array()
 var _claims := {}
 var _scatter_nodes: Array = []
 var _lobby_cover: Array = []
+var car_spots: Array = []   # carros dirigíveis: [posição, yaw, tipo, cor]
 var b: Build
 
 
@@ -100,6 +101,7 @@ func build(is_headless: bool, q := 1) -> void:
 	for i in towns.size():
 		_build_loc(i)
 	_build_highway_props()
+	_car_spots()
 	_build_extras()
 	_build_nature()
 	_build_bounds()
@@ -340,6 +342,34 @@ func _build_highway_props() -> void:
 				if is_free(cp, 3.0) and not _near_town(cp, 0.0):
 					b.car(Vector3(cp.x, height(cp.x, cp.y), cp.y), atan2(-d.x, -d.y) + rng.randf_range(-0.4, 0.4))
 	b.finish(450.0)
+
+
+# lugares dos carros que dá pra dirigir: na beira da estrada, perto das cidades
+func _car_spots() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED + 909
+	var order := range(towns.size())
+	for k in order.size():
+		var j := rng.randi_range(k, order.size() - 1)
+		var tmp = order[k]
+		order[k] = order[j]
+		order[j] = tmp
+	for ti in order:
+		if car_spots.size() >= 16:
+			break
+		var t: Dictionary = towns[ti]
+		for tries in 12:
+			var a := rng.randf() * TAU
+			var p: Vector2 = t["pos"] + Vector2(cos(a), sin(a)) * (float(t["r"]) + rng.randf_range(4.0, 14.0))
+			if absf(p.x) > PLAY - 20.0 or absf(p.y) > PLAY - 20.0 or not is_free(p, 4.0) or _slope(p) > 0.12:
+				continue
+			if height(p.x, p.y) < WATER_Y + 0.8 or road_dist(p.x, p.y) > 12.0 and hw_dist(p.x, p.y) > 14.0:
+				continue
+			claim(p, 4.0)
+			var kind := car_spots.size() % 2
+			var tint: Color = Build.CAR_TINTS[rng.randi() % Build.CAR_TINTS.size()]
+			car_spots.append([Vector3(p.x, height(p.x, p.y) + 0.3, p.y), rng.randf() * TAU, kind, tint])
+			break
 
 
 # ---------------- estradas de terra ----------------
@@ -1163,57 +1193,80 @@ func _tree_meshes() -> Dictionary:
 	rng.seed = SEED + 5
 	var bark := Color(0.95, 0.9, 0.85)
 	var out := {}
-	# Árvores ralas e baixas (estilo FF): copa feita de poucos tufos separados, com
-	# buracos por onde se vê através; tronco fino. "_lo" = mesma silhueta, menos polígonos.
+	# Árvores ralas e baixas (estilo FF): copa de vários tufos pequenos e irregulares, claros em cima
+	# e escuros embaixo, com galhos aparecendo e buracos por onde se vê; "_lo" = mesma silhueta, leve.
 	var specs := {
-		# [altura do tronco, raio do tronco, tufos, raio da copa, altura da copa, tamanho do tufo]
-		"oak": [4.6, 0.26, 6, 1.9, 1.6, 1.15],
-		"pine": [7.2, 0.2, 5, 1.6, 0.9, 1.05],
-		"tall": [8.0, 0.17, 7, 1.1, 3.0, 0.8],
+		# [altura do tronco, raio do tronco, tufos, raio da copa, altura da copa, tamanho do tufo, cor]
+		"oak": [4.2, 0.24, 11, 2.1, 2.0, 0.85, Color(1.0, 1.0, 0.95)],
+		"pine": [6.6, 0.19, 9, 1.5, 1.2, 0.8, Color(0.85, 0.95, 0.85)],
+		"tall": [7.5, 0.16, 10, 1.1, 3.4, 0.62, Color(1.05, 1.05, 0.9)],
 	}
 	for kind in specs:
 		var sp: Array = specs[kind]
 		var th: float = sp[0]
 		var tr: float = sp[1]
+		var tint: Color = sp[6]
 		var m := MB.new()
 		var lo := MB.new()
 		m.tex(U.BARK, 0.5)
-		m.cyl(Transform3D(Basis(), Vector3(0, -0.6, 0)), tr * 1.25, tr * 0.6, th + 0.6, 7, bark, false)
+		m.cyl(Transform3D(Basis(), Vector3(0, -0.6, 0)), tr * 1.3, tr * 0.55, th + 0.6, 7, bark, false)
+		# raízes saindo do chão
+		for k in 3:
+			var ra := TAU * k / 3.0 + 0.4
+			m.cyl(Transform3D(Basis(Vector3(cos(ra), 0, sin(ra)).cross(Vector3.UP).normalized(), 1.1), Vector3(0, -0.1, 0)), tr * 0.7, tr * 0.2, 0.7, 4, bark.darkened(0.1), false)
 		lo.tex(U.BARK, 0.5)
 		lo.cyl(Transform3D(Basis(), Vector3(0, -0.6, 0)), tr * 1.25, tr * 0.6, th + 0.6, 4, bark, false)
 		var tufts := []
-		for k in int(sp[2]):
-			var a := TAU * k / float(sp[2]) + rng.randf_range(-0.3, 0.3)
-			var rr: float = float(sp[3]) * rng.randf_range(0.45, 1.0)
-			var y: float = th - 0.4 + rng.randf_range(0.0, float(sp[4]))
+		var n_t: int = sp[2]
+		for k in n_t:
+			var a := TAU * k / float(n_t) * 2.0 + rng.randf_range(-0.4, 0.4)
+			var rr: float = float(sp[3]) * sqrt(rng.randf_range(0.15, 1.0))
+			var y: float = th - 0.6 + rng.randf_range(0.0, float(sp[4]))
 			if k == 0:
 				rr = 0.0
-				y = th + float(sp[4]) * 0.6
+				y = th + float(sp[4]) * 0.75
 			var p := Vector3(cos(a) * rr, y, sin(a) * rr)
-			var ts: float = float(sp[5]) * rng.randf_range(0.8, 1.2)
+			var ts: float = float(sp[5]) * rng.randf_range(0.75, 1.25)
 			tufts.append([p, ts])
 			# galho do tronco até o tufo
-			if rr > 0.3:
-				var from := Vector3(0, y - rr * 0.6 - 0.3, 0)
+			if rr > 0.35:
+				var from := Vector3(0, y - rr * 0.7 - 0.2, 0)
 				var d := p - from
 				m.tex(U.BARK, 0.5)
-				m.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d.normalized())), from), tr * 0.5, tr * 0.25, d.length(), 4, bark, false)
-		m.tex(U.LEAVES, 0.6, 1.0)
-		lo.tex(U.LEAVES, 0.4)
+				m.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d.normalized())), from), tr * 0.45, tr * 0.18, d.length() * 0.9, 4, bark, false)
+		m.tex(U.LEAVES, 0.9, 1.0)
+		lo.tex(U.LEAVES, 0.5)
 		for tf in tufts:
 			var ts: float = tf[1]
-			var sc := Vector3(ts * 1.2, ts * 0.75, ts * 1.2)
-			var c := Color(1, 1, 1).darkened(rng.randf() * 0.18)
-			m.blob(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(sc), tf[0]), 6, 4, c, rng, 0.45, false, 0.45)
-			lo.blob(Transform3D(Basis.from_scale(sc), tf[0]), 5, 3, c, rng, 0.2, false, 0.4)
+			var pp: Vector3 = tf[0]
+			var sc := Vector3(ts * 1.25, ts * 0.8, ts * 1.25)
+			# mais alto = mais claro (sol batendo)
+			var hk := clampf((pp.y - th + 0.6) / (float(sp[4]) + 0.6), 0.0, 1.0)
+			var c := Color(0.78, 0.86, 0.72).lerp(Color(1.12, 1.12, 0.95), hk) * tint
+			m.blob(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(sc), pp), 7, 4, c, rng, 0.5, true, 0.55)
+			# folhinhas soltas em volta do tufo (quebram a forma de bola)
+			for q in 2:
+				var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.4, 0.6), rng.randf_range(-1, 1)).normalized() * ts * 1.05
+				m.blob(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(sc * 0.42), pp + off), 5, 3, c * 0.95, rng, 0.45, true, 0.4)
+			lo.blob(Transform3D(Basis.from_scale(sc * 1.1), pp), 5, 3, c, rng, 0.25, true, 0.45)
 		out[kind] = m.commit()
 		out[kind + "_lo"] = lo.commit()
-	# moita
+	# moita: vários tufos de tamanhos diferentes, escura por dentro e clara nas pontas
 	var m3 := MB.new()
-	m3.tex(U.LEAVES, 0.8, 0.5)
+	m3.tex(U.LEAVES, 1.1, 0.5)
+	for k in 7:
+		var a := rng.randf() * TAU
+		var rr := rng.randf_range(0.0, 0.55)
+		var hgt := rng.randf_range(0.25, 0.65)
+		var sz := rng.randf_range(0.3, 0.55)
+		var c := Color(0.8, 0.88, 0.72).lerp(Color(1.08, 1.08, 0.9), hgt)
+		m3.blob(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(sz * 1.2, sz, sz * 1.2)), Vector3(cos(a) * rr, hgt, sin(a) * rr)), 6, 4, c, rng, 0.45, true, 0.6)
+	# galhinhos secos saindo
+	m3.tex(U.BARK, 0.6)
 	for k in 4:
 		var a := rng.randf() * TAU
-		m3.blob(Transform3D(Basis.from_scale(Vector3(rng.randf_range(0.6, 0.9), rng.randf_range(0.45, 0.7), rng.randf_range(0.6, 0.9))), Vector3(cos(a) * 0.4, 0.4, sin(a) * 0.4)), 6, 4, Color(1, 1, 1).darkened(rng.randf() * 0.2), rng, 0.35, false, 0.5)
+		var d := Vector3(cos(a) * 0.6, 1.0, sin(a) * 0.6).normalized()
+		m3.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d)), Vector3(0, 0.05, 0)), 0.02, 0.005, 0.9, 3, bark, false)
 	out["bush"] = m3.commit()
 	# pedra
 	var m4 := MB.new()
@@ -1300,7 +1353,7 @@ func _build_nature() -> void:
 		var p := Vector2(x, z)
 		if _near_town(p, -6.0) or road_dist(x, z) < 3.0 or hw_dist(x, z) < 6.0 or not is_free(p, 1.0) or height(x, z) < WATER_Y + 0.4:
 			continue
-		var s := rng.randf_range(0.9, 1.6)
+		var s := rng.randf_range(1.3, 2.2)
 		sets["bush"].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis.from_scale(Vector3(s, s, s)), Vector3(x, height(x, z) - 0.1, z)))
 	# pedras: cobertura que segura bala (algumas enormes)
 	tries = 0

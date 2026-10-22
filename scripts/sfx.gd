@@ -12,7 +12,7 @@ const NAMES := ["shot_pistol", "shot_deagle", "shot_smg", "shot_ump", "shot_rifl
 	"step_gravel0", "step_gravel1", "step_gravel2", "step_gravel3", "step_gravel4", "step_gravel5", "jump",
 	"land", "vault", "switch", "reload_out", "reload_in", "bolt", "pickup", "equip", "heal", "heal_done", "hit",
 	"headshot", "kill", "punch_swing", "punch_hit", "chute", "zone", "click", "empty", "impact", "ricochet", "hurt",
-	"wind_fall", "wind_chute", "plane", "pain0", "pain1", "pain2"]
+	"wind_fall", "wind_chute", "plane", "pain0", "pain1", "pain2", "door"]
 const MAX_3D := 20
 
 var streams := {}

@@ -106,6 +106,8 @@ var b_skill := 1.0
 var b_far := false
 var _vault_drop := false
 var bloom := 0.0
+var car := -1             # carro que está dirigindo (-1 = a pé)
+var _remote_car := false
 var regen := 0.0
 var _breath := 0.0
 var _crouch_k := 0.0
@@ -204,7 +206,7 @@ func count(kind: String) -> int:
 
 
 func flags() -> int:
-	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6)
+	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7)
 
 
 func set_flags(f: int) -> void:
@@ -215,6 +217,7 @@ func set_flags(f: int) -> void:
 	if ((f >> 5) & 1) == 1 and punch_t <= 0.0:
 		punch_t = 0.3
 	_remote_air = ((f >> 6) & 1) == 1
+	_remote_car = ((f >> 7) & 1) == 1
 
 
 var _remote_air := false
@@ -241,15 +244,15 @@ static func _gear(kind: String) -> Mesh:
 			var lv := int(kind.substr(4))
 			var vc: Color = [OLIVE, Color(0.62, 0.55, 0.4), Color(0.13, 0.13, 0.14)][lv - 1]
 			m.tex(U.FABRIC, 3.0)
-			m.box(Transform3D(Basis(), Vector3(0, 1.28, -0.005)), Vector3(0.42, 0.38, 0.27), vc)
-			m.box(Transform3D(Basis(), Vector3(0, 1.18, -0.145)), Vector3(0.36, 0.12, 0.04), vc.darkened(0.2))
-			for sx in [-0.11, 0.11]:
-				m.box(Transform3D(Basis(), Vector3(sx, 1.49, -0.02)), Vector3(0.07, 0.06, 0.24), vc.darkened(0.1))
+			m.box(Transform3D(Basis(), Vector3(0, 1.27, 0.0)), Vector3(0.35, 0.33, 0.23), vc)
+			m.box(Transform3D(Basis(), Vector3(0, 1.17, -0.12)), Vector3(0.3, 0.1, 0.03), vc.darkened(0.2))
+			for sx in [-0.1, 0.1]:
+				m.box(Transform3D(Basis(), Vector3(sx, 1.45, 0.0)), Vector3(0.06, 0.05, 0.21), vc.darkened(0.1))
 			if lv >= 2:
-				m.box(Transform3D(Basis(), Vector3(0, 1.3, -0.15)), Vector3(0.32, 0.22, 0.03), vc.darkened(0.3))
+				m.box(Transform3D(Basis(), Vector3(0, 1.29, -0.125)), Vector3(0.27, 0.2, 0.025), vc.darkened(0.3))
 			if lv == 3:
 				for k in 3:
-					m.box(Transform3D(Basis(), Vector3(-0.11 + k * 0.11, 1.17, -0.17)), Vector3(0.08, 0.09, 0.04), vc.lightened(0.12))
+					m.box(Transform3D(Basis(), Vector3(-0.09 + k * 0.09, 1.16, -0.14)), Vector3(0.07, 0.08, 0.035), vc.lightened(0.12))
 		"helmet1", "helmet2", "helmet3":
 			var lv := int(kind.substr(6))
 			var hc: Color = [Color(0.48, 0.45, 0.33), OLIVE, Color(0.12, 0.12, 0.13)][lv - 1]
@@ -461,6 +464,7 @@ func reset_state(pos: Vector3) -> void:
 	helmet = 0
 	vest_lv = 0
 	regen = 0.0
+	car = -1
 	bag = 0
 	stun_t = 0.0
 	sprint = false
@@ -530,7 +534,9 @@ func _physics_process(delta: float) -> void:
 		if alive:
 			if is_bot and not (b_far and Engine.get_physics_frames() % 3 != pid % 3):
 				_bot(delta * (3.0 if b_far else 1.0))
-			if vault_t >= 0.0:
+			if car >= 0:
+				velocity = Vector3.ZERO
+			elif vault_t >= 0.0:
 				_vault_step(delta)
 			else:
 				_move(delta)
@@ -752,7 +758,7 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.tick(delta, false, 0.0, 0.0, [])
 		chute.visible = false
 		return
-	model.visible = air != 3 and not spect and alive
+	model.visible = air != 3 and not spect and alive and car < 0 and not (_remote_car and not is_local)
 	chute.visible = alive and air == 2
 	if not model.visible:
 		return

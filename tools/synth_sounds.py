@@ -124,3 +124,18 @@ pop = bp(noise(0.8), 150, 2500) * np.exp(-t * 5) * (0.6 + 0.4 * np.sin(2 * np.pi
 pop[:int(0.03 * R)] *= np.linspace(0, 1, int(0.03 * R))
 save("chute", pop + lp(noise(0.8), 200) * np.exp(-t * 9) * 2, 0.75)
 print("ok")
+
+
+# motor de carro (loop de 2 s): roncos em 38 Hz com harmônicos + chiado; o jogo muda o tom com a velocidade
+d = 2.0
+t = t_(d)
+f0 = 38.0
+eng = sum(np.sin(2 * np.pi * f0 * k * t + k) / k ** 0.8 for k in range(1, 9))
+eng *= 0.7 + 0.3 * np.sign(np.sin(2 * np.pi * f0 * 2 * t))
+eng += lp(noise(d), 900) * 0.6
+eng = np.tanh(eng * 1.2)
+save("engine", eng, 0.6)
+
+# porta do carro
+t = t_(0.3)
+save("door", lp(noise(0.3), 700) * np.exp(-t * 25) * 2 + np.sin(2 * np.pi * 140 * t) * np.exp(-t * 30), 0.7)

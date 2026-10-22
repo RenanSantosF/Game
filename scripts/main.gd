@@ -54,7 +54,16 @@ var zone_wall: MeshInstance3D
 var loop_player: AudioStreamPlayer
 var _was_firing := false
 var regen_t := 0.0
-var _snap_q: Array = []     # itens pra encostar no chão (raio pra baixo), alguns por quadro
+var vehicles: Array = []
+var _veh_send_t := 0.0
+var _runover_t := {}
+var _snap_q: Array = []
+var menu_stage: Node3D
+var menu_sol: Soldier
+var menu_aim: Node3D
+var menu_gun: Node3D
+var menu_rot_v := 0.0
+var menu_hold := 0.0     # itens pra encostar no chão (raio pra baixo), alguns por quadro
 var _heal_snd := 0
 var _pain_snd := 0
 var _shot_pending := false
@@ -168,54 +177,235 @@ func _ready() -> void:
 # ---------------- menu ----------------
 
 func _build_menu() -> void:
+	_build_menu_stage()
 	menu = CanvasLayer.new()
 	add_child(menu)
-	var bg := ColorRect.new()
-	bg.color = Color(0.1, 0.12, 0.1)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.add_child(bg)
-	var cc := CenterContainer.new()
-	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.add_child(cc)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-	cc.add_child(vb)
-	vb.add_child(_menu_label("CONFRONTO", 60))
-	var sub := _menu_label("BATTLE ROYALE · 50 JOGADORES · ÚLTIMO DE PÉ VENCE", 18)
-	sub.modulate = Color(0.85, 0.75, 0.5)
-	vb.add_child(sub)
+	# área livre pra girar o boneco arrastando
+	var drag := Control.new()
+	drag.set_anchors_preset(Control.PRESET_FULL_RECT)
+	drag.mouse_filter = Control.MOUSE_FILTER_PASS
+	drag.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseMotion and (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			menu_rot_v = ev.relative.x * 0.012
+			menu_hold = 1.5
+		elif ev is InputEventScreenDrag:
+			menu_rot_v = ev.relative.x * 0.012
+			menu_hold = 1.5)
+	menu.add_child(drag)
+	# faixa escura em cima e embaixo (cinema)
+	for top in [true, false]:
+		var band := ColorRect.new()
+		band.color = Color(0, 0, 0, 0.35)
+		band.set_anchors_preset(Control.PRESET_TOP_WIDE if top else Control.PRESET_BOTTOM_WIDE)
+		band.custom_minimum_size = Vector2(0, 74)
+		band.offset_bottom = 74 if top else 0
+		band.offset_top = 0 if top else -74
+		band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		menu.add_child(band)
+	# título
+	var title := _menu_label("CONFRONTO", 46)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.position = Vector2(26, 10)
+	title.add_theme_constant_override("outline_size", 10)
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	title.add_theme_color_override("font_color", Color(1, 0.86, 0.45))
+	menu.add_child(title)
+	var sub := _menu_label("BATTLE ROYALE · 50 JOGADORES · ÚLTIMO DE PÉ VENCE", 15)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	sub.position = Vector2(30, 70)
+	sub.modulate = Color(1, 1, 1, 0.8)
+	menu.add_child(sub)
+	# apelido embaixo do boneco
 	nick_edit = _menu_edit("Seu apelido")
-	vb.add_child(nick_edit)
+	nick_edit.custom_minimum_size = Vector2(300, 50)
+	nick_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nick_edit.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	nick_edit.position = Vector2(-310, -64)
+	nick_edit.anchor_left = 0.36
+	nick_edit.anchor_right = 0.36
+	nick_edit.offset_left = -150
+	nick_edit.offset_right = 150
+	nick_edit.offset_top = -64
+	nick_edit.offset_bottom = -14
+	menu.add_child(nick_edit)
 	nick_edit.text = Cfg.get_v("nick")
 	if nick_edit.text == "":
 		nick_edit.text = "Jogador%d" % rng.randi_range(100, 999)
-	vb.add_child(_menu_btn("JOGAR (TREINO CONTRA BOTS)", func(): start_host(false)))
-	vb.add_child(_menu_btn("CRIAR SALA NO WI-FI", func(): start_host(true)))
+	var hint := _menu_label("arraste pra girar", 13)
+	hint.modulate = Color(1, 1, 1, 0.55)
+	hint.anchor_left = 0.36
+	hint.anchor_right = 0.36
+	hint.anchor_top = 1.0
+	hint.anchor_bottom = 1.0
+	hint.offset_left = -100
+	hint.offset_right = 100
+	hint.offset_top = -92
+	hint.offset_bottom = -70
+	menu.add_child(hint)
+	# painel da direita
+	var panel := VBoxContainer.new()
+	panel.add_theme_constant_override("separation", 10)
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = -440
+	panel.offset_right = -26
+	panel.offset_top = 96
+	panel.offset_bottom = -20
+	panel.alignment = BoxContainer.ALIGNMENT_END
+	menu.add_child(panel)
+	var play := _menu_btn("JOGAR", func(): start_host(false))
+	play.custom_minimum_size = Vector2(414, 92)
+	play.add_theme_font_size_override("font_size", 38)
+	_style_btn(play, Color(0.95, 0.55, 0.1), Color(1, 0.7, 0.25))
+	var pl := _menu_label("treino contra 49 bots", 14)
+	pl.modulate = Color(1, 1, 1, 0.7)
+	panel.add_child(_menu_btn("CRIAR SALA NO WI-FI", func(): start_host(true)))
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
-	ip_edit = _menu_edit("IP do servidor (ex: 192.168.0.10)")
-	ip_edit.custom_minimum_size = Vector2(284, 56)
+	ip_edit = _menu_edit("IP do servidor")
+	ip_edit.custom_minimum_size = Vector2(270, 54)
 	ip_edit.text = Cfg.get_v("ip")
 	hb.add_child(ip_edit)
 	var jb := _menu_btn("ENTRAR", func(): start_join(ip_edit.text.strip_edges()))
-	jb.custom_minimum_size = Vector2(190, 56)
+	jb.custom_minimum_size = Vector2(136, 54)
 	hb.add_child(jb)
-	vb.add_child(hb)
-	vb.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
+	panel.add_child(hb)
+	panel.add_child(_menu_btn("CONFIGURAÇÕES", func(): open_settings()))
 	var rep := _last_log()
 	if rep != "" and _crashed_loading(rep) and int(Cfg.get_v("quality")) > 0:
 		Cfg.set_v("quality", 0)
 		flash_msg = "Da última vez o jogo fechou ao carregar o mapa. Mudei os gráficos para BAIXA."
 	if rep != "":
-		var rb := _menu_btn("RELATÓRIO DA ÚLTIMA VEZ (se fechou sozinho)", func(): _show_report(rep))
-		rb.add_theme_font_size_override("font_size", 16)
-		rb.custom_minimum_size = Vector2(482, 44)
-		vb.add_child(rb)
-	status_lbl = _menu_label(flash_msg, 18)
+		var rb := _menu_btn("RELATÓRIO (se fechou sozinho)", func(): _show_report(rep))
+		rb.add_theme_font_size_override("font_size", 15)
+		rb.custom_minimum_size = Vector2(414, 40)
+		panel.add_child(rb)
+	status_lbl = _menu_label(flash_msg, 16)
 	status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	status_lbl.custom_minimum_size = Vector2(440, 44)
-	vb.add_child(status_lbl)
+	status_lbl.custom_minimum_size = Vector2(414, 36)
+	panel.add_child(status_lbl)
+	panel.add_child(play)
+	panel.add_child(pl)
 	flash_msg = ""
+
+
+func _style_btn(b: Button, c: Color, hc: Color) -> void:
+	for st in ["normal", "hover", "pressed", "focus"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = hc if st == "pressed" else c
+		sb.set_corner_radius_all(10)
+		sb.set_border_width_all(2)
+		sb.border_color = Color(1, 1, 1, 0.5)
+		sb.shadow_color = Color(0, 0, 0, 0.35)
+		sb.shadow_size = 6
+		b.add_theme_stylebox_override(st, sb)
+	b.add_theme_color_override("font_color", Color(0.12, 0.08, 0.02))
+	b.add_theme_color_override("font_pressed_color", Color(0.12, 0.08, 0.02))
+	b.add_theme_color_override("font_hover_color", Color(0.12, 0.08, 0.02))
+
+
+# Cenário 3D do menu: pátio militar no fim de tarde, com o boneco segurando um fuzil
+func _build_menu_stage() -> void:
+	menu_stage = Node3D.new()
+	add_child(menu_stage)
+	var env := Environment.new()
+	var sky := Sky.new()
+	var sm := ProceduralSkyMaterial.new()
+	sm.sky_top_color = Color(0.32, 0.42, 0.62)
+	sm.sky_horizon_color = Color(0.95, 0.7, 0.45)
+	sm.ground_horizon_color = Color(0.6, 0.5, 0.4)
+	sm.ground_bottom_color = Color(0.3, 0.28, 0.25)
+	sky.sky_material = sm
+	env.sky = sky
+	env.background_mode = Environment.BG_SKY
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.62, 0.6, 0.65)
+	env.ambient_light_energy = 0.5
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.85, 0.7, 0.55)
+	env.fog_density = 0.012
+	var we := WorldEnvironment.new()
+	we.environment = env
+	menu_stage.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-24, -50, 0)
+	sun.light_color = Color(1.0, 0.85, 0.65)
+	sun.light_energy = 1.25
+	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 25.0
+	menu_stage.add_child(sun)
+	var m := MB.new()
+	m.tex(U.GRASS, 0.3)
+	m.quad(Vector3(-60, 0, -60), Vector3(60, 0, -60), Vector3(60, 0, 60), Vector3(-60, 0, 60), Color(0.9, 0.85, 0.7), Vector3.UP)
+	m.tex(U.CONCRETE, 0.4)
+	m.box(Transform3D(Basis(), Vector3(0, 0.05, 0)), Vector3(5.5, 0.1, 5.5), Color(0.85, 0.83, 0.8))
+	m.tex(U.WOOD, 0.6)
+	for c in [[Vector3(-2.3, 0.45, -1.8), 0.3], [Vector3(-2.4, 1.33, -1.75), 0.1], [Vector3(-1.4, 0.45, -2.2), -0.2]]:
+		m.box(Transform3D(Basis(Vector3.UP, c[1]), c[0]), Vector3(0.9, 0.9, 0.9), Color(0.85, 0.75, 0.6))
+	m.tex(U.FABRIC, 1.5)
+	for i in 5:
+		m.blob(Transform3D(Basis.from_scale(Vector3(0.38, 0.17, 0.22)), Vector3(1.4 + i * 0.5, 0.17, -2.0)), 6, 3, Color(0.7, 0.62, 0.45))
+		m.blob(Transform3D(Basis.from_scale(Vector3(0.38, 0.17, 0.22)), Vector3(1.65 + i * 0.5, 0.48, -2.0)), 6, 3, Color(0.66, 0.58, 0.42))
+	var ground := MeshInstance3D.new()
+	ground.mesh = m.commit()
+	ground.material_override = U.wmat()
+	menu_stage.add_child(ground)
+	var car := MeshInstance3D.new()
+	car.mesh = Build.car_mesh(1, Color(0.3, 0.33, 0.25), false)
+	car.material_override = U.wmat()
+	car.position = Vector3(4.2, 0, -4.5)
+	car.rotation.y = 0.9
+	menu_stage.add_child(car)
+	var tw := World.new()
+	var tm: Dictionary = tw._tree_meshes()
+	tw.free()
+	for t in [[Vector3(-7, 0, -9), "oak", 1.1], [Vector3(6, 0, -12), "pine", 1.0], [Vector3(-12, 0, -6), "tall", 1.0], [Vector3(10, 0, -7), "oak", 0.9], [Vector3(-3, 0, -15), "oak", 1.2]]:
+		var tr := MeshInstance3D.new()
+		tr.mesh = tm[t[1]]
+		tr.material_override = U.wmat()
+		tr.position = t[0]
+		tr.scale = Vector3.ONE * float(t[2])
+		menu_stage.add_child(tr)
+	menu_sol = Soldier.new()
+	menu_stage.add_child(menu_sol)
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(Cfg.get_v("nick"))
+	menu_sol.setup(Player.SKINS[r.randi() % Player.SKINS.size()], Player.SHIRTS[r.randi() % Player.SHIRTS.size()], Player.PANTS[r.randi() % Player.PANTS.size()], Player.BOOTS[0], Player.HAIRS[r.randi() % Player.HAIRS.size()])
+	var vest := MeshInstance3D.new()
+	vest.mesh = Player._gear("vest2")
+	vest.material_override = U.wmat()
+	menu_sol.attach("Spine2", vest)
+	menu_aim = Node3D.new()
+	menu_aim.position = Vector3(0, 1.36, 0)
+	menu_aim.rotation.x = -0.35
+	menu_sol.add_child(menu_aim)
+	menu_gun = Weapons.build_model("ak47")
+	menu_gun.position = Vector3(0.13, -0.02, -0.36)
+	menu_aim.add_child(menu_gun)
+	var cam := Camera3D.new()
+	cam.fov = 42.0
+	cam.position = Vector3(1.15, 1.25, 4.6)
+	menu_stage.add_child(cam)
+	cam.look_at(Vector3(1.0, 0.95, 0), Vector3.UP)
+	cam.current = true
+	menu_sol.rotation.y = 0.5
+
+
+func _menu_tick(delta: float) -> void:
+	if menu_stage == null or menu_sol == null:
+		return
+	menu_hold -= delta
+	if menu_hold <= 0.0:
+		menu_rot_v = lerpf(menu_rot_v, 0.25 * delta, minf(1.0, 2.0 * delta))
+	menu_sol.rotation.y += menu_rot_v
+	if menu_hold > 0.0:
+		menu_rot_v = lerpf(menu_rot_v, 0.0, minf(1.0, 8.0 * delta))
+	var grip := menu_aim.global_transform * (menu_gun.position + Vector3(0, -0.05, 0.03))
+	var fore := menu_aim.global_transform * (menu_gun.position + Vector3(-0.02, -0.03, -0.26))
+	menu_sol.tick(delta, false, 0.0, 0.0, [fore, grip])
 
 
 # fim do arquivo de log da execução anterior (pra descobrir onde o jogo fechou)
@@ -505,6 +695,156 @@ func _build_world() -> void:
 		items_avail.append(true)
 		if not dedicated:
 			_make_item_node(i)
+	_spawn_vehicles()
+
+
+func _spawn_vehicles() -> void:
+	for v in vehicles:
+		v.queue_free()
+	vehicles.clear()
+	for i in world.car_spots.size():
+		var sp: Array = world.car_spots[i]
+		var v := Vehicle.new()
+		v.name = "Car%d" % i
+		add_child(v)
+		v.setup(self, i, int(sp[2]), sp[0], float(sp[1]), sp[3], not dedicated)
+		vehicles.append(v)
+
+
+# ---------------- carros ----------------
+
+func near_vehicle(p: Player) -> int:
+	var best := -1
+	var bd := 4.0
+	for v: Vehicle in vehicles:
+		var d := v.global_position.distance_to(p.global_position)
+		if d < bd and (v.driver == 0 or v.driver == p.pid):
+			bd = d
+			best = v.idx
+	return best
+
+
+func _car_toggle(lp: Player) -> void:
+	if lp.car >= 0:
+		_to_server("req_car", [lp.car, false])
+	else:
+		var i := near_vehicle(lp)
+		if i >= 0:
+			_to_server("req_car", [i, true])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_car(i: int, enter: bool) -> void:
+	if not multiplayer.is_server() or i < 0 or i >= vehicles.size():
+		return
+	var id := _sender()
+	var p: Player = players.get(id)
+	var v: Vehicle = vehicles[i]
+	if p == null or not p.alive or p.air != 0:
+		return
+	if enter:
+		if v.driver != 0 or p.car >= 0 or v.global_position.distance_to(p.global_position) > 5.0:
+			return
+		_all("on_car", [i, id])
+	elif v.driver == id:
+		_all("on_car", [i, 0])
+
+
+@rpc("authority", "call_remote", "reliable")
+func on_car(i: int, id: int) -> void:
+	var v: Vehicle = vehicles[i]
+	var old := v.driver
+	v.driver = id
+	if id != 0:
+		var p: Player = players.get(id)
+		if p:
+			p.car = i
+			p.scoped = false
+			p.sprint = false
+			p.set_crouch(false)
+			if id == local_id:
+				sfx("door", -2.0)
+	elif old != 0:
+		var p: Player = players.get(old)
+		v.speed = 0.0
+		if p:
+			p.car = -1
+			# desce do lado do motorista
+			var out := v.global_position + Basis(Vector3.UP, v.yaw) * Vector3(-1.7, 0.4, 0)
+			p.position = out
+			p.target_pos = out
+			p.velocity = Vector3.ZERO
+			if old == local_id:
+				sfx("door", -2.0)
+
+
+# posição do carro: motorista -> servidor -> todos
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func veh_st(i: int, pos: Vector3, yw: float, spd: float) -> void:
+	if i < 0 or i >= vehicles.size():
+		return
+	var v: Vehicle = vehicles[i]
+	if multiplayer.is_server():
+		if v.driver != _sender():
+			return
+		for peer in multiplayer.get_peers():
+			if peer != _sender():
+				rpc_id(peer, "veh_st", i, pos, yw, spd)
+	if v.driver == local_id:
+		return
+	v.target_pos = pos
+	v.target_yaw = yw
+	v.speed = spd
+
+
+# atropelou: o servidor confere a distância
+@rpc("any_peer", "call_remote", "reliable")
+func req_runover(vid: int, spd: float) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_runover(_sender(), vid, spd)
+
+
+func _server_runover(driver: int, vid: int, spd: float) -> void:
+	var d: Player = players.get(driver)
+	var t: Player = players.get(vid)
+	if d == null or t == null or d.car < 0 or not t.alive or t.car >= 0:
+		return
+	var v: Vehicle = vehicles[d.car]
+	if v.global_position.distance_to(t.global_position) > 5.0:
+		return
+	_server_damage(vid, driver, clampf(absf(spd) * 7.0, 40.0, 220.0), false, "carro", true)
+
+
+func _drive_local(lp: Player, delta: float) -> void:
+	var v: Vehicle = vehicles[lp.car]
+	var mv := hud.move_vec
+	v.drive(delta, -mv.y, mv.x)
+	lp.position = v.seat_pos()
+	lp.velocity = Vector3.ZERO
+	lp.yaw = v.yaw
+	_veh_send_t += delta
+	if _veh_send_t >= 0.05:
+		_veh_send_t = 0.0
+		if multiplayer.is_server():
+			for peer in multiplayer.get_peers():
+				rpc_id(peer, "veh_st", v.idx, v.global_position, v.yaw, v.speed)
+		else:
+			rpc_id(1, "veh_st", v.idx, v.global_position, v.yaw, v.speed)
+	# atropelar quem está na frente
+	if absf(v.speed) > 6.0:
+		var fwd := Vector3(-sin(v.yaw), 0, -cos(v.yaw)) * signf(v.speed)
+		for id in players:
+			var o: Player = players[id]
+			if o == lp or not o.alive or o.car >= 0 or o.air != 0:
+				continue
+			var rel := o.global_position - v.global_position
+			if rel.length() < 3.4 and rel.normalized().dot(fwd) > 0.3 and Time.get_ticks_msec() - int(_runover_t.get(id, 0)) > 1200:
+				_runover_t[id] = Time.get_ticks_msec()
+				if multiplayer.is_server():
+					_server_runover(local_id, id, v.speed)
+				else:
+					rpc_id(1, "req_runover", id, v.speed)
 
 
 # item não fica flutuando: desce até o que tiver embaixo (chão, piso, mesa)
@@ -551,6 +891,10 @@ func _enter_game() -> void:
 	if menu:
 		menu.queue_free()
 		menu = null
+	if menu_stage:
+		menu_stage.queue_free()
+		menu_stage = null
+		menu_sol = null
 	hud = Hud.new()
 	hud.game = self
 	add_child(hud)
@@ -808,6 +1152,7 @@ func _make_loops() -> void:
 # ---------------- loop ----------------
 
 func _process(delta: float) -> void:
+	_menu_tick(delta)
 	run_t += delta / maxf(Engine.time_scale, 0.001)
 	if not shot_times.is_empty() and run_t >= shot_times[0]:
 		get_viewport().get_texture().get_image().save_png(shot_path.replace(".png", "_%d.png" % int(shot_times[0])))
@@ -822,6 +1167,15 @@ func _process(delta: float) -> void:
 			get_tree().quit()
 	if not in_game:
 		return
+	_snap_items()
+	# carros dos outros: seguem a posição recebida; o motorista vai junto no banco
+	for v: Vehicle in vehicles:
+		if v.driver != 0 and (v.driver != local_id or dedicated):
+			v.follow(delta)
+			var dp: Player = players.get(v.driver)
+			if dp:
+				dp.position = v.seat_pos()
+				dp.target_pos = dp.position
 	if not dedicated and _frames < 30:
 		_frames += 1
 		if _frames == 30:
@@ -946,7 +1300,12 @@ func _local_update(lp: Player, delta: float) -> void:
 	if playing:
 		cam_yaw_v -= look.x * sens
 		cam_pitch_v = clampf(cam_pitch_v - look.y * sens * inv_y, -1.3, 1.25)
-		var mv := hud.move_vec if not hud.bag_open else Vector2.ZERO
+		if lp.car >= 0:
+			# dirigindo: analógico acelera/freia e vira; sem atirar
+			lp.wish = Vector3.ZERO
+			_drive_local(lp, delta)
+			firing = false
+		var mv := hud.move_vec if not hud.bag_open and lp.car < 0 else Vector2.ZERO
 		# correr automático: anda sozinho pra frente da câmera; mexer no analógico desliga
 		if lp.sprint and mv.length() > 0.25:
 			lp.sprint = false
@@ -1000,6 +1359,9 @@ func _local_update(lp: Player, delta: float) -> void:
 			cp = minf(cp, -0.25)
 	elif t and (t.air == 1 or t.air == 2):
 		target_len = 7.0
+	elif t and t.car >= 0 and t.car < vehicles.size():
+		target_len = 7.5
+		base = vehicles[t.car].global_position + Vector3(0, 0.6, 0)
 	elif t != lp:
 		target_len = 4.5
 	if t == lp and lp.scoped:
@@ -1051,6 +1413,8 @@ func _local_update(lp: Player, delta: float) -> void:
 	hud.slots = sl
 	hud.sel = lp.sel + 1
 	hud.sprinting = lp.sprint
+	hud.car_near = lp.car >= 0 or (lp.air == 0 and lp.alive and phase != LOBBY and near_vehicle(lp) >= 0)
+	hud.driving = lp.car >= 0
 	hud.refresh_bag(lp)
 
 
@@ -1230,6 +1594,8 @@ func _on_action(act: String) -> void:
 				(l[0] as Button).pressed.emit()
 		"slot0", "slot1", "slot2", "slot3":
 			_select(lp, int(act.substr(4)) - 1)
+		"car":
+			_car_toggle(lp)
 		"sprint":
 			lp.sprint = not lp.sprint
 			if lp.sprint and lp.crouch:
@@ -2412,6 +2778,10 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: float) -> void:
 	var v: Player = players.get(vid)
 	var vpos := v.position if v else Vector3.ZERO
+	if v and v.car >= 0 and v.car < vehicles.size():
+		vehicles[v.car].driver = 0
+		vehicles[v.car].speed = 0.0
+		v.car = -1
 	if v:
 		v.die()
 	if info.has(aid) and aid != vid:
@@ -2426,6 +2796,8 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 	var col := Color(1, 0.85, 0.35) if mine else Color.WHITE
 	if wid == "queda":
 		hud.feed("%s caiu de muito alto" % vn, col)
+	elif wid == "carro":
+		hud.feed("%s atropelou %s" % [kn, vn], col)
 	elif wid == "zona" or aid == 0:
 		hud.feed("%s morreu na zona" % vn, col)
 	else:
@@ -2480,6 +2852,7 @@ func on_winner(id: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func match_reset() -> void:
 	phase = LOBBY
+	_spawn_vehicles()
 	z_stage = -1
 	z_r1 = ZONE_R0
 	z_c1 = Vector2.ZERO

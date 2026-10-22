@@ -55,6 +55,8 @@ var hp := 200.0
 var sprinting := false
 var can_scope := true
 var can_leave := true
+var car_near := false
+var driving := false
 var armor := 0.0
 var heals := [0, 0]        # bandagens, kits
 var overlay := false       # luneta (tela preta em volta)
@@ -677,6 +679,10 @@ func _buttons() -> Dictionary:
 		"fall":
 			b["chute"] = [fp[0], 70.0, "chute"]
 		"ground", "lobby":
+			if car_near:
+				b["car"] = [Vector2(s.x * 0.66, s.y * 0.68), 40.0, "car"]
+			if driving:
+				return b
 			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
 				if k == "scope" and not can_scope:
 					continue
@@ -1080,6 +1086,12 @@ func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
 			ci.draw_line(c + Vector2(-r, r * 0.35), c + Vector2(r, r * 0.35), col, w * 1.5)
 		"slot_bag":
 			glyph(ci, "bag", c, r, col)
+		"car":
+			# carrinho visto de lado
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.9, r * 0.25), c + Vector2(-r * 0.9, -r * 0.05), c + Vector2(-r * 0.45, -r * 0.1), c + Vector2(-r * 0.2, -r * 0.5), c + Vector2(r * 0.4, -r * 0.5), c + Vector2(r * 0.65, -r * 0.1), c + Vector2(r * 0.9, -r * 0.05), c + Vector2(r * 0.9, r * 0.25)]), col)
+			for x in [-0.5, 0.5]:
+				ci.draw_circle(c + Vector2(r * x, r * 0.3), r * 0.22, Color(0, 0, 0, 0.6))
+				ci.draw_arc(c + Vector2(r * x, r * 0.3), r * 0.22, 0, TAU, 12, col, w)
 		_:
 			ci.draw_circle(c, r * 0.3, col)
 
