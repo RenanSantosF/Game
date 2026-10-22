@@ -443,52 +443,38 @@ static func item_mesh(kind: String) -> Mesh:
 	return mesh
 
 
-# anel discreto em volta do item no chão, na cor da raridade (ajuda a achar sem poluir)
-static func _ring(kind: String) -> MeshInstance3D:
+# brilho do item no chão na cor da raridade (nível 2 azul, 3 roxo, armas dourado, resto branco fraco)
+static var _glow_mats := {}
+
+
+static func glow_mat(kind: String) -> ShaderMaterial:
 	var lv := level_of(kind)
 	var col: Color = RARITY[lv] if lv >= 2 else Color(1, 1, 1)
+	var st := 1.25 if lv >= 2 else 0.5
 	if is_gun(kind):
-		col = Color(1.0, 0.75, 0.3)
-	col.a = 0.42 if lv >= 2 else (0.28 if is_gun(kind) else 0.16)
-	var key := "ring_" + col.to_html()
-	if not _cache.has(key):
-		var m := ArrayMesh.new()
-		var v := PackedVector3Array()
-		var seg := 24
-		for i in seg:
-			var a0 := TAU * i / seg
-			var a1 := TAU * (i + 1) / seg
-			var r0 := 0.3
-			var r1 := 0.325
-			var p00 := Vector3(cos(a0) * r0, 0, sin(a0) * r0)
-			var p01 := Vector3(cos(a1) * r0, 0, sin(a1) * r0)
-			var p10 := Vector3(cos(a0) * r1, 0, sin(a0) * r1)
-			var p11 := Vector3(cos(a1) * r1, 0, sin(a1) * r1)
-			v.append_array([p00, p11, p10, p00, p01, p11])
-		var arr := []
-		arr.resize(Mesh.ARRAY_MAX)
-		arr[Mesh.ARRAY_VERTEX] = v
-		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		mat.albedo_color = col
-		m.surface_set_material(0, mat)
-		_cache[key] = m
-	var mi := MeshInstance3D.new()
-	mi.mesh = _cache[key]
-	mi.position.y = 0.02
-	mi.visibility_range_end = 30.0
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return mi
+		col = Color(1.0, 0.72, 0.25)
+		st = 1.0
+	var key := col.to_html() + str(st)
+	if not _glow_mats.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/item.gdshader")
+		m.set_shader_parameter("tex", U.atlas())
+		m.set_shader_parameter("glow", col)
+		m.set_shader_parameter("strength", st)
+		_glow_mats[key] = m
+	return _glow_mats[key]
+
+
+static func _apply_glow(n: Node, mat: ShaderMaterial) -> void:
+	if n is MeshInstance3D:
+		(n as MeshInstance3D).material_override = mat
+	for c in n.get_children():
+		_apply_glow(c, mat)
 
 
 # Modelo de item no chão (arma deitada, kit, colete, capacete, caixa)
-static func build_item(kind: String, ring := true) -> Node3D:
+static func build_item(kind: String, glow := true) -> Node3D:
 	var root := Node3D.new()
-	if kind != "box" and ring:
-		root.add_child(_ring(kind))
 	if is_gun(kind):
 		var g := build_model(kind)
 		g.rotation = Vector3(0, 0, PI / 2.0)
@@ -499,8 +485,12 @@ static func build_item(kind: String, ring := true) -> Node3D:
 			if c is MeshInstance3D:
 				c.visibility_range_end = 80.0
 				c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if glow:
+			_apply_glow(root, glow_mat(kind))
 		return root
 	var mi := U.mesh(root, item_mesh(kind))
 	mi.visibility_range_end = 120.0 if kind == "box" else 80.0
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if glow and kind != "box":
+		_apply_glow(root, glow_mat(kind))
 	return root

@@ -1326,7 +1326,7 @@ func _local_update(lp: Player, delta: float) -> void:
 			lp.bloom = maxf(lp.bloom - delta * 4.0, 0.0)
 		if _snap_t > 0.0:
 			_snap_t -= delta
-		if firing or _shot_pending or _snap_t > 0.0:
+		if firing or _shot_pending or _snap_t > 0.0 or (int(Cfg.get_v("aim_assist")) == 2 and lp.air == 0 and lp.car < 0):
 			_aim_assist(lp, w, delta)
 		if firing or _shot_pending:
 			_press_t += delta
@@ -1440,7 +1440,10 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 			if dist > minf(float(w["range"]), 120.0) or dist < 0.5:
 				continue
 			var ang := fwd.angle_to(d / dist)
-			var lim := clampf(atan2(3.4, dist), 0.045, 0.34)
+			var lim := clampf(atan2(5.5, dist), 0.08, 0.5)
+			# só olhando (sem atirar): puxa mais de leve e só quando a mira já está perto
+			if not hud.fire_held and not _shot_pending and _snap_t <= 0.0:
+				lim *= 0.45
 			if ang > lim or ang > best:
 				continue
 			var q := PhysicsRayQueryParameters3D.create(from, tp, 1)
@@ -1453,13 +1456,17 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 		return
 	# arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
 	var aimp := t.position + Vector3(0, t.head_y() + 0.12 if up_drag > 18.0 else t.head_y() - 0.4, 0)
+	# acompanha quem está correndo (mira um pouco à frente)
+	var tv: Vector3 = t.velocity if t.velocity.length() > 0.1 else (t.target_pos - t.position) * 10.0
+	aimp += Vector3(tv.x, 0, tv.z) * clampf(from.distance_to(aimp) / 300.0, 0.0, 0.15)
 	var dir := (aimp - from).normalized()
 	var wy := atan2(-dir.x, -dir.z)
 	var wp := asin(clampf(dir.y, -1.0, 1.0))
 	var firing: bool = hud.fire_held
-	var k := minf(1.0, (14.0 if up_drag > 18.0 else (11.0 if firing else 6.5)) * delta)
+	var passive := not firing and not _shot_pending and _snap_t <= 0.0
+	var k := minf(1.0, (22.0 if up_drag > 18.0 else (20.0 if firing else (5.0 if passive else 9.0))) * delta)
 	if _snap_t > 0.0:
-		k = minf(1.0, 30.0 * delta)
+		k = minf(1.0, 45.0 * delta)
 	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
