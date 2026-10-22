@@ -149,3 +149,24 @@ rumble = lp(noise(2.6), 260) * np.exp(-t * 1.6) * 3.5
 crk = bp(noise(2.6), 1500, 6000) * np.exp(-t * 9) * 1.2
 expl = np.tanh((boom + rumble + crk) * 1.6)
 save("explosion", reverb(expl, 1.4, 0.3), 0.95)
+
+
+# batida de carro: pancada grave + lata amassando + vidro tilintando
+t = t_(1.1)
+thump = np.sin(2 * np.pi * np.cumsum(55 + 70 * np.exp(-t * 25)) / R) * np.exp(-t * 14) * 1.8
+crunch = np.zeros_like(t)
+for k in range(7):
+    st = int(rng.uniform(0.0, 0.18) * R)
+    seg = bp(noise(0.25), 250, 3200) * np.exp(-np.arange(int(0.25 * R)) / R * rng.uniform(18, 35))
+    crunch[st:st + len(seg)] += seg[:len(crunch) - st] * rng.uniform(0.6, 1.3)
+ring = sum(np.sin(2 * np.pi * f * t + rng.uniform(0, 6)) * np.exp(-t * d) * a for f, d, a in [(420, 7, 0.35), (693, 9, 0.28), (1131, 11, 0.22), (1720, 14, 0.15)])
+glass = np.zeros_like(t)
+for k in range(9):
+    st = int(rng.uniform(0.04, 0.5) * R)
+    f = rng.uniform(3200, 6800)
+    n = int(0.12 * R)
+    g = np.sin(2 * np.pi * f * np.arange(n) / R) * np.exp(-np.arange(n) / R * 45) * rng.uniform(0.1, 0.3)
+    glass[st:st + n] += g[:len(glass) - st]
+crash = np.tanh((thump + crunch * 1.4 + ring + glass) * 1.5)
+save("crash", reverb(crash, 0.5, 0.18), 0.9)
+print("batida ok")

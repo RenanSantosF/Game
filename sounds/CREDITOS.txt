@@ -12,6 +12,10 @@ Gravações (domínio público, CC0), cortadas e tratadas por tools/prepare_soun
 
 Sintetizados por tools/synth_sounds.py (feitos pra este jogo):
 tiro com silenciador, acerto, tiro na cabeça, abate, vento em queda livre, vento no paraquedas,
-motor do avião, abertura do paraquedas.
+motor do avião, abertura do paraquedas, batida de carro.
+
+Música do lobby: composição própria, sintetizada por tools/compose_music.py.
+
+Modelos dos carros: "Car Kit" de Kenney (www.kenney.nl), CC0 — repintados pelo jogo.
 
 Demais sons de interface (troca de arma, recarga, coleta etc.): tools/gen_assets.py.

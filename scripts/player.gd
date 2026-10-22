@@ -117,6 +117,7 @@ func sim_local() -> bool:
 var regen := 0.0
 var _breath := 0.0
 var _crouch_k := 0.0
+var _heal_anim := 0.0
 var _wall_chk := 0.0
 var _wall_near := false
 var _gun_low := 0.0
@@ -212,7 +213,7 @@ func count(kind: String) -> int:
 
 
 func flags() -> int:
-	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8)
+	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8) | (int(reload_t > 0.0) << 9)
 
 
 func set_flags(f: int) -> void:
@@ -226,6 +227,11 @@ func set_flags(f: int) -> void:
 	_remote_car = ((f >> 7) & 1) == 1
 	if not sim_local():
 		stun_t = 0.3 if ((f >> 8) & 1) == 1 else 0.0
+		var rl := ((f >> 9) & 1) == 1
+		if rl and reload_t <= 0.0:
+			reload_t = float(cur_stat()["reload"])
+		elif not rl:
+			reload_t = 0.0
 
 
 var _remote_air := false
@@ -581,7 +587,7 @@ func _move(delta: float) -> void:
 		velocity.z = lerpf(velocity.z, dir.z * hs, k)
 		velocity.y = -FALL_SPEED if air == 1 else -CHUTE_SPEED
 		if dir.length() > 0.1:
-			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 4.0 * delta))
+			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 3.0 * delta))
 		move_and_slide()
 		# não deixa sair da área do mapa durante a queda
 		var lim := World.PLAY - 4.0
@@ -629,7 +635,7 @@ func _move(delta: float) -> void:
 			# vira pra onde anda sem estalar (girando o analógico rápido ele gira mais devagar)
 			var want := atan2(-dir.x, -dir.z)
 			var diff := angle_difference(yaw, want)
-			yaw += clampf(diff, -5.5 * delta, 5.5 * delta)
+			yaw += clampf(diff, -8.5 * delta, 8.5 * delta)
 	if not on_floor:
 		velocity.y -= GRAVITY * delta
 		_air_time += delta
@@ -833,7 +839,10 @@ func _animate(delta: float, sim: bool) -> void:
 		var gp2 := model.global_transform
 		sol.tick(delta, far, 0.0, 1.0, [gp2 * Vector3(-0.22, 0.75, -0.25), gp2 * Vector3(0.18, 0.05, -0.45)])
 		return
-	if vault_t >= 0.0 or airborne:
+	if airborne and sp > 2.5 and vault_t < 0.0:
+		# pulando correndo: as pernas continuam no passo
+		sol.play("Running", 0.15, 0.8)
+	elif vault_t >= 0.0 or airborne:
 		sol.play("Air", 0.12)
 	elif sp < 0.35:
 		sol.play("Idle", 0.25)
@@ -841,14 +850,41 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.play("Walking", 0.2, clampf(sp / (1.25 if not crouch else 0.9), 0.5, 3.0))
 	else:
 		sol.play("Running", 0.2, clampf(sp / 5.2, 0.8, 1.6))
-	if armed:
+	if heal_t > 0.0:
+		# curando: braço esquerdo na frente e a mão direita dá voltas nele (enrolando a faixa)
+		_heal_anim += delta
+		var mg := model.global_transform
+		var ctr := Vector3(-0.08, 1.18, -0.32)
+		var ang := _heal_anim * 9.0
+		hands = [mg * Vector3(-0.02, 1.2, -0.42), mg * (ctr + Vector3(cos(ang) * 0.07, sin(ang) * 0.07, 0.02))]
+		if gun:
+			gun.visible = false
+	elif armed:
+		if gun:
+			gun.visible = true
 		var gp := gun.position if gun else Vector3(0.12, -0.02, -0.36)
 		var t: String = Weapons.get_w(shown_wid)["type"]
 		var grip := aim.global_transform * (gp + Vector3(0, -0.05, 0.03))
 		var fore := aim.global_transform * (gp + Vector3(-0.02, -0.03, -0.26 if t != "pistol" else -0.02))
+		if reload_t > 0.0:
+			# recarga: inclina a arma, mão esquerda tira o pente, vai na cintura e volta
+			var tot := maxf(float(cur_stat()["reload"]), 0.3)
+			var k2 := clampf(1.0 - reload_t / tot, 0.0, 1.0)
+			aim.rotation.z = lerpf(aim.rotation.z, 0.45, minf(1.0, 10.0 * delta))
+			aim.rotation.x -= 0.25
+			var mag_p := aim.global_transform * (gp + Vector3(0, -0.13, -0.14 if t != "pistol" else 0.0))
+			var belt := model.global_transform * Vector3(-0.18, 1.0, -0.08)
+			if k2 < 0.3:
+				fore = fore.lerp(mag_p, k2 / 0.3)
+			elif k2 < 0.6:
+				fore = mag_p.lerp(belt, sin((k2 - 0.3) / 0.3 * PI * 0.5))
+			elif k2 < 0.9:
+				fore = belt.lerp(mag_p, (k2 - 0.6) / 0.3)
+			else:
+				fore = mag_p.lerp(fore, (k2 - 0.9) / 0.1)
+		else:
+			aim.rotation.z = lerpf(aim.rotation.z, 0.0, minf(1.0, 10.0 * delta))
 		hands = [fore, grip]
-	elif heal_t > 0.0:
-		hands = [model.global_transform * Vector3(-0.06, 1.12, -0.3), model.global_transform * Vector3(0.06, 1.12, -0.3)]
 	elif sol.cur == "Idle" and vault_t < 0.0:
 		# parado de mãos livres: braços soltos do lado do corpo, respirando
 		_breath += delta

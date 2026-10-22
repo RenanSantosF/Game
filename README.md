@@ -4,7 +4,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Como é a partida
 
-0. **Menu**: palco 3D com o seu boneco no meio (arraste pra girar), menu à esquerda e botão INICIAR. O carregamento mostra uma barra com as etapas.
+0. **Menu**: palco 3D com o seu boneco no meio (arraste pra girar), menu à esquerda, novidades que vão trocando e botão INICIAR. A cada vez sorteia um cenário (arena acesa, base de guerra ao pôr do sol ou acampamento à noite com fogueira) e toca a música do lobby (composta pro jogo, dá pra desligar). O carregamento mostra a arte do jogo com uma barra fina embaixo.
 1. **Sala de espera (lobby)**: um pátio cercado fora do mapa, com todo mundo junto (bots também). Ninguém leva dano; você recebe uma M4A1 e uma Glock só pra aquecer a mira (somem ao entrar no avião).
 2. **Avião**: o avião cruza o mapa por uma rota sorteada (sempre por cima do mapa). Toque em **SALTAR** quando quiser.
 3. **Queda**: queda livre guiada pelo joystick; o paraquedas abre sozinho perto do chão (ou toque em **PARAQUEDAS**).
@@ -19,8 +19,11 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Boneco animado (modelo feito no Meshy, reduzido pra celular): anda, corre, pula, agacha, morre; braços seguram a arma
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
 - Granada (botão aparece quando você tem), energético, mais kits e bandagens
-- Duas cidades com chão de cimento; casas de laje com escada por fora pra subir no teto
-- Carros: esportivo (rápido) e picape (mais lenta), com rodas girando que acompanham o terreno; explodem com tiro ou granada espalhados perto das cidades; botão do carro pra entrar e sair; dá pra atropelar
+- Cenário de começo de guerra: casas com rombo na parede, fuligem e telhado queimado, paredes encardidas, ruas com buracos, rachaduras e entulho, barricadas de madeira em X, caixotes militares com arma em cima
+- Cinco cidades bem no alto de morro, com rampa longa e suave cheia de cobertura (pedras, sacos de areia, barricadas, caixotes, carcaças) pra trocar tiro subindo e descendo
+- Duas cidades com chão de cimento; casas de laje com escada maciça por fora pra subir no teto
+- Carros (modelos do Car Kit da Kenney, CC0, repintados com poeira e vidro escuro onde dá pra ver o motorista): esportivo (rápido) e picape (mais lenta), rodas com suspensão que acompanham o terreno, barulho de batida (batida não tira vida, só tiro e granada); explodem; botão do carro pra entrar e sair; dá pra atropelar
+- Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
 - Cada arma com coice e dispersão própria: os primeiros tiros são precisos e, segurando o dedo, o tiro abre (a AK abre muito)
 - Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com rua asfaltada, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
@@ -121,6 +124,9 @@ scripts/weapons.gd     dados e modelos das armas, acessórios e itens
 scripts/mb.gd          monta várias peças numa malha só (desempenho)
 shaders/               material do mundo, terreno e água
 tools/gen_assets.py    gera textures/atlas.png e sounds/*.wav (python3 + numpy + pillow)
+tools/compose_music.py música do lobby (sounds/lobby_music.ogg, precisa do ffmpeg)
+tools/prepare_cars.gd  converte os carros CC0 de models_src/cars pra models/car*.res
+tools/render_keyart.gd arte da tela de carregamento (depois tools/keyart_post.py -> art/loading.jpg)
 .github/workflows/apk.yml   compilação automática do APK
 ```
 

@@ -63,6 +63,7 @@ func _ready() -> void:
 	_toggle(vb, "Mostrar FPS", "show_fps")
 	_section(vb, "JOGO")
 	_toggle(vb, "Mostrar sangue", "blood")
+	_toggle(vb, "Música do lobby", "music")
 	_section(vb, "SOM")
 	_slider(vb, "Volume", "volume", 0.0, 1.0)
 	vb.add_child(_button("VOLTAR", close))

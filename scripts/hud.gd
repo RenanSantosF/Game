@@ -838,6 +838,8 @@ func _down(i: int, p: Vector2) -> void:
 		touches[i] = "btn"
 		action.emit("map")
 	elif p.x < get_viewport().get_visible_rect().size.x * 0.42 and not joy_active:
+		# encostar no analógico já para a corrida automática
+		action.emit("joy_touch")
 		touches[i] = "joy"
 		joy_active = true
 		joy_origin = p

@@ -66,11 +66,20 @@ var menu_cubes: Array = []
 var menu_t := 0.0
 var load_bar: ProgressBar
 var load_lbl: Label
-const LOAD_TIPS := ["Dica: arraste pra cima enquanto atira pra subir a mira pra cabeça.",
-	"Dica: tocar na arma que está na mão recarrega.", "Dica: itens com brilho roxo são nível 3.",
-	"Dica: o carro protege, mas explode se levar muito tiro.", "Dica: agachado na moita fica difícil de te ver de longe.",
-	"Dica: a vida enche aos poucos depois do kit médico."]
 var menu_sol: Soldier
+var menu_music: AudioStreamPlayer
+var menu_theme := 0
+var menu_fire: OmniLight3D
+var menu_flame: MeshInstance3D
+var menu_news: Label
+const NEWS := [
+	"COMEÇO DE GUERRA: cidades no alto do morro, ruas destruídas e barricadas",
+	"Caixotes militares guardam armas em cima — fique de olho",
+	"Carros novos: bater faz barulho, mas só tiro causa dano",
+	"Toque no analógico para parar a corrida automática",
+	"Use as barricadas e sacos de areia da subida para se proteger",
+	"Kit médico: enrole o braço e espere a vida encher",
+]
 var menu_aim: Node3D
 var menu_gun: Node3D
 var menu_rot_v := 0.0
@@ -191,6 +200,7 @@ func _ready() -> void:
 # perfil em cima e o botão INICIAR grande embaixo à direita
 func _build_menu() -> void:
 	_build_menu_stage()
+	_menu_music_on()
 	menu = CanvasLayer.new()
 	add_child(menu)
 	var drag := Control.new()
@@ -272,6 +282,26 @@ func _build_menu() -> void:
 		flash_msg = "Da última vez o jogo fechou ao carregar o mapa. Mudei os gráficos para BAIXA."
 	if rep != "":
 		left.add_child(_menu_side("reset", "RELATÓRIO", func(): _show_report(rep)))
+	# novidades que vão trocando (canto inferior esquerdo)
+	var news := PanelContainer.new()
+	news.add_theme_stylebox_override("panel", _menu_box(Color(0.02, 0.05, 0.12, 0.7), 8))
+	news.anchor_top = 1.0
+	news.anchor_bottom = 1.0
+	news.offset_left = 14
+	news.offset_right = 470
+	news.offset_top = -150
+	news.offset_bottom = -84
+	menu.add_child(news)
+	var nv := VBoxContainer.new()
+	news.add_child(nv)
+	var nt := _menu_label("NOVIDADES · TEMPORADA COMEÇO DE GUERRA", 13)
+	nt.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	nt.add_theme_color_override("font_color", Color(1.0, 0.78, 0.25))
+	nv.add_child(nt)
+	menu_news = _menu_label(NEWS[0], 16)
+	menu_news.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	menu_news.autowrap_mode = TextServer.AUTOWRAP_WORD
+	nv.add_child(menu_news)
 	# caixinha de IP (abre pelo "ENTRAR NA SALA")
 	join_box = PanelContainer.new()
 	join_box.add_theme_stylebox_override("panel", _menu_box(Color(0.02, 0.05, 0.12, 0.85), 8))
@@ -417,41 +447,87 @@ func _style_btn(b: Button, c: Color, hc: Color) -> void:
 func _build_menu_stage() -> void:
 	menu_stage = Node3D.new()
 	add_child(menu_stage)
+	# cada vez que abre o menu, um cenário diferente
+	menu_theme = randi() % 3
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--menu-theme="):
+			menu_theme = int(a.get_slice("=", 1)) % 3
 	var env := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.18, 0.45, 0.9)
-	sm.sky_horizon_color = Color(0.7, 0.88, 1.0)
-	sm.ground_horizon_color = Color(0.55, 0.75, 0.95)
-	sm.ground_bottom_color = Color(0.2, 0.35, 0.6)
+	var sky_cols := [
+		[Color(0.18, 0.45, 0.9), Color(0.7, 0.88, 1.0), Color(0.55, 0.75, 0.95), Color(0.2, 0.35, 0.6)],    # arena
+		[Color(0.25, 0.3, 0.6), Color(1.0, 0.62, 0.35), Color(0.75, 0.5, 0.35), Color(0.25, 0.2, 0.2)],     # pôr do sol
+		[Color(0.02, 0.04, 0.12), Color(0.12, 0.18, 0.32), Color(0.08, 0.1, 0.16), Color(0.02, 0.03, 0.06)],  # noite
+	]
+	var sc: Array = sky_cols[menu_theme]
+	sm.sky_top_color = sc[0]
+	sm.sky_horizon_color = sc[1]
+	sm.ground_horizon_color = sc[2]
+	sm.ground_bottom_color = sc[3]
 	sm.sky_curve = 0.12
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.7, 0.8, 0.95)
-	env.ambient_light_energy = 0.75
+	env.ambient_light_color = [Color(0.7, 0.8, 0.95), Color(0.95, 0.75, 0.6), Color(0.35, 0.45, 0.7)][menu_theme]
+	env.ambient_light_energy = [0.75, 0.6, 0.55][menu_theme]
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	if menu_theme == 1:
+		env.fog_enabled = true
+		env.fog_light_color = Color(1.0, 0.7, 0.45)
+		env.fog_density = 0.008
 	var we := WorldEnvironment.new()
 	we.environment = env
 	menu_stage.add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-35, -25, 0)
-	sun.light_color = Color(1.0, 0.97, 0.9)
-	sun.light_energy = 1.1
+	sun.rotation_degrees = [Vector3(-35, -25, 0), Vector3(-12, -60, 0), Vector3(-50, 30, 0)][menu_theme]
+	sun.light_color = [Color(1.0, 0.97, 0.9), Color(1.0, 0.66, 0.38), Color(0.55, 0.65, 1.0)][menu_theme]
+	sun.light_energy = [1.1, 1.3, 0.45][menu_theme]
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 20.0
 	menu_stage.add_child(sun)
 	var rim := DirectionalLight3D.new()
 	rim.rotation_degrees = Vector3(-10, 160, 0)
-	rim.light_color = Color(0.5, 0.8, 1.0)
-	rim.light_energy = 0.8
+	rim.light_color = [Color(0.5, 0.8, 1.0), Color(0.6, 0.7, 1.0), Color(1.0, 0.55, 0.25)][menu_theme]
+	rim.light_energy = [0.8, 0.5, 1.1][menu_theme]
 	menu_stage.add_child(rim)
-	# piso de placas com bordas acesas
 	var m := MB.new()
-	m.tex(U.PLAIN, 1.0)
 	var r := RandomNumberGenerator.new()
-	r.seed = 7
+	r.seed = 7 + menu_theme
+	menu_cubes.clear()
+	menu_fire = null
+	menu_flame = null
+	match menu_theme:
+		0:
+			_menu_arena(m, r)
+		1:
+			_menu_base(m, r)
+		2:
+			_menu_night(m, r)
+	var floor_mi := MeshInstance3D.new()
+	floor_mi.mesh = m.commit()
+	floor_mi.material_override = U.wmat()
+	menu_stage.add_child(floor_mi)
+	# boneco
+	menu_sol = Soldier.new()
+	menu_stage.add_child(menu_sol)
+	var rr := RandomNumberGenerator.new()
+	rr.seed = hash(Cfg.get_v("nick"))
+	menu_sol.setup(Player.SKINS[rr.randi() % Player.SKINS.size()], Player.SHIRTS[rr.randi() % Player.SHIRTS.size()], Player.PANTS[rr.randi() % Player.PANTS.size()], Player.BOOTS[0], Player.HAIRS[rr.randi() % Player.HAIRS.size()])
+	var cam := Camera3D.new()
+	cam.fov = 38.0
+	cam.position = Vector3(0, 1.15, 5.2)
+	menu_stage.add_child(cam)
+	cam.look_at(Vector3(0, 0.95, 0), Vector3.UP)
+	cam.current = true
+	menu_sol.rotation.y = PI
+
+
+# cenário 1: arena de placas acesas com cubos flutuando
+func _menu_arena(m: MB, r: RandomNumberGenerator) -> void:
+	# piso de placas com bordas acesas
+	m.tex(U.PLAIN, 1.0)
 	for gx in range(-6, 7):
 		for gz in range(-8, 4):
 			var h := 0.0 if (absi(gx) <= 1 and gz >= -1 and gz <= 1) else r.randf_range(-0.25, 0.05)
@@ -462,12 +538,7 @@ func _build_menu_stage() -> void:
 	# disco de destaque embaixo do boneco
 	m.cyl(Transform3D(Basis(), Vector3(0, 0.0, 0)), 1.1, 1.1, 0.03, 32, Color(1.0, 0.75, 0.25))
 	m.cyl(Transform3D(Basis(), Vector3(0, 0.02, 0)), 0.95, 0.95, 0.03, 32, Color(0.1, 0.2, 0.35))
-	var floor_mi := MeshInstance3D.new()
-	floor_mi.mesh = m.commit()
-	floor_mi.material_override = U.wmat()
-	menu_stage.add_child(floor_mi)
 	# cubos flutuando (vidro colorido e caixas)
-	menu_cubes.clear()
 	var cubes := [[Vector3(-5.5, 2.8, -6), 2.6, Color(0.2, 0.9, 0.8, 0.35)], [Vector3(6.0, 3.6, -7), 3.2, Color(1.0, 0.45, 0.8, 0.35)],
 		[Vector3(-3.2, 1.2, -3.5), 0.7, Color(0.85, 0.65, 0.4, 1.0)], [Vector3(3.6, 0.9, -2.8), 0.5, Color(0.6, 0.4, 0.95, 0.8)],
 		[Vector3(-8.0, 5.5, -10), 3.8, Color(0.4, 0.75, 1.0, 0.3)], [Vector3(2.4, 4.2, -5), 0.6, Color(0.85, 0.65, 0.4, 1.0)]]
@@ -489,25 +560,113 @@ func _build_menu_stage() -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		menu_stage.add_child(mi)
 		menu_cubes.append([mi, cb[0], r.randf() * TAU])
-	# boneco
-	menu_sol = Soldier.new()
-	menu_stage.add_child(menu_sol)
-	var rr := RandomNumberGenerator.new()
-	rr.seed = hash(Cfg.get_v("nick"))
-	menu_sol.setup(Player.SKINS[rr.randi() % Player.SKINS.size()], Player.SHIRTS[rr.randi() % Player.SHIRTS.size()], Player.PANTS[rr.randi() % Player.PANTS.size()], Player.BOOTS[0], Player.HAIRS[rr.randi() % Player.HAIRS.size()])
-	var cam := Camera3D.new()
-	cam.fov = 38.0
-	cam.position = Vector3(0, 1.15, 5.2)
-	menu_stage.add_child(cam)
-	cam.look_at(Vector3(0, 0.95, 0), Vector3.UP)
-	cam.current = true
-	menu_sol.rotation.y = PI
+
+
+# cenário 2: começo de guerra ao pôr do sol (sacos de areia, barricada, caixote com arma, picape)
+func _menu_base(m: MB, r: RandomNumberGenerator) -> void:
+	m.tex(U.DIRT, 0.3)
+	m.box(Transform3D(Basis(), Vector3(0, -0.2, -6)), Vector3(40, 0.4, 30), Color(0.75, 0.62, 0.48))
+	m.tex(U.CONCRETE, 0.5)
+	m.cyl(Transform3D(Basis(), Vector3(0, 0.0, 0)), 1.1, 1.1, 0.04, 24, Color(0.62, 0.6, 0.56))
+	# sacos de areia em meia-lua atrás
+	m.tex(U.FABRIC, 1.5)
+	for k in 13:
+		var a := lerpf(-1.1, 1.1, k / 12.0)
+		for row in 3:
+			var p := Vector3(sin(a) * 3.4, 0.18 + row * 0.3, -cos(a) * 3.4 - 1.6)
+			m.blob(Transform3D(Basis(Vector3.UP, -a).scaled(Vector3(0.36, 0.17, 0.26)), p + Vector3(0.12 * (row % 2), 0, 0)), 6, 3, Color(0.72, 0.64, 0.48).darkened(r.randf() * 0.2))
+	# barricadas em X
+	for bx in [-4.6, 5.0]:
+		for i in 3:
+			var x: float = bx + (i - 1) * 0.7
+			for sg in [-1.0, 1.0]:
+				m.tex(U.WOOD, 0.6)
+				m.box(Transform3D(Basis(Vector3.RIGHT, sg * 0.72).rotated(Vector3.UP, 0.4 * signf(bx)), Vector3(x, 0.62, -4.5)), Vector3(0.13, 1.55, 0.13), Color(0.55, 0.42, 0.3))
+		m.box(Transform3D(Basis(Vector3.UP, 0.4 * signf(bx)), Vector3(bx, 0.62, -4.5)), Vector3(2.2, 0.14, 0.14), Color(0.45, 0.34, 0.24))
+	# caixotes militares
+	m.tex(U.WOOD, 0.7)
+	m.box(Transform3D(Basis(Vector3.UP, 0.3), Vector3(-2.1, 0.42, -1.4)), Vector3(1.6, 0.85, 1.1), Color(0.5, 0.56, 0.38))
+	m.box(Transform3D(Basis(Vector3.UP, -0.2), Vector3(2.3, 0.3, -1.6)), Vector3(1.0, 0.6, 0.9), Color(0.48, 0.54, 0.36))
+	m.box(Transform3D(Basis(Vector3.UP, -0.2), Vector3(2.4, 0.9, -1.65)), Vector3(0.8, 0.6, 0.8), Color(0.55, 0.6, 0.42))
+	var gun := Weapons.build_item("ak47", false)
+	gun.position = Vector3(-2.1, 0.88, -1.4)
+	gun.rotation = Vector3(0, 0.9, PI / 2.0)
+	menu_stage.add_child(gun)
+	var car := Vehicle.prop_node(1, Vehicle.car_material(Color(0.35, 0.38, 0.28), 0.6, 0.3))
+	car.position = Vector3(4.5, 0, -6.5)
+	car.rotation.y = 2.4
+	menu_stage.add_child(car)
+	# morros ao fundo
+	m.tex(U.GRASS, 0.2)
+	for k in 7:
+		m.blob(Transform3D(Basis.from_scale(Vector3(r.randf_range(8, 14), r.randf_range(2.5, 5.0), 6)), Vector3(-24 + k * 8.0, -0.5, -22 - r.randf() * 6.0)), 10, 5, Color(0.55, 0.5, 0.35))
+
+
+# cenário 3: acampamento à noite (fogueira, holofote, carcaça de carro)
+func _menu_night(m: MB, r: RandomNumberGenerator) -> void:
+	m.tex(U.GRASS, 0.3)
+	m.box(Transform3D(Basis(), Vector3(0, -0.2, -6)), Vector3(40, 0.4, 30), Color(0.35, 0.42, 0.3))
+	m.tex(U.CONCRETE, 0.5)
+	m.cyl(Transform3D(Basis(), Vector3(0, 0.0, 0)), 1.1, 1.1, 0.04, 24, Color(0.4, 0.4, 0.42))
+	# fogueira
+	var fp := Vector3(-2.3, 0, -2.2)
+	m.tex(U.ROCK, 0.6)
+	for k in 8:
+		var a := TAU * k / 8.0
+		m.blob(Transform3D(Basis.from_scale(Vector3(0.14, 0.09, 0.14)), fp + Vector3(cos(a) * 0.36, 0.04, sin(a) * 0.36)), 6, 3, Color(0.5, 0.5, 0.5))
+	m.tex(U.WOOD, 0.6)
+	for k in 4:
+		m.box(Transform3D(Basis(Vector3.UP, k * 0.8) * Basis(Vector3.RIGHT, 1.2), fp + Vector3(0, 0.1, 0)), Vector3(0.07, 0.55, 0.07), Color(0.3, 0.2, 0.12))
+	menu_fire = OmniLight3D.new()
+	menu_fire.light_color = Color(1.0, 0.55, 0.2)
+	menu_fire.light_energy = 2.2
+	menu_fire.omni_range = 7.0
+	menu_fire.position = fp + Vector3(0, 0.6, 0)
+	menu_stage.add_child(menu_fire)
+	var flame := MeshInstance3D.new()
+	var fm := SphereMesh.new()
+	fm.radius = 0.13
+	fm.height = 0.45
+	flame.mesh = fm
+	var fmat := StandardMaterial3D.new()
+	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fmat.albedo_color = Color(1.0, 0.6, 0.15, 0.85)
+	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	flame.material_override = fmat
+	flame.position = fp + Vector3(0, 0.25, 0)
+	menu_stage.add_child(flame)
+	menu_flame = flame
+	# holofote azul de trás
+	var spot := SpotLight3D.new()
+	spot.position = Vector3(3, 5, -4)
+	spot.light_color = Color(0.6, 0.75, 1.0)
+	spot.light_energy = 4.0
+	spot.spot_range = 14.0
+	spot.spot_angle = 22.0
+	menu_stage.add_child(spot)
+	spot.look_at(Vector3(0, 0.8, 0), Vector3.UP)
+	# carcaça de carro e caixotes
+	var car := Vehicle.prop_node(0, Vehicle.car_material(Color(0.3, 0.3, 0.32), 0.5, 0.9))
+	car.position = Vector3(4.2, 0, -6.0)
+	car.rotation = Vector3(0, -0.6, 0.05)
+	menu_stage.add_child(car)
+	m.tex(U.WOOD, 0.7)
+	m.box(Transform3D(Basis(Vector3.UP, 0.5), Vector3(2.2, 0.35, -2.2)), Vector3(0.7, 0.7, 0.7), Color(0.6, 0.5, 0.38))
+	# árvores escuras no fundo
+	m.tex(U.LEAVES, 0.5)
+	for k in 9:
+		var p := Vector3(-16 + k * 4.0 + r.randf(), 0, -16 - r.randf() * 5.0)
+		m.cyl(Transform3D(Basis(), p), 0.2, 0.15, 2.5, 6, Color(0.15, 0.12, 0.1))
+		m.blob(Transform3D(Basis.from_scale(Vector3(1.3, 1.8, 1.3)), p + Vector3(0, 3.2, 0)), 8, 5, Color(0.12, 0.2, 0.14), r, 0.2)
 
 
 func _menu_tick(delta: float) -> void:
 	if menu_stage == null or menu_sol == null:
 		return
 	menu_t += delta
+	# configurações podem ter ligado/desligado a música
+	if menu_music and int(menu_t * 2.0) != int((menu_t - delta) * 2.0):
+		_menu_music_on()
 	# solta o dedo: volta devagar a ficar de frente
 	menu_hold -= delta
 	if menu_hold <= 0.0:
@@ -519,6 +678,15 @@ func _menu_tick(delta: float) -> void:
 		var mi: MeshInstance3D = c[0]
 		mi.position = (c[1] as Vector3) + Vector3(0, sin(menu_t * 0.6 + float(c[2])) * 0.25, 0)
 		mi.rotation.y += delta * 0.15
+	if menu_fire:
+		menu_fire.light_energy = 2.0 + sin(menu_t * 17.0) * 0.25 + sin(menu_t * 7.3) * 0.35
+	if menu_flame:
+		menu_flame.scale = Vector3(1.0, 1.0 + sin(menu_t * 13.0) * 0.12 + sin(menu_t * 5.1) * 0.08, 1.0)
+	if menu_news:
+		var ni := int(menu_t / 5.0) % NEWS.size()
+		if menu_news.text != NEWS[ni]:
+			menu_news.text = NEWS[ni]
+		menu_news.modulate.a = clampf(minf(fmod(menu_t, 5.0), 5.0 - fmod(menu_t, 5.0)) * 3.0, 0.0, 1.0)
 	# parado à vontade: braços soltos, respirando
 	var br := sin(menu_t * 1.8) * 0.008
 	var g := menu_sol.global_transform
@@ -716,48 +884,43 @@ func _step(t: String) -> void:
 func _show_loading() -> void:
 	if menu == null:
 		return
+	# arte do jogo de fundo (tools/render_keyart.gd + tools/keyart_post.py), sem textos de etapa
 	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.06, 0.05, 1.0)
+	bg.color = Color(0.03, 0.03, 0.05, 1.0)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	menu.add_child(bg)
-	var t := _menu_label("CONFRONTO", 54)
+	var art := TextureRect.new()
+	art.texture = load("res://art/loading.jpg")
+	art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	menu.add_child(art)
+	var t := _menu_label("CONFRONTO", 46)
 	t.add_theme_color_override("font_color", Color(1, 0.86, 0.45))
-	t.set_anchors_preset(Control.PRESET_FULL_RECT)
-	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	t.offset_top = -120
-	t.offset_bottom = -120
+	t.add_theme_constant_override("outline_size", 10)
+	t.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.02, 0.85))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	t.position = Vector2(34, 22)
 	menu.add_child(t)
-	load_lbl = _menu_label("Preparando...", 18)
-	load_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
-	load_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	load_lbl.offset_top = 70
-	load_lbl.offset_bottom = 70
-	load_lbl.modulate = Color(1, 1, 1, 0.75)
-	menu.add_child(load_lbl)
+	load_lbl = null
 	load_bar = ProgressBar.new()
 	load_bar.show_percentage = false
-	load_bar.anchor_left = 0.25
-	load_bar.anchor_right = 0.75
-	load_bar.anchor_top = 0.5
-	load_bar.anchor_bottom = 0.5
-	load_bar.offset_top = 20
-	load_bar.offset_bottom = 34
+	load_bar.anchor_left = 0.32
+	load_bar.anchor_right = 0.68
+	load_bar.anchor_top = 1.0
+	load_bar.anchor_bottom = 1.0
+	load_bar.offset_top = -40
+	load_bar.offset_bottom = -32
 	var bgs := StyleBoxFlat.new()
-	bgs.bg_color = Color(1, 1, 1, 0.12)
-	bgs.set_corner_radius_all(7)
+	bgs.bg_color = Color(1, 1, 1, 0.16)
+	bgs.set_corner_radius_all(4)
 	var fgs := StyleBoxFlat.new()
-	fgs.bg_color = Color(1, 0.7, 0.2)
-	fgs.set_corner_radius_all(7)
+	fgs.bg_color = Color(1, 0.72, 0.22)
+	fgs.set_corner_radius_all(4)
 	load_bar.add_theme_stylebox_override("background", bgs)
 	load_bar.add_theme_stylebox_override("fill", fgs)
 	load_bar.max_value = 100.0
 	menu.add_child(load_bar)
-	var tip := _menu_label(LOAD_TIPS[randi() % LOAD_TIPS.size()], 15)
-	tip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	tip.offset_top = -60
-	tip.offset_bottom = -24
-	tip.modulate = Color(1, 1, 1, 0.55)
-	menu.add_child(tip)
 	await get_tree().process_frame
 	await get_tree().process_frame
 
@@ -1207,7 +1370,32 @@ func _make_item_node(i: int) -> void:
 	_snap_q.append(i)
 
 
+# música do lobby (tools/compose_music.py), em loop enquanto está no menu
+func _menu_music_on() -> void:
+	if menu_music == null:
+		menu_music = AudioStreamPlayer.new()
+		menu_music.stream = load("res://sounds/lobby_music.ogg")
+		add_child(menu_music)
+	var want := bool(Cfg.get_v("music")) and float(Cfg.get_v("volume")) > 0.0
+	menu_music.volume_db = linear_to_db(maxf(float(Cfg.get_v("volume")), 0.001)) - 7.0
+	if want and not menu_music.playing:
+		menu_music.play()
+	elif not want and menu_music.playing:
+		menu_music.stop()
+
+
+func _menu_music_off() -> void:
+	if menu_music == null:
+		return
+	var mm := menu_music
+	menu_music = null
+	var tw := create_tween()
+	tw.tween_property(mm, "volume_db", -40.0, 1.2)
+	tw.tween_callback(mm.queue_free)
+
+
 func _enter_game() -> void:
+	_menu_music_off()
 	if menu:
 		menu.queue_free()
 		menu = null
@@ -1215,6 +1403,9 @@ func _enter_game() -> void:
 		menu_stage.queue_free()
 		menu_stage = null
 		menu_sol = null
+		menu_fire = null
+		menu_flame = null
+		menu_news = null
 	hud = Hud.new()
 	hud.game = self
 	add_child(hud)
@@ -1457,9 +1648,8 @@ func on_step(p: Player, quiet: bool) -> void:
 	if dedicated or sfxn == null:
 		return
 	# piso de casa/asfalto = duro; estrada de terra = cascalho; resto = grama/terra
-	var hard := p.position.y - world.height(p.position.x, p.position.z) > 0.04 or world.hw_dist(p.position.x, p.position.z) < 4.5 or world.in_lobby(p.position)
-	var gravel := not hard and world.road_dist(p.position.x, p.position.z) < 3.0
-	var n := ("step_hard%d" if hard else ("step_gravel%d" if gravel else "step_grass%d")) % randi_range(0, 5)
+	# um som de passo só, em qualquer chão: fica fácil reconhecer alguém chegando
+	var n := "step_hard%d" % randi_range(0, 5)
 	if p.is_local:
 		sfxn.play(n, -14.0 if quiet else -9.0)
 		return
@@ -1942,6 +2132,8 @@ func _on_action(act: String) -> void:
 				(l[-1] as Button).pressed.emit()
 		"slot0", "slot1", "slot2", "slot3":
 			_select(lp, int(act.substr(4)) - 1)
+		"joy_touch":
+			lp.sprint = false
 		"car":
 			_car_toggle(lp)
 		"grenade":

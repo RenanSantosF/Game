@@ -40,10 +40,11 @@ const MOUNTS := [
 	[Vector2(305, -170), 42.0, 75.0], [Vector2(-335, 135), 26.0, 85.0], [Vector2(235, -315), 34.0, 70.0],
 	[Vector2(-60, -340), 28.0, 60.0], [Vector2(-330, -330), 30.0, 70.0], [Vector2(330, 340), 22.0, 60.0],
 	[Vector2(110, 60), 14.0, 55.0], [Vector2(-160, -70), 18.0, 55.0],
-	# algumas cidades em cima de morro
-	[Vector2(-250, -245), 17.0, 75.0], [Vector2(-205, 205), 15.0, 70.0], [Vector2(250, 205), 16.0, 70.0],
-	[Vector2(-125, -285), 12.0, 65.0], [Vector2(295, 300), 13.0, 60.0],
+	# cidades bem no alto de morro, com rampa longa e suave (troca de tiro subindo/descendo)
+	[Vector2(-250, -245), 34.0, 100.0], [Vector2(-205, 205), 30.0, 85.0], [Vector2(250, 205), 32.0, 95.0],
+	[Vector2(-125, -285), 24.0, 80.0], [Vector2(295, 300), 30.0, 85.0],
 ]
+const HILL_TOWNS := ["Vila Ferrugem", "Colônia Caracol", "Rancho Poeira", "Arraial do Sapo", "Vila Cachorro Magro"]
 # rodovias asfaltadas que cruzam o mapa (passam do lado das cidades e do posto)
 const HIGHWAYS := [
 	[Vector2(-380, -60), Vector2(-250, -58), Vector2(-120, -82), Vector2(0, -86), Vector2(120, -108), Vector2(230, -128), Vector2(380, -120)],
@@ -120,7 +121,7 @@ func _step_relief() -> void:
 	noise3.seed = SEED + 13
 	noise3.frequency = 0.09
 	for t in LOCS:
-		towns.append({"name": t[0], "pos": t[1], "kind": t[2], "r": t[3], "h": 0.0})
+		towns.append({"name": t[0], "pos": t[1], "kind": t[2], "r": t[3], "h": 0.0, "blend": 95.0 if t[0] in HILL_TOWNS else 40.0})
 	for t in towns:
 		t["h"] = _base(t["pos"].x, t["pos"].y)
 
@@ -149,14 +150,22 @@ func _base(x: float, z: float) -> float:
 # relevo com as áreas planas das localidades
 func _pre(x: float, z: float) -> float:
 	var h := _base(x, z)
+	# áreas planas das localidades; onde duas rampas se cruzam, a cidade mais perto manda
+	var ws := []
 	for t in towns:
 		var d: float = Vector2(x, z).distance_to(t["pos"])
 		var r: float = t["r"]
-		if d < r + 40.0:
+		# cidade no alto: rampa longa e suave (dá pra trocar tiro subindo/descendo)
+		var bw: float = t.get("blend", 40.0)
+		if d < r + bw:
 			var th: float = t["h"]
 			if t["kind"] == "pedreira" and d < r * 0.8:
 				th -= 6.0 * (1.0 - smoothstep(r * 0.55, r * 0.8, d))
-			h = lerpf(th, h, smoothstep(r, r + 40.0, d))
+			ws.append([1.0 - smoothstep(r, r + bw, d), th])
+	if ws.size() > 1:
+		ws.sort_custom(func(a, b): return a[0] < b[0])
+	for e in ws:
+		h = lerpf(h, e[1], e[0])
 	return h
 
 
@@ -625,6 +634,14 @@ func loot_kind(rng: RandomNumberGenerator, gun: bool) -> String:
 # ---------------- localidades ----------------
 
 func _house_spec(rng: RandomNumberGenerator, big := false) -> Dictionary:
+	var sp := _house_spec0(rng, big)
+	# cenário de começo de guerra: parte das casas está danificada
+	if rng.randf() < 0.3 and not sp.get("ext_stairs", false):
+		sp["damaged"] = true
+	return sp
+
+
+func _house_spec0(rng: RandomNumberGenerator, big := false) -> Dictionary:
 	var r := rng.randf()
 	var styles := ["plaster", "plaster", "plaster", "brick", "wood"]
 	var st: String = styles[rng.randi() % styles.size()]
@@ -678,7 +695,65 @@ func _build_loc(ti: int) -> void:
 			_estacao(c, y, r)
 		"porto":
 			_porto(c, y, r)
+	if t["kind"] in ["vila", "igreja", "bairro", "centro", "esparso"]:
+		_war_props(c, y, r)
+	if t["name"] in HILL_TOWNS:
+		_slope_cover(c, y, r)
 	b.finish()
+
+
+# começo de guerra: barricadas de madeira, caixotes com arma e sacos de areia pela cidade
+func _war_props(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var placed := 0
+	var tries := 0
+	while placed < 4 + int(r > 45.0) * 2 and tries < 40:
+		tries += 1
+		var a := rng.randf() * TAU
+		var p := c + Vector2(cos(a), sin(a)) * r * rng.randf_range(0.15, 0.95)
+		if not is_free(p, 2.2):
+			continue
+		placed += 1
+		var k := rng.randf()
+		if k < 0.45:
+			b.barricade(_p3(p, y), _face(p, c) + PI / 2.0 + rng.randf_range(-0.3, 0.3))
+		elif k < 0.75:
+			b.gun_crate(_p3(p, y), rng.randf() * TAU)
+		else:
+			b.sandbags(_p3(p, y), _face(p, c) + PI / 2.0, rng.randf_range(2.5, 4.0))
+	# itens soltos na rua
+	for k in 3 + int(r / 15.0):
+		var p := c + Vector2(rng.randf_range(-r * 0.8, r * 0.8), rng.randf_range(-r * 0.8, r * 0.8))
+		if is_free(p, 0.8):
+			add_item(_p3(p, y + 0.07), loot_kind(rng, rng.randf() < 0.3), null, null)
+
+
+# coberturas na rampa das cidades altas: pedras, sacos de areia, barricadas, caixotes e carcaças
+func _slope_cover(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var placed := 0
+	var tries := 0
+	while placed < 38 and tries < 380:
+		tries += 1
+		var a := rng.randf() * TAU
+		var p := c + Vector2(cos(a), sin(a)) * rng.randf_range(r + 4.0, r + 80.0)
+		if not is_free(p, 2.5) or road_dist(p.x, p.y) < 4.0 or hw_dist(p.x, p.y) < 8.0 or height(p.x, p.y) < WATER_Y + 1.0:
+			continue
+		placed += 1
+		var yaw := _face(p, c) + PI / 2.0 + rng.randf_range(-0.4, 0.4)
+		var k := rng.randf()
+		if k < 0.3:
+			_rock(p, rng.randf_range(2.2, 3.8), rng)
+		elif k < 0.5:
+			b.sandbags(_p3(p, low_h(p, 1.8) - 0.05), yaw, rng.randf_range(2.5, 4.0))
+		elif k < 0.68:
+			b.barricade(_p3(p, low_h(p, 1.6) - 0.05), yaw)
+		elif k < 0.8:
+			b.crates(_p3(p, low_h(p, 1.4) - 0.05), yaw)
+		elif k < 0.9:
+			b.car(_p3(p, low_h(p, 2.0)), yaw)
+		else:
+			b.gun_crate(_p3(p, low_h(p, 1.0) - 0.05), yaw)
 
 
 # menor altura do chão sob um objeto (não fica flutuando em barranco)
@@ -774,11 +849,31 @@ func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
 			var wy := ty if town_factor(w.x, w.y) > 0.9 else maxf(ty, height(w.x, w.y))
 			var wd := wy + 0.12 - gy + 0.3
 			b.mb.tex(U.CONCRETE, 0.4)
-			b.mb.box(Transform3D(bs, Vector3(w.x, wy + 0.12 - wd / 2.0, w.y)), Vector3(seg + 0.05, wd, 1.6), Color(0.95, 0.95, 0.92))
-		# faixa
-		if i % 2 == 0:
+			b.mb.box(Transform3D(bs, Vector3(w.x, wy + 0.12 - wd / 2.0, w.y)), Vector3(seg + 0.05, wd, 1.6), Color(0.8, 0.78, 0.73))
+		# faixa (apagada em alguns trechos)
+		if i % 2 == 0 and b.rng.randf() < 0.75:
 			b.mb.tex(U.PLAIN, 1.0)
-			b.mb.box(Transform3D(bs, Vector3(q.x, top + 0.005, q.y)), Vector3(2.0, 0.01, 0.14), Color(0.9, 0.85, 0.5))
+			b.mb.box(Transform3D(bs, Vector3(q.x, top + 0.005, q.y)), Vector3(2.0, 0.01, 0.14), Color(0.78, 0.74, 0.5))
+		# rua destruída: buracos, rachaduras, manchas de queimado e entulho
+		var rr := b.vrng.randf()
+		if rr < 0.22:
+			var o := side * b.vrng.randf_range(-width * 0.3, width * 0.3) + d.normalized() * b.vrng.randf_range(-1.2, 1.2)
+			var hp := q + o
+			var hs := b.vrng.randf_range(0.9, 1.8)
+			b.mb.tex(U.DIRT, 0.5)
+			b.mb.cyl(Transform3D(Basis(Vector3.UP, b.vrng.randf() * TAU), Vector3(hp.x, top - 0.005, hp.y)), hs, hs * 0.9, 0.02, 9, Color(0.45, 0.38, 0.3), true, false, null, 0.25, b.vrng)
+			b.mb.tex(U.PLAIN, 1.0)
+			b.mb.cyl(Transform3D(Basis(), Vector3(hp.x, top + 0.008, hp.y)), hs * 0.6, hs * 0.55, 0.01, 8, Color(0.08, 0.07, 0.06), true, false, null, 0.3, b.vrng)
+			b.rubble(Vector3(hp.x, top, hp.y), hs * 1.1, 5, Color(0.42, 0.42, 0.42))
+		elif rr < 0.4:
+			b.mb.tex(U.PLAIN, 1.0)
+			for ci in 3:
+				var cp := q + side * b.vrng.randf_range(-width * 0.4, width * 0.4) + d.normalized() * b.vrng.randf_range(-1.5, 1.5)
+				b.mb.box(Transform3D(Basis(Vector3.UP, b.vrng.randf() * TAU), Vector3(cp.x, top + 0.006, cp.y)), Vector3(b.vrng.randf_range(0.6, 1.6), 0.01, 0.05), Color(0.1, 0.1, 0.1))
+		elif rr < 0.5:
+			var bp := q + side * b.vrng.randf_range(-width * 0.3, width * 0.3)
+			b.mb.tex(U.PLAIN, 1.0)
+			b.mb.cyl(Transform3D(Basis(), Vector3(bp.x, top + 0.007, bp.y)), b.vrng.randf_range(1.0, 2.0), 0.9, 0.01, 10, Color(0.13, 0.12, 0.11), true, false, null, 0.35, b.vrng)
 
 
 # chão de cimento em toda a cidade (plano)
@@ -1140,7 +1235,7 @@ func _build_extras() -> void:
 	# coberturas soltas
 	tries = 0
 	var covers := 0
-	while covers < 70 and tries < 1500:
+	while covers < 90 and tries < 1800:
 		tries += 1
 		var p := Vector2(rng.randf_range(-lim, lim), rng.randf_range(-lim, lim))
 		if _near_town(p, 6.0) or not is_free(p, 3.0) or road_dist(p.x, p.y) < 3.0 or hw_dist(p.x, p.y) < 7.0:
@@ -1437,7 +1532,7 @@ func _build_nature() -> void:
 		sets["rock"].append(Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(sc), gp))
 		_rock_col(body, sc, r, gp)
 		claim(p, s * 0.55)
-		if rng.randf() < 0.18:
+		if rng.randf() < 0.3:
 			var off := Vector3(cos(r), 0, sin(r)) * (maxf(sc.x, sc.z) * 0.6 + 0.8)
 			var ip := Vector3(x + off.x, 0, z + off.z)
 			ip.y = height(ip.x, ip.z) + 0.07

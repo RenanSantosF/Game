@@ -23,6 +23,7 @@ static var v := {
 	"tex_detail": true,  # textura do chão com mais detalhe
 	"view": 1,           # distância de visão: 0 perto, 1 média, 2 longe
 	"grass": true,       # tufos de grama
+	"music": true,       # música do lobby
 	"ver": 2,            # versão das configurações (migra padrões novos)
 }
 static var _loaded := false

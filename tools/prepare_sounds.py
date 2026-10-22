@@ -93,10 +93,12 @@ def punch(x, tail, boom):
     y = np.concatenate([x, np.zeros(ir_len)])
     rev = np.convolve(y, ir)[:len(y)]
     rev /= np.max(np.abs(rev)) + 1e-9
-    y = y / (np.max(np.abs(y)) + 1e-9) + rev * 0.28
+    y = y / (np.max(np.abs(y)) + 1e-9) + rev * 0.34
     tt = np.arange(len(y)) / RATE
-    y += np.sin(2 * np.pi * 55 * tt) * np.exp(-tt * 14) * boom
-    y = np.tanh(y * 1.8)
+    # estalo do disparo + grave forte = tiro mais agressivo
+    y += np.sin(2 * np.pi * 55 * tt) * np.exp(-tt * 12) * (boom * 1.4 + 0.25)
+    y += np.sin(2 * np.pi * 110 * tt) * np.exp(-tt * 30) * 0.35
+    y = np.tanh(y * 2.7)
     m = len(y)
     f = int(m * 0.35)
     y[m - f:] *= np.linspace(1, 0, f) ** 2

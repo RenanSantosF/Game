@@ -15,6 +15,7 @@ const FRAME := Color(0.5, 0.36, 0.25)
 var w: World
 var mb: MB
 var rng := RandomNumberGenerator.new()
+var vrng := RandomNumberGenerator.new()    # sorteios só visuais (o servidor sem tela não usa, então não pode mexer no rng)
 var headless := false
 static var _car_cache := {}
 
@@ -27,6 +28,7 @@ func _init(world: World) -> void:
 func begin(seed_v: int) -> void:
 	mb = MB.new()
 	rng.seed = seed_v
+	vrng.seed = seed_v + 7
 
 
 func finish(vis := 700.0) -> void:
@@ -132,7 +134,7 @@ func _door(c: float, wd := 1.4) -> Array:
 func _style_tex(style: String) -> Array:
 	match style:
 		"brick":
-			return [U.BRICK, 0.5, Color(1, 1, 1).darkened(rng.randf() * 0.15)]
+			return [U.BRICK, 0.5, Color(0.86, 0.8, 0.74).darkened(rng.randf() * 0.22)]
 		"wood":
 			return [U.WOOD, 0.4, Color(1, 1, 1).darkened(rng.randf() * 0.25)]
 		"metal":
@@ -178,6 +180,13 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var lay: int = st[0]
 	var uvs: float = st[1]
 	var col: Color = st[2]
+	# casa danificada pela guerra: parede rombuda, fuligem, entulho e às vezes sem telhado
+	var dmg: bool = spec.get("damaged", false)
+	if dmg:
+		col = col.darkened(0.12)
+		if roof == "tile" and floors == 1 and rng.randf() < 0.55:
+			roof = "burnt"
+	var breach_c := rng.randf_range(-dp * 0.2, dp * 0.2)
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), maxf(wd, dp) * 0.75)
 	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": maxf(wd, dp) * 0.5, "yaw": yaw, "w": wd, "d": dp})
@@ -205,10 +214,16 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 		if wd > 9.5:
 			back.append(_win(-wd * 0.32 if back[0][0] > 0.0 else wd * 0.32))
 		var lh := fh if f < floors - 1 or roof != "flat" else fh + 0.9
+		if roof == "burnt":
+			lh = fh - rng.randf_range(0.0, 0.5)
 		wall(root, true, -dp / 2.0, wd, lh, y0, front, col, lay, uvs)
 		wall(root, true, dp / 2.0, wd, lh, y0, back, col, lay, uvs)
 		var side := [_win(0.0)] if dp < 9.0 else [_win(-dp * 0.25), _win(dp * 0.25)]
-		wall(root, false, -wd / 2.0, dp, lh, y0, side, col, lay, uvs)
+		if dmg and f == 0:
+			# rombo de explosão na parede do lado (sem batente)
+			wall(root, false, -wd / 2.0, dp, lh, y0, [[breach_c, 2.0, 0.3, 2.5]], col, lay, uvs, false)
+		else:
+			wall(root, false, -wd / 2.0, dp, lh, y0, side, col, lay, uvs)
 		# do lado da escada não tem janela no térreo
 		var rh := [] if (floors > 1 and f == 0) else [_win(-dp * 0.2)]
 		if spec.get("ext_stairs", false) and f == floors - 1 and roof == "flat":
@@ -230,6 +245,13 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 			_gable(root, wd, dp, top, 1.4 if wd < 11.0 else 1.8, U.ROOF, Color(1, 1, 1).darkened(rng.randf() * 0.2), col, lay)
 		"metal":
 			_gable(root, wd, dp, top, 0.9, U.METAL, Color(0.9, 0.92, 0.95), col, lay)
+		"burnt":
+			# telhado queimado: só sobraram umas vigas pretas
+			for i in 4:
+				if rng.randf() < 0.3:
+					continue
+				var bx := -wd / 2.0 + (i + 0.5) * wd / 4.0
+				piece(root, Vector3(0.16, 0.2, dp + 0.3), Vector3(bx, top - 0.35, 0), Color(0.16, 0.13, 0.11), U.WOOD, 0.6, false, Basis(Vector3.FORWARD, rng.randf_range(-0.08, 0.08)))
 		_:
 			piece(root, Vector3(wd + 0.1, 0.2, dp + 0.1), Vector3(0, top + 0.1, 0), Color(0.85, 0.85, 0.85), U.CONCRETE, 0.3)
 			if spec.get("ext_stairs", false):
@@ -241,7 +263,7 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 		piece(root, Vector3(bw, 1.0, 0.1), Vector3(bal_c, fh + 0.5, -dp / 2.0 - bd + 0.05), col, lay, uvs)
 		for sx in [-1.0, 1.0]:
 			piece(root, Vector3(0.1, 1.0, bd), Vector3(bal_c + sx * (bw / 2.0 - 0.05), fh + 0.5, -dp / 2.0 - bd / 2.0), col, lay, uvs)
-			vis(root, Vector3(0.16, fh - 0.18, 0.16), Vector3(bal_c + sx * (bw / 2.0 - 0.12), (fh - 0.18) / 2.0, -dp / 2.0 - bd + 0.12), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.4)
+			piece(root, Vector3(0.16, fh - 0.18, 0.16), Vector3(bal_c + sx * (bw / 2.0 - 0.12), (fh - 0.18) / 2.0, -dp / 2.0 - bd + 0.12), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.4)
 	if spec.get("porch", false):
 		var pw := minf(wd * 0.7, 5.0)
 		var pd := 2.2
@@ -250,6 +272,15 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 		piece(root, Vector3(pw, 0.12, pd), Vector3(pc, 0.06, -dp / 2.0 - pd / 2.0), Color(0.9, 0.85, 0.8), U.WOOD, 0.4)
 		for sx in [-1.0, 1.0]:
 			piece(root, Vector3(0.14, 2.7, 0.14), Vector3(pc + sx * (pw / 2.0 - 0.1), 1.35, -dp / 2.0 - pd + 0.1), Color(0.9, 0.85, 0.8), U.WOOD, 0.5)
+	if dmg and not headless:
+		# fuligem em cima das janelas/porta da frente e entulho no rombo
+		for hc in [door_c, -wd * 0.25, wd * 0.25]:
+			if vrng.randf() < 0.6:
+				vis(root, Vector3(vrng.randf_range(1.2, 2.2), vrng.randf_range(0.6, 1.2), 0.02), Vector3(hc, 2.6, -dp / 2.0 - WALL_T / 2.0 - 0.012), Color(0.12, 0.11, 0.1), U.PLAIN, 1.0)
+		rubble(root.transform * Vector3(-wd / 2.0 - 0.9, 0, breach_c), 1.1, 9)
+		rubble(root.transform * Vector3(-wd / 2.0 + 0.9, 0.05, breach_c), 0.8, 5)
+		if roof == "burnt":
+			rubble(root.transform * Vector3(0, 0.05, 0), wd * 0.3, 8, Color(0.3, 0.26, 0.22))
 	# loot
 	var bs := Basis(Vector3.UP, yaw)
 	var door_out := pos + bs * Vector3(door_c, 0.3, -dp / 2.0 - 2.0)
@@ -258,7 +289,7 @@ func house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	w.houses[-1]["dout"] = door_out
 	if spec.get("ext_stairs", false):
 		w.add_item(pos + bs * Vector3(-wd * 0.2, floors * fc_h(spec) + 0.22, 0.5), w.loot_kind(rng, true), null, null, true)
-	var n_items := 2 + int(rng.randf() < 0.5) + int(wd * dp > 70.0)
+	var n_items := 3 + int(rng.randf() < 0.6) + int(wd * dp > 70.0)
 	for k in n_items:
 		var lx := rng.randf_range(-wd / 2.0 + 1.0, wd / 2.0 - 1.6)
 		if rooms > 1:
@@ -288,14 +319,19 @@ func _ext_stairs(root: Node3D, wd: float, dp: float, top: float, col: Color, lay
 	# patamar na altura da laje, na frente da abertura do parapeito
 	piece(root, Vector3(1.3, 0.2, 1.5), Vector3(x, H - 0.1, -dp / 2.0 + 0.85), conc, U.CONCRETE, 0.4)
 	piece(root, Vector3(0.08, 1.0, 1.5), Vector3(x + 0.62, H + 0.5, -dp / 2.0 + 0.85), Color(0.3, 0.3, 0.3), U.METAL, 0.5)
+	# escada maciça: colisão em 8 blocos embaixo da rampa (ninguém atravessa nem entra por baixo)
+	for j in 8:
+		var k0 := j / 8.0
+		var bh := maxf(k0 * H - 0.05, 0.3)
+		col_box(root, Vector3(1.2, bh, L / 8.0 + 0.02), Vector3(x, bh / 2.0, zb - (k0 + 1.0 / 16.0) * L))
 	if headless:
 		return
 	var n := int(H / 0.2)
 	for i in n:
 		var k := (i + 0.5) / n
 		vis(root, Vector3(1.2, 0.2, L / n + 0.02), Vector3(x, k * H - 0.1, zb - k * L), conc, U.CONCRETE, 0.4)
-		# parede embaixo do degrau (escada maciça)
-		vis(root, Vector3(0.15, k * H, L / n + 0.02), Vector3(x + 0.55, k * H / 2.0, zb - k * L), col, lay, uvs)
+		var bh := maxf(k * H - 0.14, 0.05)
+		vis(root, Vector3(1.2, bh, L / n + 0.02), Vector3(x, bh / 2.0, zb - k * L), col, lay, uvs)
 	# corrimão
 	vis(root, Vector3(0.05, 0.05, ramp), Vector3(x + 0.6, H / 2.0 + 0.9, (zb + zt) / 2.0), Color(0.25, 0.25, 0.25), U.METAL, 0.5, Basis(Vector3.RIGHT, ang))
 
@@ -426,7 +462,7 @@ func crates(pos: Vector3, yaw: float, loot := true) -> void:
 	piece(root, Vector3(1.2, 1.2, 1.2), Vector3(1.25, 0.6, 0.1), col.darkened(0.12), U.WOOD, 0.8)
 	if rng.randf() < 0.6:
 		piece(root, Vector3(1.2, 1.2, 1.2), Vector3(0.6, 1.8, 0.05), col.lightened(0.06), U.WOOD, 0.8)
-	if loot and rng.randf() < 0.55:
+	if loot and rng.randf() < 0.8:
 		w.add_item(pos + Vector3(0, 0.07, 0) + Basis(Vector3.UP, yaw) * Vector3(0.6, 0, -1.2), w.loot_kind(rng, false), null, null)
 
 
@@ -481,6 +517,54 @@ func barrier(pos: Vector3, yaw: float) -> void:
 	var root := body(pos, yaw)
 	piece(root, Vector3(3.0, 0.5, 0.7), Vector3(0, 0.25, 0), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.5)
 	piece(root, Vector3(3.0, 0.5, 0.35), Vector3(0, 0.75, 0), Color(0.9, 0.9, 0.88), U.CONCRETE, 0.5)
+
+
+# barricada de madeira em X (cavalo de frisa): dois cavaletes cruzados ligados por uma viga
+func barricade(pos: Vector3, yaw: float, length := 3.2) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), length * 0.55)
+	col_box(root, Vector3(length, 1.15, 0.9), Vector3(0, 0.58, 0))
+	if headless:
+		return
+	var wc := Color(0.62, 0.48, 0.34).darkened(vrng.randf() * 0.25)
+	var n := 3 if length > 2.5 else 2
+	for i in n:
+		var x := -length / 2.0 + 0.2 + i * (length - 0.4) / (n - 1)
+		for sg in [-1.0, 1.0]:
+			vis(root, Vector3(0.13, 1.55, 0.13), Vector3(x, 0.62, 0), wc.darkened(vrng.randf() * 0.1), U.WOOD, 0.6, Basis(Vector3.RIGHT, sg * 0.72))
+	vis(root, Vector3(length + 0.2, 0.14, 0.14), Vector3(0, 0.62, 0), wc.darkened(0.1), U.WOOD, 0.6)
+	# arame enrolado (só visual)
+	vis(root, Vector3(length, 0.03, 0.03), Vector3(0, 1.05, 0.25), Color(0.3, 0.3, 0.3), U.METAL, 0.5)
+	vis(root, Vector3(length, 0.03, 0.03), Vector3(0, 1.05, -0.25), Color(0.3, 0.3, 0.3), U.METAL, 0.5)
+
+
+# caixote militar com uma arma em cima (e a munição do lado, também em cima)
+func gun_crate(pos: Vector3, yaw: float, kind := "") -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), 1.6)
+	var olive := Color(0.55, 0.62, 0.42).darkened(rng.randf() * 0.2)
+	var h := 0.85
+	piece(root, Vector3(1.7, h, 1.25), Vector3(0, h / 2.0, 0), olive, U.WOOD, 0.7)
+	if not headless:
+		for sx in [-0.6, 0.6]:
+			vis(root, Vector3(0.1, h + 0.02, 1.28), Vector3(sx, h / 2.0, 0), olive.darkened(0.3), U.WOOD, 0.7)
+		vis(root, Vector3(0.5, 0.012, 0.28), Vector3(0, h * 0.55, -0.632), Color(0.92, 0.9, 0.8), U.PLAIN, 1.0)
+	var gun: String = kind if kind != "" else w.loot_kind(rng, true)
+	w.add_item(pos + Vector3(0, h + 0.02, 0), gun, null, null, true)
+	# um segundo caixote do lado às vezes (cobertura baixa)
+	if rng.randf() < 0.5:
+		piece(root, Vector3(1.0, 0.6, 0.9), Vector3(1.45, 0.3, 0.15), olive.darkened(0.12), U.WOOD, 0.7)
+
+
+# entulho (pedaços de tijolo/concreto) espalhado — baixo, só visual
+func rubble(pos: Vector3, r: float, n := 6, col := Color(0.72, 0.6, 0.5)) -> void:
+	if headless:
+		return
+	mb.tex(U.BRICK, 0.6)
+	for k in n:
+		var o := Vector2(vrng.randf_range(-r, r), vrng.randf_range(-r, r))
+		var sz := Vector3(vrng.randf_range(0.15, 0.45), vrng.randf_range(0.08, 0.22), vrng.randf_range(0.15, 0.45))
+		mb.blob(Transform3D(Basis(Vector3.UP, vrng.randf() * TAU).scaled(sz), pos + Vector3(o.x, sz.y * 0.4, o.y)), 5, 3, col.darkened(vrng.randf() * 0.3), vrng, 0.35, false)
 
 
 func low_wall(a: Vector2, b: Vector2, y: float, style := "brick", h := 1.1) -> void:
@@ -562,7 +646,7 @@ func ruin(pos: Vector3, yaw: float) -> void:
 	if not headless:
 		mb.tex(U.CONCRETE, 0.5)
 		for k in 6:
-			mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(rng.randf_range(0.3, 0.9), rng.randf_range(0.2, 0.5), rng.randf_range(0.3, 0.9))), Vector3(rng.randf_range(-wd / 2.0, wd / 2.0), 0.1, rng.randf_range(-dp / 2.0, dp / 2.0))), 6, 3, Color(0.8, 0.7, 0.62), rng, 0.3, false)
+			mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(vrng.randf_range(0.3, 0.9), vrng.randf_range(0.2, 0.5), vrng.randf_range(0.3, 0.9))), Vector3(vrng.randf_range(-wd / 2.0, wd / 2.0), 0.1, vrng.randf_range(-dp / 2.0, dp / 2.0))), 6, 3, Color(0.8, 0.7, 0.62), vrng, 0.3, false)
 	var bs := Basis(Vector3.UP, yaw)
 	for k in 2:
 		w.add_item(pos + bs * Vector3(rng.randf_range(-wd / 3.0, wd / 3.0), 0.07, rng.randf_range(-dp / 3.0, dp / 3.0)), w.loot_kind(rng, k == 0), null, null)
@@ -866,10 +950,7 @@ func car(pos: Vector3, yaw: float) -> void:
 	col_box(root, Vector3(1.85, 0.95, L), Vector3(0, 0.6, 0))
 	col_box(root, Vector3(1.6, 0.6, 1.6), Vector3(0, 1.2, 0.1 if kind == 0 else -0.4))
 	if not headless:
-		var mi := MeshInstance3D.new()
-		mi.mesh = car_mesh(kind, tint, wreck)
-		mi.material_override = U.wmat()
-		mi.visibility_range_end = 400.0
+		var mi := Vehicle.prop_node(kind, Vehicle.car_material(tint.darkened(0.15), 0.55, 0.85 if wreck else 0.15))
 		root.add_child(mi)
 		if wreck:
 			mi.rotation.z = 0.04
