@@ -26,6 +26,11 @@ Modelos dos carros (convertidos por tools/prepare_cars2.gd, sem vidros e repinta
 - Jipe: "GAZ-67 lowpoly" — Artie31 (Artyom Shebunin), CC0 — https://opengameart.org/content/lowpoly-soviet-jeep
 - Carros parados de enfeite: "Car Kit" de Kenney (www.kenney.nl), CC0.
 Personagem: modelo do autor do jogo (feito no Meshy), reduzido por tools/prepare_man.gd.
+Animações do personagem: "Universal Animation Library" de Quaternius, CC0 (https://quaternius.com)
+  — passadas pro esqueleto do boneco por tools/prepare_man.gd.
+Árvores: "tree_small_02" e "island_tree_02" do Poly Haven, CC0 (https://polyhaven.com) — troncos reduzidos
+  e copa refeita com cartões de folhas (tools/prepare_trees.gd, tools/make_leaf_cards.py).
+Avião: "Low poly twin prop airplane" (OpenGameArt.org), CC0 — tools/prepare_plane.gd.
 Modelos das armas, lunetas, silenciador e coronha: "Ultimate Gun Pack" de Quaternius, CC0
 (https://opengameart.org/content/low-poly-guns-pack) — convertidos por tools/prepare_guns.gd.
 

@@ -402,10 +402,48 @@ func _set_gun_model(w: String, att: Array) -> void:
 	gun = Weapons.build_model(w, att)
 	var t: String = Weapons.get_w(w)["type"]
 	gun.position = Vector3(0.13, -0.02, -0.36) if t != "pistol" else Vector3(0.06, 0.0, -0.45)
+	_gun_base = gun.position
+	# pistola sai rápido do coldre (da lateral da perna pra mão)
+	_draw_t = DRAW_TIME if t == "pistol" else 0.0
 	aim.add_child(gun)
 	for c in gun.get_children():
 		if c is GeometryInstance3D:
 			c.visibility_range_end = 200.0
+	update_back_guns()
+
+
+const DRAW_TIME := 0.22
+var _draw_t := 0.0
+var _gun_base := Vector3.ZERO
+var _back := []        # armas grandes penduradas nas costas
+
+
+# armas grandes que não estão na mão ficam nas costas (em X, cano pra cima)
+func update_back_guns() -> void:
+	if not visual or sol == null:
+		return
+	for n in _back:
+		if is_instance_valid(n):
+			n.queue_free()
+	_back.clear()
+	var k := 0
+	for i in 2:
+		var g: Dictionary = guns[i]
+		if g["id"] == "" or (i == sel and shown_wid == g["id"]):
+			continue
+		var holder := Node3D.new()
+		var m := Weapons.build_model(g["id"], g["att"])
+		# cano pra cima, atravessado nas costas; a segunda arma cruza a primeira
+		var tilt := 0.55 if k == 0 else -0.55
+		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 0.98, 0.13 + (0.1 if bag > 0 else 0.0) + k * 0.04))
+		for c in m.get_children():
+			if c is GeometryInstance3D:
+				c.visibility_range_end = 60.0
+				(c as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(m)
+		sol.attach("Spine2", holder)
+		_back.append(holder.get_parent())
+		k += 1
 
 
 func muzzle_pos() -> Vector3:
@@ -437,7 +475,7 @@ func die() -> void:
 	velocity = Vector3.ZERO
 	if sol and model and model.visible and air == 0:
 		dying_t = 2.2
-		sol.play("Dead", 0.08)
+		sol.play("Dead", 0.08, 1.7 if sol.has_anim("Sprint") else 1.0)
 		_set_gun_model("fist", [])
 	elif model:
 		model.visible = false
@@ -824,7 +862,7 @@ func _animate(delta: float, sim: bool) -> void:
 		model.rotation = Vector3(0, v.yaw, 0)
 		model.position = Vector3(0, -0.45, 0)
 		aim.visible = false
-		sol.play("Idle", 0.2)
+		sol.play("Driving" if sol.has_anim("Driving") else "Idle", 0.2)
 		var wp := v.wheel_pos()
 		var rt := Basis(Vector3.UP, v.yaw) * Vector3.RIGHT
 		sol.tick(delta, not game.near_cam(global_position, 35.0), 0.0, 0.85, [wp - rt * 0.2, wp + rt * 0.2])
@@ -877,18 +915,29 @@ func _animate(delta: float, sim: bool) -> void:
 		var gp2 := model.global_transform
 		sol.tick(delta, far, 0.0, 1.0, [gp2 * Vector3(-0.22, 0.75, -0.25), gp2 * Vector3(0.18, 0.05, -0.45)])
 		return
+	# animações da Universal Animation Library: parado, andar, corrida leve, corrida forte, agachado
+	var ual := sol.has_anim("Sprint")
 	if airborne and sp > 2.5 and vault_t < 0.0:
 		# pulando correndo: as pernas continuam no passo
 		sol.play("Running", 0.15, 0.8)
 	elif vault_t >= 0.0 or airborne:
 		sol.play("Air", 0.12)
+	elif crouch and ual:
+		if sp < 0.35:
+			sol.play("CrouchIdle", 0.25)
+		else:
+			sol.play("CrouchWalk", 0.2, clampf(sp / 1.7, 0.45, 1.4))
 	elif sp < 0.35:
 		sol.play("Idle", 0.25)
 	elif sp < 2.9 or crouch:
 		# agachado o passo é bem mais curto e lento
-		sol.play("Walking", 0.2, clampf(sp / 1.25, 0.5, 2.2) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
+		sol.play("Walking", 0.2, clampf(sp / 1.4, 0.5, 2.0) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
+	elif sp < 5.3 or not ual:
+		sol.play("Running", 0.2, clampf(sp / 3.9, 0.7, 1.35) if ual else clampf(sp / 5.4, 0.62, 1.5))
 	else:
-		sol.play("Running", 0.2, clampf(sp / 5.4, 0.62, 1.5))
+		sol.play("Sprint", 0.2, clampf(sp / 6.0, 0.8, 1.3))
+	if ual and crouch:
+		cr = -1.0     # a própria animação agacha (sem dobrar as pernas por código)
 	if heal_t > 0.0:
 		# curando: braço esquerdo na frente e a mão direita dá voltas nele (enrolando a faixa)
 		_heal_anim += delta
@@ -901,6 +950,13 @@ func _animate(delta: float, sim: bool) -> void:
 	elif armed:
 		if gun:
 			gun.visible = true
+			if _draw_t > 0.0:
+				_draw_t = maxf(_draw_t - delta, 0.0)
+				var dk := _draw_t / DRAW_TIME
+				gun.position = _gun_base + Vector3(0.12, -0.5, 0.32) * dk * dk
+				gun.rotation.x = -1.2 * dk * dk
+			else:
+				gun.rotation.x = 0.0
 		var gp := gun.position if gun else Vector3(0.12, -0.02, -0.36)
 		var t: String = Weapons.get_w(shown_wid)["type"]
 		var grip := aim.global_transform * (gp + Vector3(0, -0.05, 0.03))
@@ -924,7 +980,7 @@ func _animate(delta: float, sim: bool) -> void:
 		else:
 			aim.rotation.z = lerpf(aim.rotation.z, 0.0, minf(1.0, 10.0 * delta))
 		hands = [fore, grip]
-	elif sol.cur == "Idle" and vault_t < 0.0:
+	elif sol.cur == "Idle" and vault_t < 0.0 and not ual:
 		# parado de mãos livres: braços soltos do lado do corpo, respirando
 		_breath += delta
 		var br := sin(_breath * 1.8) * 0.008
@@ -935,7 +991,7 @@ func _animate(delta: float, sim: bool) -> void:
 	if vk > 0.0:
 		# mão de apoio no batente
 		hands = [model.global_transform * Vector3(-0.25, 0.95, -0.45), hands[1] if hands.size() == 2 else model.global_transform * Vector3(0.25, 0.95, -0.4)]
-	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(_crouch_k, 0.85 * vk), hands)
+	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(0.0 if cr < 0.0 else _crouch_k, 0.85 * vk), hands)
 
 
 

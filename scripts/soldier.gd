@@ -56,6 +56,10 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	play("Idle")
 
 
+func has_anim(n: String) -> bool:
+	return ap.has_animation(n)
+
+
 func play(n: String, blend := 0.18, speed := 1.0) -> void:
 	if n != cur:
 		cur = n

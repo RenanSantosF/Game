@@ -125,12 +125,19 @@ func _initialize() -> void:
 	lib.add_animation("Idle", _rest_pose(walk, sk))
 	lib.add_animation("Air", _pose_from(lib.get_animation("Running"), 0.12))
 	lib.add_animation("Dead", _dead(walk, sk))
+	# animações da Universal Animation Library (Quaternius, CC0), passadas pro esqueleto do boneco
+	var ual := OS.get_environment("UAL_GLB")
+	if ual != "":
+		get_root().add_child(out)
+		_retarget(ual, out, arm, sk, lib)
 	var nap := AnimationPlayer.new()
 	nap.name = "Anim"
 	out.add_child(nap)
 	nap.owner = out
 	nap.root_node = NodePath("..")
 	nap.add_animation_library("", lib)
+	if out.get_parent():
+		out.get_parent().remove_child(out)
 	var ps := PackedScene.new()
 	ps.pack(out)
 	ResourceSaver.save(ps, OUT)
@@ -171,7 +178,48 @@ func _nearest(p: Vector3, upos: PackedVector3Array, grid: Dictionary) -> int:
 	return 0
 
 
-# lê a malha reduzida (posição + UV por canto) e copia os pesos do vértice original mais perto
+func _blend_weights(p: Vector3, upos: PackedVector3Array, ubone: PackedInt32Array, uwt: PackedFloat32Array, grid: Dictionary) -> Array:
+	var c := Vector3i((p / 0.03).floor())
+	var acc := {}
+	var R := 0.045
+	for dx in range(-2, 3):
+		for dy in range(-2, 3):
+			for dz in range(-2, 3):
+				var k := c + Vector3i(dx, dy, dz)
+				if not grid.has(k):
+					continue
+				for i in grid[k]:
+					var d := p.distance_to(upos[i])
+					if d > R:
+						continue
+					var w := 1.0 / (d + 0.004)
+					for b in 4:
+						var bi: int = ubone[i * 4 + b]
+						acc[bi] = float(acc.get(bi, 0.0)) + uwt[i * 4 + b] * w
+	if acc.is_empty():
+		var o := _nearest(p, upos, grid)
+		return [[ubone[o * 4], ubone[o * 4 + 1], ubone[o * 4 + 2], ubone[o * 4 + 3]], [uwt[o * 4], uwt[o * 4 + 1], uwt[o * 4 + 2], uwt[o * 4 + 3]]]
+	var pairs := []
+	for bi in acc:
+		pairs.append([acc[bi], bi])
+	pairs.sort_custom(func(x, y): return x[0] > y[0])
+	var bs := []
+	var ws := []
+	var tot := 0.0
+	for k in 4:
+		if k < pairs.size():
+			tot += pairs[k][0]
+	for k in 4:
+		if k < pairs.size():
+			bs.append(pairs[k][1])
+			ws.append(pairs[k][0] / tot)
+		else:
+			bs.append(0)
+			ws.append(0.0)
+	return [bs, ws]
+
+
+# lê a malha reduzida (posição + UV por canto) e mistura os pesos dos vértices originais em volta
 func _from_obj(path: String, upos: PackedVector3Array, ubone: PackedInt32Array, uwt: PackedFloat32Array, grid: Dictionary, mat: Material) -> ArrayMesh:
 	var vs := PackedVector3Array()
 	var ts := PackedVector2Array()
@@ -197,9 +245,10 @@ func _from_obj(path: String, upos: PackedVector3Array, ubone: PackedInt32Array, 
 		var fa := (vs[corners[t + 1][0]] - a).cross(vs[corners[t + 2][0]] - a)
 		for k in 3:
 			pn[corners[t + k][0]] += fa
-	var near := PackedInt32Array()
+	# pesos dos ossos: mistura os vizinhos de perto (não só o mais perto), pra roupa dobrar lisa
+	var vb_all := []
 	for v in vs:
-		near.append(_nearest(v, upos, grid))
+		vb_all.append(_blend_weights(v, upos, ubone, uwt, grid))
 	var used := {}
 	var vp := PackedVector3Array()
 	var vn := PackedVector3Array()
@@ -216,10 +265,10 @@ func _from_obj(path: String, upos: PackedVector3Array, ubone: PackedInt32Array, 
 				vp.append(vs[cn[0]])
 				vn.append(pn[cn[0]].normalized())
 				uv.append(ts[cn[1]])
-				var o: int = near[cn[0]]
+				var bw: Array = vb_all[cn[0]]
 				for b in 4:
-					vb.append(ubone[o * 4 + b])
-					vw.append(uwt[o * 4 + b])
+					vb.append(bw[0][b])
+					vw.append(bw[1][b])
 			ix.append(used[key])
 	print(path.get_file(), ": ", vp.size(), " vértices, ", ix.size() / 3, " triângulos")
 	var arr := []
@@ -337,3 +386,131 @@ func _dead(src: Animation, sk: Skeleton3D) -> Animation:
 			Animation.TYPE_SCALE_3D:
 				an.scale_track_insert_key(k, 0.0, Vector3.ONE)
 	return an
+
+
+# ---------------- animações da Universal Animation Library ----------------
+# nome no jogo -> animação da biblioteca
+const UAL_ANIMS := {"Idle": "Idle_Loop", "Walking": "Walk_Loop", "Running": "Jog_Fwd_Loop", "Sprint": "Sprint_Loop",
+	"CrouchIdle": "Crouch_Idle_Loop", "CrouchWalk": "Crouch_Fwd_Loop", "Dead": "Death01", "Air": "Jump_Loop",
+	"PistolIdle": "Pistol_Idle_Loop", "Driving": "Driving_Loop", "Punch": "Punch_Jab", "Land": "Jump_Land"}
+# osso do boneco (sem mixamorig_) -> osso da biblioteca
+const UAL_BONES := {"Hips": "pelvis", "Spine": "spine_01", "Spine1": "spine_02", "Spine2": "spine_03", "Neck": "neck_01", "Head": "Head",
+	"LeftShoulder": "clavicle_l", "LeftArm": "upperarm_l", "LeftForeArm": "lowerarm_l", "LeftHand": "hand_l",
+	"RightShoulder": "clavicle_r", "RightArm": "upperarm_r", "RightForeArm": "lowerarm_r", "RightHand": "hand_r",
+	"LeftUpLeg": "thigh_l", "LeftLeg": "calf_l", "LeftFoot": "foot_l", "LeftToeBase": "ball_l",
+	"RightUpLeg": "thigh_r", "RightLeg": "calf_r", "RightFoot": "foot_r", "RightToeBase": "ball_r"}
+# braços e pernas: copia a direção do osso (o descanso das duas bibliotecas é diferente: A x T)
+const UAL_DIR := {"LeftArm": "LeftForeArm", "LeftForeArm": "LeftHand", "RightArm": "RightForeArm", "RightForeArm": "RightHand",
+	"LeftUpLeg": "LeftLeg", "LeftLeg": "LeftFoot", "RightUpLeg": "RightLeg", "RightLeg": "RightFoot"}
+
+
+func _to_root(n: Node, root: Node) -> Transform3D:
+	var t := Transform3D()
+	var c := n
+	while c != null and c != root:
+		if c is Node3D:
+			t = (c as Node3D).transform * t
+		c = c.get_parent()
+	return t
+
+
+func _retarget(path: String, out: Node3D, arm: Node3D, sk: Skeleton3D, lib: AnimationLibrary) -> void:
+	var doc := GLTFDocument.new()
+	var st := GLTFState.new()
+	doc.append_from_file(path, st)
+	var src: Node3D = doc.generate_scene(st)
+	get_root().add_child(src)
+	var ssk: Skeleton3D = src.find_children("*", "Skeleton3D", true, false)[0]
+	var sap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
+	sap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	var SA := _to_root(ssk, src)
+	var TA := _to_root(sk, out)
+	var TAr := TA.basis.orthonormalized()
+	# quem é quem
+	var tb := {}
+	var sb := {}
+	for n in UAL_BONES:
+		tb[n] = sk.find_bone("mixamorig_" + n)
+		sb[n] = ssk.find_bone(UAL_BONES[n])
+		if tb[n] < 0 or sb[n] < 0:
+			print("osso faltando: ", n)
+	var t_rest := {}
+	var s_rest := {}
+	for n in UAL_BONES:
+		t_rest[n] = TA * sk.get_bone_global_rest(tb[n])
+		s_rest[n] = SA * ssk.get_bone_global_rest(sb[n])
+	var hip_k: float = (t_rest["Hips"] as Transform3D).origin.y / maxf((s_rest["Hips"] as Transform3D).origin.y, 0.01)
+	var order := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+		"RightShoulder", "RightArm", "RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
+		"RightUpLeg", "RightLeg", "RightFoot", "RightToeBase"]
+	var prefix := "%s:" % str(out.get_path_to(sk))
+	for game_name in UAL_ANIMS:
+		var aname: String = UAL_ANIMS[game_name]
+		if not sap.has_animation(aname):
+			print("sem animação ", aname)
+			continue
+		var sa: Animation = sap.get_animation(aname)
+		var an := Animation.new()
+		an.length = sa.length
+		an.loop_mode = Animation.LOOP_LINEAR if aname.ends_with("_Loop") else Animation.LOOP_NONE
+		var tracks := {}
+		for n in order:
+			var k := an.add_track(Animation.TYPE_ROTATION_3D)
+			an.track_set_path(k, NodePath(prefix + "mixamorig_" + n))
+			tracks[n] = k
+		var hp := an.add_track(Animation.TYPE_POSITION_3D)
+		an.track_set_path(hp, NodePath(prefix + "mixamorig_Hips"))
+		sap.play(aname)
+		var fps := 30.0
+		var nf := maxi(2, int(ceil(sa.length * fps)) + 1)
+		for f in nf:
+			var t := minf(f / fps, sa.length)
+			sap.seek(t, true)
+			sap.advance(0.0)
+			ssk.force_update_all_bone_transforms()
+			var s_pose := {}
+			for n in order:
+				s_pose[n] = SA * ssk.get_bone_global_pose(sb[n])
+			# rotação de cada osso no espaço do modelo
+			var t_glob := {}
+			for n in order:
+				var tr: Transform3D = t_rest[n]
+				var q: Basis
+				if UAL_DIR.has(n):
+					var ch: String = UAL_DIR[n]
+					var sd := ((s_pose[ch] as Transform3D).origin - (s_pose[n] as Transform3D).origin).normalized()
+					var td := ((t_rest[ch] as Transform3D).origin - tr.origin).normalized()
+					q = Basis(Quaternion(td, sd)) * tr.basis.orthonormalized()
+				else:
+					var d := (s_pose[n] as Transform3D).basis.orthonormalized() * (s_rest[n] as Transform3D).basis.orthonormalized().inverse()
+					q = d * tr.basis.orthonormalized()
+				t_glob[n] = TAr.inverse() * q
+			for n in order:
+				var par := sk.get_bone_parent(tb[n])
+				var local: Basis
+				var pn := ""
+				for m in order:
+					if tb[m] == par:
+						pn = m
+				if pn != "":
+					local = (t_glob[pn] as Basis).inverse() * (t_glob[n] as Basis)
+				else:
+					var pg := sk.get_bone_global_rest(par).basis.orthonormalized() if par >= 0 else Basis()
+					local = pg.inverse() * (t_glob[n] as Basis)
+				an.rotation_track_insert_key(tracks[n], t, local.get_rotation_quaternion())
+			# quadril: sobe e desce como na biblioteca (na escala do boneco)
+			var dp: Vector3 = ((s_pose["Hips"] as Transform3D).origin - (s_rest["Hips"] as Transform3D).origin) * hip_k
+			if game_name != "Dead":
+				dp.x = 0.0
+				dp.z = 0.0
+			var mp: Vector3 = (t_rest["Hips"] as Transform3D).origin + dp
+			var skp := TA.affine_inverse() * mp
+			var par0 := sk.get_bone_parent(tb["Hips"])
+			if par0 >= 0:
+				skp = sk.get_bone_global_rest(par0).affine_inverse() * skp
+			an.position_track_insert_key(hp, t, skp)
+		if lib.has_animation(game_name):
+			lib.remove_animation(game_name)
+		lib.add_animation(game_name, an)
+		print("animação ", game_name, " <- ", aname, " ", an.length, " s  braço mexe: ", (ssk.get_bone_global_pose(sb["LeftArm"]).basis.get_rotation_quaternion().angle_to(ssk.get_bone_global_rest(sb["LeftArm"]).basis.get_rotation_quaternion())))
+	src.queue_free()

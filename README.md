@@ -16,7 +16,9 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Conteúdo
 
-- Personagem com textura (modelo feito no Meshy, reduzido pra celular por tools/prepare_man.gd): jaqueta e calça mudam de cor por jogador; anda, corre, pula, agacha, morre; braços seguram a arma
+- Personagem com textura (modelo feito no Meshy, reduzido pra celular por tools/prepare_man.gd): jaqueta e calça mudam de cor por jogador; animações da Universal Animation Library (Quaternius, CC0): parado, andar, corrida leve, corrida forte, agachado, pulo, morte e dirigindo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
+- Árvores realistas (Poly Haven, CC0): tronco de verdade e copa de cartões de folhas, leves pro celular; três tipos + moita
+- Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
 - Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta. Energético, kits e bandagens
 - Cenário de começo de guerra: casas com rombo na parede, fuligem e telhado queimado, paredes encardidas, ruas com buracos, rachaduras e entulho, barricadas de madeira em X, caixotes militares com arma em cima
@@ -145,6 +147,8 @@ shaders/               material do mundo, terreno e água
 tools/gen_assets.py    gera textures/atlas.png e sounds/*.wav (python3 + numpy + pillow)
 tools/prepare_guns.gd  converte as armas CC0 de models_src/guns pra models/guns/*.res e gera scripts/gun_info.gd
 tools/prepare_cars2.gd converte o muscle car e o jipe de models_src pra models/car*.res
+tools/prepare_trees.gd árvores do Poly Haven (com tools/decimate_trees.py e tools/make_leaf_cards.py) pra models/trees/
+tools/prepare_plane.gd avião de models_src/plane pra models/plane.scn
 tools/prepare_man.gd   reduz o personagem (com tools/decimate_man.py e tools/man_mask.py) pra models/soldier.scn
 tools/render_keyart.gd arte da tela de carregamento (depois tools/keyart_post.py -> art/loading.jpg)
 .github/workflows/apk.yml   compilação automática do APK

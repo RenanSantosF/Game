@@ -451,7 +451,8 @@ func _build_menu_stage() -> void:
 	menu_stage = Node3D.new()
 	add_child(menu_stage)
 	# cada vez que abre o menu, um cenário diferente
-	menu_theme = randi() % 3
+	# (a arena de cubos acesos saiu: parecia de brinquedo) — base ao pôr do sol ou acampamento à noite
+	menu_theme = 1 + randi() % 2
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--menu-theme="):
 			menu_theme = int(a.get_slice("=", 1)) % 3
@@ -599,10 +600,12 @@ func _menu_base(m: MB, r: RandomNumberGenerator) -> void:
 	car.position = Vector3(4.5, 0, -6.5)
 	car.rotation.y = 2.4
 	menu_stage.add_child(car)
-	# morros ao fundo
+	# morros ao fundo com árvores
 	m.tex(U.GRASS, 0.2)
 	for k in 7:
 		m.blob(Transform3D(Basis.from_scale(Vector3(r.randf_range(8, 14), r.randf_range(2.5, 5.0), 6)), Vector3(-24 + k * 8.0, -0.5, -22 - r.randf() * 6.0)), 10, 5, Color(0.55, 0.5, 0.35))
+	for k in 8:
+		_menu_tree(["oak", "tall"][k % 2], Vector3(-18 + k * 5.0 + r.randf_range(-1, 1), 0, -12 - r.randf() * 4.0), r)
 
 
 # cenário 3: acampamento à noite (fogueira, holofote, carcaça de carro)
@@ -655,12 +658,20 @@ func _menu_night(m: MB, r: RandomNumberGenerator) -> void:
 	menu_stage.add_child(car)
 	m.tex(U.WOOD, 0.7)
 	m.box(Transform3D(Basis(Vector3.UP, 0.5), Vector3(2.2, 0.35, -2.2)), Vector3(0.7, 0.7, 0.7), Color(0.6, 0.5, 0.38))
-	# árvores escuras no fundo
-	m.tex(U.LEAVES, 0.5)
+	# árvores de verdade no fundo (as mesmas do mapa)
 	for k in 9:
 		var p := Vector3(-16 + k * 4.0 + r.randf(), 0, -16 - r.randf() * 5.0)
-		m.cyl(Transform3D(Basis(), p), 0.2, 0.15, 2.5, 6, Color(0.15, 0.12, 0.1))
-		m.blob(Transform3D(Basis.from_scale(Vector3(1.3, 1.8, 1.3)), p + Vector3(0, 3.2, 0)), 8, 5, Color(0.12, 0.2, 0.14), r, 0.2)
+		_menu_tree(["oak", "tall"][k % 2], p, r)
+
+
+func _menu_tree(kind: String, p: Vector3, r: RandomNumberGenerator) -> void:
+	var path := "res://models/trees/%s.res" % kind
+	if not ResourceLoader.exists(path):
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = load(path)
+	mi.transform = Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3.ONE * r.randf_range(0.8, 1.15)), p)
+	menu_stage.add_child(mi)
 
 
 func _menu_tick(delta: float) -> void:
@@ -693,7 +704,8 @@ func _menu_tick(delta: float) -> void:
 	# parado à vontade: braços soltos, respirando
 	var br := sin(menu_t * 1.8) * 0.008
 	var g := menu_sol.global_transform
-	menu_sol.tick(delta, false, 0.0, 0.0, [g * Vector3(-0.27, 0.86 + br, 0.03), g * Vector3(0.27, 0.86 + br, 0.03)])
+	# com as animações novas o parado já é natural; sem elas, os braços descem por código
+	menu_sol.tick(delta, false, 0.0, 0.0, [] if menu_sol.has_anim("Sprint") else [g * Vector3(-0.27, 0.86 + br, 0.03), g * Vector3(0.27, 0.86 + br, 0.03)])
 
 
 # fim do arquivo de log da execução anterior (pra descobrir onde o jogo fechou)
@@ -1755,26 +1767,9 @@ func _apply_quality() -> void:
 		env.environment.fog_density = fog_base
 
 
+# avião do salto: bimotor CC0 (models/plane.scn, feito pelo tools/prepare_plane.gd); as hélices giram
 func _build_plane() -> Node3D:
-	var m := MB.new()
-	m.tex(U.METAL, 0.15)
-	var g := Color(0.65, 0.7, 0.66)
-	var dark := Color(0.35, 0.37, 0.36)
-	var along := Basis(Vector3.RIGHT, -PI / 2.0)   # cilindro deitado apontando pra -Z
-	m.cyl(Transform3D(along, Vector3(0, 0, 12)), 2.2, 2.2, 22.0, 14, g, false)
-	m.cyl(Transform3D(along, Vector3(0, 0, -10)), 2.2, 0.6, 4.0, 14, g, true)
-	m.cyl(Transform3D(along, Vector3(0, 0.6, 15.5)), 1.2, 2.2, 3.5, 14, g, true)
-	m.boxp(Vector3(0, 1.9, -1), Vector3(36, 0.45, 4.6), g)
-	m.boxp(Vector3(0, 4.0, 15.5), Vector3(0.4, 5.0, 3.6), g)
-	m.boxp(Vector3(0, 2.2, 16.0), Vector3(12, 0.3, 2.8), g)
-	m.tex(U.PLAIN, 1.0)
-	m.boxp(Vector3(0, 0.9, -10.5), Vector3(2.2, 0.8, 1.4), Color(0.15, 0.18, 0.2))
-	m.tex(U.METAL, 0.3)
-	for x in [-11.0, -5.5, 5.5, 11.0]:
-		m.cyl(Transform3D(along, Vector3(x, 1.2, 1.5)), 0.65, 0.55, 4.0, 10, dark, true)
-		m.boxp(Vector3(x, 1.2, -2.6), Vector3(3.4, 0.15, 0.2), Color(0.2, 0.2, 0.2))
-	var root := Node3D.new()
-	U.mesh(root, m.commit())
+	var root: Node3D = (load("res://models/plane.scn") as PackedScene).instantiate()
 	return root
 
 
@@ -1977,6 +1972,10 @@ func _update_world_fx(_delta: float) -> void:
 		var dir := (plane_b - plane_a).normalized()
 		var pp := plane_a.lerp(plane_b, plane_t / plane_dur)
 		plane_node.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), pp + Vector3(0, 3, 0))
+		for pn in ["PropL", "PropR"]:
+			var pr: Node3D = plane_node.get_node_or_null(pn)
+			if pr:
+				pr.rotate_object_local(Vector3.FORWARD, _delta * 38.0)
 	# de cima a névoa diminui, pra enxergar onde vai cair
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	if env:
@@ -3897,6 +3896,7 @@ func on_loadout(id: int, g: Array, sel: int) -> void:
 		p.reload_t = 0.0
 		p.scoped = false
 	p.update_gun()
+	p.update_back_guns()
 	if id == local_id and hud:
 		# compara com o que eu já tinha visto (no treino o servidor muda o jogador antes)
 		for i in 3:

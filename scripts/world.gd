@@ -1603,6 +1603,13 @@ func _tree_meshes() -> Dictionary:
 		var d := Vector3(cos(a) * 0.6, 1.0, sin(a) * 0.6).normalized()
 		m3.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d)), Vector3(0, 0.05, 0)), 0.02, 0.005, 0.9, 3, bark, false)
 	out["bush"] = m3.commit()
+	# árvores e moita de verdade (Poly Haven, CC0; tools/prepare_trees.gd): troca o desenho simples
+	for k in ["oak", "pine", "tall", "bush"]:
+		var path := "res://models/trees/%s.res" % k
+		if ResourceLoader.exists(path):
+			out[k] = load(path)
+			if ResourceLoader.exists("res://models/trees/%s_lo.res" % k):
+				out[k + "_lo"] = load("res://models/trees/%s_lo.res" % k)
 	# pedra
 	var m4 := MB.new()
 	m4.tex(U.ROCK, 0.8)
@@ -1670,7 +1677,8 @@ func _nat(kind: String, xf: Transform3D, sets: Dictionary, key := "", e_over = n
 		add_child(n)
 		var mi := MeshInstance3D.new()
 		mi.mesh = _nat_meshes[kind]
-		mi.material_override = U.wmat()
+		if (mi.mesh as Mesh).surface_get_material(0) == null:
+			mi.material_override = U.wmat()
 		mi.transform = x2
 		mi.visibility_range_end = 260.0
 		n.add_child(mi)
@@ -1931,7 +1939,9 @@ func _scatter(kind: String, mesh: Mesh, xfs: Array, chunk: float, rng: RandomNum
 				mm.set_instance_color(i, cols[i])
 			var mmi := MultiMeshInstance3D.new()
 			mmi.multimesh = mm
-			mmi.material_override = U.wmat()
+			# malha com material próprio (árvores com textura) não usa o material do mundo
+			if (variant as Mesh).surface_get_material(0) == null:
+				mmi.material_override = U.wmat()
 			mmi.position = center
 			if kind == "grass" or kind == "bush" or variant == lo:
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

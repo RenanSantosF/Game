@@ -1,0 +1,3 @@
+Low poly twin prop airplane — CC0 (domínio público)
+https://opengameart.org/content/low-poly-twin-prop-airplane
+Convertido do .blend com o Blender (só o avião) e preparado por tools/prepare_plane.gd.
