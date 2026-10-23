@@ -16,7 +16,7 @@ const LOCS := [
 	["Base Coruja", Vector2(35, -262), "base", 46.0],
 	["Pedra Funda", Vector2(205, -280), "pedreira", 40.0],
 	["Morro Torto", Vector2(305, -170), "torre", 18.0],
-	["Brejo Seco", Vector2(-300, -115), "bairro", 40.0],
+	["Brejo Seco", Vector2(-300, -115), "palafitas", 40.0],
 	["Serraria Toco Velho", Vector2(-160, -150), "serraria", 30.0],
 	["Pouso Velho", Vector2(-35, -135), "igreja", 40.0],
 	["Posto Alvorada", Vector2(110, -160), "posto", 26.0],
@@ -25,7 +25,7 @@ const LOCS := [
 	["Bela Poeira", Vector2(25, -10), "centro", 58.0],
 	["Estação Carvoeira", Vector2(175, 40), "estacao", 34.0],
 	["Ruínas do Engenho", Vector2(305, 110), "ruinas", 30.0],
-	["Chapada Ventania", Vector2(-320, 135), "esparso", 42.0],
+	["Chapada Ventania", Vector2(-320, 135), "mirante", 42.0],
 	["Ponte Partida", Vector2(-100, 100), "ruinas", 26.0],
 	["Colônia Caracol", Vector2(-205, 205), "vila", 36.0],
 	["Mina do Tatu", Vector2(-300, 305), "pedreira", 34.0],
@@ -34,17 +34,20 @@ const LOCS := [
 	["Rancho Poeira", Vector2(250, 205), "esparso", 36.0],
 	["Granja Galo Doido", Vector2(120, 300), "fazenda", 34.0],
 	["Vila Cachorro Magro", Vector2(295, 300), "vila", 34.0],
+	["Aeródromo Carcará", Vector2(302, -15), "aerodromo", 52.0],
+	["Pátio dos Galpões", Vector2(-170, 312), "galpoes", 38.0],
+	["Acampamento Sentinela", Vector2(300, -298), "acampamento", 32.0],
 ]
 # morros grandes: centro, altura, raio
 const MOUNTS := [
-	[Vector2(305, -170), 42.0, 75.0], [Vector2(-335, 135), 26.0, 85.0], [Vector2(235, -315), 34.0, 70.0],
+	[Vector2(305, -170), 42.0, 75.0], [Vector2(-335, 135), 44.0, 150.0], [Vector2(235, -315), 34.0, 70.0],
 	[Vector2(-60, -340), 28.0, 60.0], [Vector2(-330, -330), 30.0, 70.0], [Vector2(330, 340), 22.0, 60.0],
 	[Vector2(110, 60), 14.0, 55.0], [Vector2(-160, -70), 18.0, 55.0],
 	# cidades bem no alto de morro, com rampa longa e suave (troca de tiro subindo/descendo)
 	[Vector2(-250, -245), 34.0, 100.0], [Vector2(-205, 205), 30.0, 85.0], [Vector2(250, 205), 32.0, 95.0],
 	[Vector2(-125, -285), 24.0, 80.0], [Vector2(295, 300), 30.0, 85.0],
 ]
-const HILL_TOWNS := ["Vila Ferrugem", "Colônia Caracol", "Rancho Poeira", "Arraial do Sapo", "Vila Cachorro Magro"]
+const HILL_TOWNS := ["Vila Ferrugem", "Colônia Caracol", "Rancho Poeira", "Arraial do Sapo", "Vila Cachorro Magro", "Chapada Ventania"]
 # rodovias asfaltadas que cruzam o mapa (passam do lado das cidades e do posto)
 const HIGHWAYS := [
 	[Vector2(-380, -60), Vector2(-250, -58), Vector2(-120, -82), Vector2(0, -86), Vector2(120, -108), Vector2(230, -128), Vector2(380, -120)],
@@ -115,15 +118,20 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			_build_highway_props()
 			_car_spots()
 			_build_extras()
+			_build_war()
 			_build_added()],
-		["Moldando o terreno", func(): _wts = _build_terrain()],
+		["Moldando o terreno", func():
+			_wts = _build_terrain()
+			_highway_floor()
+			_build_floor_body()],
 		["Plantando árvores", _build_nature],
 		["Arrumando a área de aquecimento", func(): _build_bounds(); _build_lobby()],
 		["Desenhando o mapa", func():
 			if not headless:
 				_build_highway_mesh()
 				_build_map(_wts)
-				_build_env()],
+				_build_env()
+				_build_smoke()],
 	]
 
 
@@ -181,8 +189,10 @@ func _pre(x: float, z: float) -> float:
 			if t["kind"] == "pedreira" and d < r * 0.8:
 				th -= 6.0 * (1.0 - smoothstep(r * 0.55, r * 0.8, d))
 			ws.append([1.0 - smoothstep(r, r + bw, d), th])
+	# ordem fixa (da cidade mais baixa pra mais alta): o chão nunca dá degrau onde duas rampas se
+	# encontram, e a rampa longa da cidade alta é que manda (subida suave)
 	if ws.size() > 1:
-		ws.sort_custom(func(a, b): return a[0] < b[0])
+		ws.sort_custom(func(a, b): return a[1] < b[1])
 	for e in ws:
 		h = lerpf(h, e[1], e[0])
 	return h
@@ -227,16 +237,23 @@ func _pad_h(x: float, z: float, h: float) -> float:
 	var k := Vector2i(floori(x / PAD_CELL), floori(z / PAD_CELL))
 	if not _pads.has(k):
 		return h
+	# mistura contínua entre chãos planos vizinhos (sem degrau onde as rampas se encontram)
 	var best := 0.0
-	var bh := h
+	var sw := 0.0
+	var sh := 0.0
 	var p := Vector2(x, z)
 	for e in _pads[k]:
 		var d: float = p.distance_to(e[0])
 		var wt := 1.0 - smoothstep(float(e[1]), float(e[1]) + float(e[3]), d)
-		if wt > best:
-			best = wt
-			bh = e[2]
-	return lerpf(h, bh, best)
+		if wt <= 0.0:
+			continue
+		best = maxf(best, wt)
+		var q := wt * wt * wt * wt
+		sw += q
+		sh += q * float(e[2])
+	if best <= 0.0:
+		return h
+	return lerpf(h, sh / sw, best)
 
 
 func town_factor(x: float, z: float) -> float:
@@ -345,6 +362,23 @@ func hw_dist(x: float, z: float) -> float:
 
 
 # pista de asfalto com faixas, seguindo o chão
+# pista da rodovia sólida (mesma superfície que o desenho dela)
+func _highway_floor() -> void:
+	var half := 4.2
+	for line in hw_pts:
+		for i in line.size() - 1:
+			var p0: Vector2 = line[i][0]
+			var p1: Vector2 = line[i + 1][0]
+			var sd := Vector2(-(p1 - p0).normalized().y, (p1 - p0).normalized().x)
+			var y0 := height(p0.x, p0.y) + 0.07
+			var y1 := height(p1.x, p1.y) + 0.07
+			var a0 := p0 + sd * half
+			var b0 := p0 - sd * half
+			var a1 := p1 + sd * half
+			var b1 := p1 - sd * half
+			floor_faces.append_array(PackedVector3Array([Vector3(a0.x, y0, a0.y), Vector3(a1.x, y1, a1.y), Vector3(b1.x, y1, b1.y), Vector3(a0.x, y0, a0.y), Vector3(b1.x, y1, b1.y), Vector3(b0.x, y0, b0.y)]))
+
+
 func _build_highway_mesh() -> void:
 	var half := 4.2
 	for line in hw_pts:
@@ -773,11 +807,21 @@ func _build_loc(ti: int) -> void:
 			_estacao(c, y, r)
 		"porto":
 			_porto(c, y, r)
+		"aerodromo":
+			_aerodromo(c, y, r)
+		"galpoes":
+			_galpoes(c, y, r)
+		"acampamento":
+			_acampamento(c, y, r)
+		"palafitas":
+			_palafitas(c, y, r)
+		"mirante":
+			_mirante(c, y, r)
 	# localidade pequena com pouca casa: completa (cidade grande ganha algumas a mais também)
-	var extra: int = {"posto": 3, "serraria": 3, "fazenda": 2, "estacao": 3, "porto": 3, "esparso": 2, "vila": 2, "igreja": 2, "bairro": 2, "centro": 3}.get(t["kind"], 0)
+	var extra: int = {"mirante": 3, "palafitas": 1, "posto": 3, "serraria": 3, "fazenda": 2, "estacao": 3, "porto": 3, "esparso": 2, "vila": 2, "igreja": 2, "bairro": 2, "centro": 3}.get(t["kind"], 0)
 	if extra > 0:
 		_more_houses(c, y, r, extra)
-	if t["kind"] in ["vila", "igreja", "bairro", "centro", "esparso"]:
+	if t["kind"] in ["vila", "igreja", "bairro", "centro", "esparso", "mirante", "palafitas"]:
 		_war_props(c, y, r)
 	if t["name"] in HILL_TOWNS:
 		_slope_cover(c, y, r)
@@ -797,7 +841,7 @@ var _theme_styles: Array = []
 func _landmark(kind: String, c: Vector2, y: float) -> void:
 	for k in 12:
 		var p := c + Vector2(cos(k * 2.4), sin(k * 2.4)) * (k * 1.6)
-		if is_free(p, 3.5):
+		if is_free(p, 5.5 if kind == "bus" else 3.5):
 			match kind:
 				"monument":
 					b.monument(_p3(p, y), b.rng.randf() * TAU)
@@ -846,6 +890,9 @@ func _slope_cover(c: Vector2, y: float, r: float) -> void:
 		var a := rng.randf() * TAU
 		var p := c + Vector2(cos(a), sin(a)) * rng.randf_range(r + 4.0, r + 80.0)
 		if not is_free(p, 2.5) or road_dist(p.x, p.y) < 4.0 or hw_dist(p.x, p.y) < 8.0 or height(p.x, p.y) < WATER_Y + 1.0:
+			continue
+		# não invade outra localidade (ela ainda pode não ter sido montada)
+		if town_factor(p.x, p.y) > 0.0:
 			continue
 		placed += 1
 		var yaw := _face(p, c) + PI / 2.0 + rng.randf_range(-0.4, 0.4)
@@ -954,10 +1001,34 @@ func _yard(p: Vector2, yaw: float, spec: Dictionary, y: float) -> void:
 
 
 # rua em pedaços que acompanham o chão (com "saia" pra baixo: nunca fica flutuando)
+# caixa sólida do chão (asfalto, calçada, cimento): entra na colisão única do piso
+func floor_box(xf: Transform3D, size: Vector3) -> void:
+	var h := size / 2.0
+	var c := []
+	for k in 8:
+		c.append(xf * Vector3(h.x * (1 if k & 1 else -1), h.y * (1 if k & 2 else -1), h.z * (1 if k & 4 else -1)))
+	# topo + 4 lados (a base fica enterrada)
+	for q in [[2, 3, 7, 6], [0, 1, 3, 2], [4, 6, 7, 5], [0, 2, 6, 4], [1, 5, 7, 3]]:
+		floor_faces.append_array(PackedVector3Array([c[q[0]], c[q[1]], c[q[2]], c[q[0]], c[q[2]], c[q[3]]]))
+
+
+func _build_floor_body() -> void:
+	if floor_faces.is_empty():
+		return
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(floor_faces)
+	shape.backface_collision = true
+	floor_body = StaticBody3D.new()
+	floor_body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	floor_body.add_child(cs)
+	add_child(floor_body)
+	floor_faces = PackedVector3Array()
+
+
 func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
 	map_streets.append([a, c, width])
-	if headless:
-		return
 	var d := c - a
 	var yaw := -atan2(d.y, d.x)
 	var bs := Basis(Vector3.UP, yaw)
@@ -971,14 +1042,23 @@ func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
 		var ty := y if town_factor(q.x, q.y) > 0.9 else height(q.x, q.y)
 		var top := ty + 0.04
 		var dep := top - gy + 0.3
-		b.mb.tex(U.ASPHALT, 0.25)
-		b.mb.box(Transform3D(bs, Vector3(q.x, top - dep / 2.0, q.y)), Vector3(seg + 0.05, dep, width), Color(1, 1, 1))
+		var sx := Transform3D(bs, Vector3(q.x, top - dep / 2.0, q.y))
+		floor_box(sx, Vector3(seg + 0.05, dep, width))
+		var walks := []
 		for sgn in [-1.0, 1.0]:
 			var w: Vector2 = q + side * sgn * (width / 2.0 + 0.8)
 			var wy := ty if town_factor(w.x, w.y) > 0.9 else maxf(ty, height(w.x, w.y))
 			var wd := wy + 0.12 - gy + 0.3
+			var wx := Transform3D(bs, Vector3(w.x, wy + 0.12 - wd / 2.0, w.y))
+			floor_box(wx, Vector3(seg + 0.05, wd, 1.6))
+			walks.append([wx, wd])
+		if headless:
+			continue
+		b.mb.tex(U.ASPHALT, 0.25)
+		b.mb.box(sx, Vector3(seg + 0.05, dep, width), Color(1, 1, 1))
+		for wk in walks:
 			b.mb.tex(U.CONCRETE, 0.4)
-			b.mb.box(Transform3D(bs, Vector3(w.x, wy + 0.12 - wd / 2.0, w.y)), Vector3(seg + 0.05, wd, 1.6), Color(0.8, 0.78, 0.73))
+			b.mb.box(wk[0], Vector3(seg + 0.05, wk[1], 1.6), Color(0.8, 0.78, 0.73))
 		# faixa (apagada em alguns trechos)
 		if i % 2 == 0 and b.rng.randf() < 0.75:
 			b.mb.tex(U.PLAIN, 1.0)
@@ -1041,10 +1121,14 @@ func _street_path(pts: Array, y: float) -> void:
 
 # chão de cimento em toda a cidade (plano)
 func _plaza(c: Vector2, y: float, r: float) -> void:
-	if headless:
-		return
 	var seg := 36
 	var rr := r - 1.0
+	for i in seg:
+		var a0 := TAU * i / seg
+		var a1 := TAU * (i + 1) / seg
+		floor_faces.append_array(PackedVector3Array([Vector3(c.x, y + 0.025, c.y), Vector3(c.x + cos(a0) * rr, y + 0.025, c.y + sin(a0) * rr), Vector3(c.x + cos(a1) * rr, y + 0.025, c.y + sin(a1) * rr)]))
+	if headless:
+		return
 	b.mb.tex(U.CONCRETE, 0.22)
 	for i in seg:
 		var a0 := TAU * i / seg
@@ -1105,7 +1189,7 @@ func _bairro(c: Vector2, y: float, r: float, big: bool) -> void:
 				if not is_free(p, maxf(spec["w"], spec["d"]) * 0.45) or road_dist(p.x, p.y) < 3.0:
 					continue
 				var yaw := _face(p, pnt)
-				if big and rng.randf() < 0.12:
+				if big and rng.randf() < 0.12 and is_free(p, 6.5):
 					b.store(_p3(p, y), yaw)
 				else:
 					b.house(_p3(p, y), yaw, spec)
@@ -1126,7 +1210,226 @@ func _bairro(c: Vector2, y: float, r: float, big: bool) -> void:
 			var p := c + Vector2(rng.randf_range(-7, 7), rng.randf_range(-7, 7))
 			if is_free(p, 2.0):
 				b.barrier(_p3(p, y), rng.randf() * TAU)
-		b.crates(_p3(c - side * 7.0 - dir * 5.0, y), rng.randf() * TAU)
+		var cp := c - side * 7.0 - dir * 5.0
+		var cy := rng.randf() * TAU
+		if is_free(cp, 1.8):
+			b.crates(_p3(cp, y), cy)
+
+
+# ---------------- localidades novas (pré-guerra) ----------------
+
+# pista de pouso: asfalto sólido (colisão no chão) com faixas e marcas de cabeceira
+func _runway(a: Vector2, e: Vector2, y: float, width: float) -> void:
+	var d := e - a
+	var dir := d.normalized()
+	var yaw := -atan2(d.y, d.x)
+	var bs := Basis(Vector3.UP, yaw)
+	var n := maxi(1, int(d.length() / 6.0))
+	var seg := d.length() / n
+	for i in n:
+		var q := a + d * ((i + 0.5) / n)
+		var gy := minf(y, low_h(q, width * 0.5))
+		var top := y + 0.06
+		var dep := top - gy + 0.3
+		var xf := Transform3D(bs, Vector3(q.x, top - dep / 2.0, q.y))
+		floor_box(xf, Vector3(seg + 0.05, dep, width))
+		if headless:
+			continue
+		b.mb.tex(U.ASPHALT, 0.2)
+		b.mb.box(xf, Vector3(seg + 0.05, dep, width), Color(0.78, 0.78, 0.78))
+		b.mb.tex(U.PLAIN, 1.0)
+		if i % 2 == 0 and i > 1 and i < n - 2:
+			b.mb.box(Transform3D(bs, Vector3(q.x, top + 0.006, q.y)), Vector3(seg * 0.6, 0.01, 0.35), Color(0.9, 0.9, 0.86))
+		for sg in [-1.0, 1.0]:
+			var ep: Vector2 = q + Vector2(-dir.y, dir.x) * sg * (width / 2.0 - 0.6)
+			b.mb.box(Transform3D(bs, Vector3(ep.x, top + 0.006, ep.y)), Vector3(seg + 0.05, 0.01, 0.25), Color(0.88, 0.88, 0.84))
+		# marcas de pneu e buracos de bomba na pista
+		if b.vrng.randf() < 0.3:
+			var hp: Vector2 = q + Vector2(-dir.y, dir.x) * b.vrng.randf_range(-width * 0.3, width * 0.3)
+			b.mb.cyl(Transform3D(Basis(), Vector3(hp.x, top + 0.008, hp.y)), b.vrng.randf_range(0.8, 1.8), 0.9, 0.01, 10, Color(0.1, 0.09, 0.08), true, false, null, 0.35, b.vrng)
+	if not headless:
+		for end in [[a, dir], [e, -dir]]:
+			var p0: Vector2 = end[0] + end[1] * 6.0
+			for k in 8:
+				var o: Vector2 = p0 + Vector2(-dir.y, dir.x) * (-width * 0.38 + k * width * 0.76 / 7.0)
+				b.mb.box(Transform3D(bs, Vector3(o.x, y + 0.067, o.y)), Vector3(9.0, 0.01, 0.9), Color(0.92, 0.92, 0.88))
+	for i in int(d.length() / 6.0) + 1:
+		claim(a + dir * i * 6.0, width * 0.6)
+
+
+func _aerodromo(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	# pista no sentido norte-sul do lado leste; hangares olhando pra pista
+	var rx := c.x + 26.0
+	var ra := Vector2(rx, c.y - 62.0)
+	var re := Vector2(rx, c.y + 72.0)
+	for k in 14:
+		add_pad(ra.lerp(re, k / 13.0), 10.0, y, 30.0)
+	_runway(ra, re, y, 18.0)
+	var east := _face(c, c + Vector2(1, 0))
+	for hz in [-20.0, 13.0]:
+		b.hangar(_p3(c + Vector2(-8.0, hz), y), _face(c + Vector2(-8.0, hz), c + Vector2(10.0, hz)))
+	# torre de controle (sobrado de concreto) e área das tendas
+	b.house(_p3(c + Vector2(-6.0, 38.0), y), _face(c + Vector2(-6.0, 38.0), Vector2(rx, c.y + 38.0)), {"w": 7.0, "d": 6.5, "floors": 2, "style": "concrete", "roof": "flat"})
+	b.radio_tower(_p3(c + Vector2(-20.0, 42.0), y))
+	for k in 2:
+		b.fuel_tank(_p3(c + Vector2(-34.0, -38.0 + k * 9.0), y), PI / 2.0)
+	for k in 3:
+		var p := c + Vector2(-40.0 + k * 6.0, 26.0)
+		if is_free(p, 3.0):
+			b.tent(_p3(p, y), east + PI)
+	# avião de carga destruído na beira da pista e sacos de areia nas cabeceiras
+	b.tank_wreck(_p3(Vector2(rx - 14.0, c.y - 44.0), y), rng.randf() * TAU)
+	b.mg_nest(_p3(Vector2(rx - 13.0, c.y + 62.0), y), PI)
+	b.mg_nest(_p3(Vector2(rx + 13.0, c.y - 55.0), y), 0.0)
+	for k in 6:
+		var p := c + Vector2(rng.randf_range(-30.0, 8.0), rng.randf_range(-40.0, 40.0))
+		if is_free(p, 2.5):
+			if k % 3 == 0:
+				b.car(_p3(p, y), rng.randf() * TAU)
+			elif k % 3 == 1:
+				b.crates(_p3(p, y), rng.randf() * TAU)
+			else:
+				b.barrel(_p3(p, y))
+	for k in 4:
+		var p := Vector2(rx + (1.0 if k % 2 == 0 else -1.0) * rng.randf_range(13.0, 18.0), c.y + rng.randf_range(-50.0, 60.0))
+		if is_free(p, 3.0):
+			b.crater(_p3(p, y))
+	smoke_spots.append(Vector2(rx - 14.0, c.y - 44.0))
+
+
+func _galpoes(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var th := rng.randf_range(-0.25, 0.25)
+	var bs := Basis(Vector3.UP, -th)
+	var at := func(x: float, z: float) -> Vector2:
+		var v: Vector3 = bs * Vector3(x, 0, z)
+		return c + Vector2(v.x, v.z)
+	b.galpao(_p3(at.call(-9.0, -15.0), y), -th)
+	b.galpao(_p3(at.call(-9.0, 11.0), y), -th + PI)
+	b.galpao(_p3(at.call(22.0, -2.0), y), -th + PI / 2.0)
+	# pátio: contêineres empilhados, tanques de combustível, empilhadeira (carro), caixotes
+	for k in 6:
+		var p: Vector2 = at.call(rng.randf_range(-24.0, 8.0), rng.randf_range(-3.0, 0.0))
+		if is_free(p, 3.5):
+			b.container(_p3(p, y), -th + (PI / 2.0 if rng.randf() < 0.3 else 0.0), rng.randf() < 0.4, rng.randf() < 0.4)
+	b.fuel_tank(_p3(at.call(10.0, 26.0), y), -th + PI / 2.0)
+	b.water_tower(_p3(at.call(-30.0, 22.0), y))
+	for k in 5:
+		var p: Vector2 = c + Vector2(rng.randf_range(-r * 0.8, r * 0.8), rng.randf_range(-r * 0.8, r * 0.8))
+		if is_free(p, 2.0):
+			if k < 2:
+				b.car(_p3(p, y), rng.randf() * TAU)
+			else:
+				b.crates(_p3(p, y), rng.randf() * TAU)
+	for k in 2:
+		var p: Vector2 = c + Vector2(rng.randf_range(-r * 0.7, r * 0.7), rng.randf_range(-r * 0.7, r * 0.7))
+		if is_free(p, 1.6):
+			b.gun_crate(_p3(p, y), rng.randf() * TAU)
+
+
+func _acampamento(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var th := rng.randf() * TAU
+	var fwd := Vector2(cos(th), sin(th))
+	var rt := Vector2(-fwd.y, fwd.x)
+	# duas fileiras de tendas
+	for row in 2:
+		for k in 4:
+			var p := c + rt * (-9.0 + k * 6.0) + fwd * (6.0 if row == 0 else -6.0)
+			if is_free(p, 2.8):
+				b.tent(_p3(p, y), _face(p, c + rt * (-9.0 + k * 6.0)))
+	b.bunker(_p3(c + fwd * 18.0, y), _face(c + fwd * 18.0, c + fwd * 40.0))
+	b.bunker(_p3(c - rt * 20.0, y), _face(c - rt * 20.0, c - rt * 40.0))
+	b.mg_nest(_p3(c + fwd * 20.0 + rt * 13.0, y), _face(c, c + fwd))
+	b.artillery(_p3(c - fwd * 18.0 + rt * 8.0, y), _face(c, c - fwd))
+	b.artillery(_p3(c - fwd * 18.0 - rt * 4.0, y), _face(c, c - fwd))
+	b.watchtower(_p3(c + rt * 22.0 - fwd * 6.0, y), _face(c + rt * 22.0 - fwd * 6.0, c))
+	b.trench(_p3(c + fwd * 27.0, y), -atan2(rt.y, rt.x), 18.0)
+	# arame farpado e ouriços em volta
+	for k in 10:
+		var a := th + k * TAU / 10.0 + 0.2
+		var p := c + Vector2(cos(a), sin(a)) * (r + 6.0)
+		if is_free(p, 2.0) and road_dist(p.x, p.y) > 4.0:
+			if k % 3 == 0:
+				b.hedgehog(_p3(p, low_h(p, 1.2) - 0.05), rng.randf() * TAU)
+			else:
+				b.wire(_p3(p, low_h(p, 3.0) - 0.05), -a + PI / 2.0 + PI, 7.0)
+	for k in 3:
+		var p := c + Vector2(rng.randf_range(-r * 0.6, r * 0.6), rng.randf_range(-r * 0.6, r * 0.6))
+		if is_free(p, 1.8):
+			b.gun_crate(_p3(p, y), rng.randf() * TAU)
+	for k in 2:
+		var p := c + Vector2(rng.randf_range(-r * 0.6, r * 0.6), rng.randf_range(-r * 0.6, r * 0.6))
+		if is_free(p, 3.0):
+			b.car(_p3(p, y), rng.randf() * TAU)
+
+
+# Brejo Seco: o brejo secou, ficaram as palafitas de madeira em cima da terra rachada,
+# ligadas por passarelas altas (com escada nas pontas)
+func _palafitas(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var th := rng.randf() * TAU
+	var dir := Vector2(cos(th), sin(th))
+	var nrm := Vector2(-dir.y, dir.x)
+	for line in 2:
+		var L := r * (1.3 if line == 0 else 1.0)
+		var mid := c + nrm * (line * 2 - 1) * 10.5
+		var hh := 2.4
+		b.walkway(_p3(mid, y), atan2(-dir.x, -dir.y), L, hh, true, true, false)
+		var n := int(L / 6.5)
+		for i in n:
+			var t := -L / 2.0 + 4.0 + i * (L - 8.0) / maxf(1.0, n - 1)
+			for sg in [-1.0, 1.0]:
+				if rng.randf() < 0.25:
+					continue
+				var p: Vector2 = mid + dir * t + nrm * sg * (0.8 + 1.9 + 1.6)
+				if not is_free(p, 2.4):
+					continue
+				b.stilt_hut(_p3(p, y), _face(p, mid + dir * t), true)
+	# palafitas soltas com escada própria, canoas largadas na terra seca, lenha e tambores
+	for k in 6:
+		var a := rng.randf() * TAU
+		var p := c + Vector2(cos(a), sin(a)) * rng.randf_range(r * 0.6, r * 0.95)
+		if is_free(p, 4.0):
+			b.stilt_hut(_p3(p, y), _face(p, c))
+	for k in 3:
+		var p := c + Vector2(rng.randf_range(-r * 0.8, r * 0.8), rng.randf_range(-r * 0.8, r * 0.8))
+		if is_free(p, 2.5):
+			b.boat(_p3(p, y + 0.05), rng.randf() * TAU)
+	for k in 4:
+		var p := c + Vector2(rng.randf_range(-r * 0.8, r * 0.8), rng.randf_range(-r * 0.8, r * 0.8))
+		if is_free(p, 1.5):
+			if k % 2 == 0:
+				b.logs(_p3(p, y), rng.randf() * TAU)
+			else:
+				b.barrel(_p3(p, y))
+
+
+# Chapada Ventania: no alto do morro, praça elevada (chão de concreto acima do chão) com
+# escadas e uma passarela até um mirante menor; casas em volta
+func _mirante(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var th := rng.randf_range(-0.4, 0.4)
+	var bs := Basis(Vector3.UP, th)
+	var ax := bs * Vector3.RIGHT
+	var dx := Vector2(ax.x, ax.z)
+	var ph := 4.2
+	var big := 22.0
+	var small := 12.0
+	var gap := 12.0
+	var pa := c - dx * 8.0
+	var pb := pa + dx * (big / 2.0 + gap + small / 2.0)
+	b.platform(_p3(pa, y), th, big, big, ph, 1)
+	b.platform(_p3(pb, y), th, small, small, ph, 2)
+	var wm := pa + dx * (big / 2.0 + gap / 2.0)
+	b.walkway(_p3(wm, y), th + PI / 2.0, gap + 0.6, ph - 0.07, false, false, true)
+	_plaza(c, y, r)
+	_esparso(c, y, r)
+	for k in 4:
+		var p := c + Vector2(rng.randf_range(-r * 0.7, r * 0.7), rng.randf_range(-r * 0.7, r * 0.7))
+		if is_free(p, 2.0):
+			b.sandbags(_p3(p, y), rng.randf() * TAU, rng.randf_range(2.5, 4.0))
 
 
 func _esparso(c: Vector2, y: float, r: float) -> void:
@@ -1164,8 +1467,8 @@ func _fazenda(c: Vector2, y: float, r: float) -> void:
 	var side := Vector2(-dir.y, dir.x)
 	b.house(_p3(c + dir * r * 0.35, y), _face(c + dir * r * 0.35, c), {"w": 10.0, "d": 8.5, "floors": 2, "style": "plaster", "roof": "tile", "balcony": true, "porch": false})
 	b.warehouse(_p3(c - dir * r * 0.35, y), _face(c - dir * r * 0.35, c))
-	b.silo(_p3(c - dir * r * 0.35 + side * 11.0, y))
-	b.silo(_p3(c - dir * r * 0.35 + side * 16.0, y))
+	b.silo(_p3(c - dir * r * 0.35 + side * 14.5, y))
+	b.silo(_p3(c - dir * r * 0.35 + side * 21.5, y))
 	b.water_tower(_p3(c + side * r * 0.5, y))
 	for k in rng.randi_range(5, 8):
 		var p := c + Vector2(rng.randf_range(-r * 0.7, r * 0.7), rng.randf_range(-r * 0.7, r * 0.7))
@@ -1250,7 +1553,8 @@ func _posto(c: Vector2, y: float, r: float) -> void:
 		b.piece(root, Vector3(0.6, 1.5, 0.9), Vector3(sx, 0.75, 0), Color(0.85, 0.2, 0.15), U.PLAIN, 0.5)
 	var bs := Basis(Vector3.UP, th)
 	var sp := c + Vector2((bs * Vector3(0, 0, 14)).x, (bs * Vector3(0, 0, 14)).z)
-	b.store(_p3(sp, y), th + PI)
+	if is_free(sp, 6.5):
+		b.store(_p3(sp, y), th + PI)
 	for k in 3:
 		var p := c + Vector2(rng.randf_range(-r * 0.6, r * 0.6), rng.randf_range(-r * 0.6, r * 0.6))
 		if is_free(p, 3.0):
@@ -1453,6 +1757,93 @@ func _build_extras() -> void:
 	b.finish(500.0)
 
 
+# Marcas da guerra pelo mapa todo: postos de controle nas rodovias, tanques queimados, crateras,
+# trincheiras com ninho de metralhadora, arame farpado, ouriços, casamatas e canhões
+func _build_war() -> void:
+	b.begin(SEED + 505)
+	var rng := b.rng
+	var lim := PLAY - 25.0
+	# postos de controle na rodovia, chegando perto das cidades
+	for line in hw_pts:
+		var last := -999
+		for i in range(4, line.size() - 4):
+			var p: Vector2 = line[i][0]
+			if i - last < 25 or _near_town(p, 0.0) or not _near_town(p, 45.0) or not is_free(p, 9.0):
+				continue
+			var d: Vector2 = (line[i + 1][0] - line[i - 1][0]).normalized()
+			b.checkpoint(_p3(p, height(p.x, p.y)), atan2(d.x, d.y))
+			last = i
+	var fields := func(r0: float, slope: float) -> Vector2:
+		for t in 60:
+			var p := Vector2(rng.randf_range(-lim, lim), rng.randf_range(-lim, lim))
+			if _near_town(p, 12.0) or not is_free(p, r0) or road_dist(p.x, p.y) < r0 + 2.0 or hw_dist(p.x, p.y) < r0 + 6.0 or rail_dist(p) < r0 + 4.0:
+				continue
+			if height(p.x, p.y) < WATER_Y + 1.0 or _slope(p) > slope:
+				continue
+			return p
+		return Vector2.INF
+	for k in 7:
+		var p: Vector2 = fields.call(5.0, 0.15)
+		if p != Vector2.INF:
+			b.tank_wreck(_p3(p, low_h(p, 3.0) - 0.05), rng.randf() * TAU)
+			for j in 2:
+				var q := p + Vector2(rng.randf_range(-12, 12), rng.randf_range(-12, 12))
+				if is_free(q, 3.5) and road_dist(q.x, q.y) > 5.0:
+					b.crater(_p3(q, height(q.x, q.y)))
+	for k in 26:
+		var p: Vector2 = fields.call(3.5, 0.25)
+		if p != Vector2.INF:
+			b.crater(_p3(p, height(p.x, p.y)))
+	# trincheira com ninho de metralhadora numa ponta e arame na frente
+	for k in 6:
+		var p: Vector2 = fields.call(9.0, 0.12)
+		if p == Vector2.INF:
+			continue
+		var yaw := rng.randf() * TAU
+		var ax := Vector2(cos(yaw), -sin(yaw))
+		var fr := Vector2(-ax.y, ax.x)
+		var L := rng.randf_range(12.0, 18.0)
+		b.trench(_p3(p, low_h(p, L * 0.5) - 0.05), yaw, L)
+		var np := p + ax * (L / 2.0 + 3.2)
+		if is_free(np, 2.8):
+			b.mg_nest(_p3(np, low_h(np, 2.5) - 0.05), _face(np, np - fr))
+		var wp := p - fr * 7.0
+		if is_free(wp, 3.0):
+			b.wire(_p3(wp, low_h(wp, 3.5) - 0.05), yaw, L)
+	for k in 8:
+		var p: Vector2 = fields.call(4.0, 0.2)
+		if p != Vector2.INF:
+			b.wire(_p3(p, low_h(p, 3.5) - 0.05), rng.randf() * TAU, rng.randf_range(6.0, 10.0))
+	for k in 5:
+		var p: Vector2 = fields.call(4.5, 0.15)
+		if p != Vector2.INF:
+			b.bunker(_p3(p, low_h(p, 3.5) - 0.05), rng.randf() * TAU)
+	for k in 4:
+		var p: Vector2 = fields.call(4.0, 0.15)
+		if p == Vector2.INF:
+			continue
+		var yaw := rng.randf() * TAU
+		b.artillery(_p3(p, low_h(p, 2.0) - 0.05), yaw)
+		var bs := Basis(Vector3.UP, yaw)
+		var sp: Vector3 = bs * Vector3(0, 0, -4.6)
+		b.sandbags(_p3(p + Vector2(sp.x, sp.z), low_h(p, 2.5) - 0.05), yaw, 4.0)
+	# ouriços tchecos na beira da rodovia (em grupos)
+	for line in hw_pts:
+		for i in range(10, line.size() - 10, 37):
+			var p: Vector2 = line[i][0]
+			var d: Vector2 = (line[i + 1][0] - p).normalized()
+			for j in 3:
+				var q := p + Vector2(-d.y, d.x) * (7.0 + j * 0.8) * (1.0 if i % 2 == 0 else -1.0) + d * (j * 2.4)
+				if not _near_town(q, 4.0) and is_free(q, 1.4):
+					b.hedgehog(_p3(q, height(q.x, q.y) - 0.05), rng.randf() * TAU)
+	# barracas de refugiados/soldados soltas
+	for k in 6:
+		var p: Vector2 = fields.call(3.5, 0.15)
+		if p != Vector2.INF:
+			b.tent(_p3(p, low_h(p, 2.5) - 0.05), rng.randf() * TAU)
+	b.finish()
+
+
 # plantações (fileiras de milho/soja) e placas: o campo parece trabalhado, não vazio
 func _build_fields() -> void:
 	b.begin(SEED + 503)
@@ -1652,6 +2043,9 @@ const BUSH_LAYER := 1 << 9
 
 # árvore/pedra/moita/tronco: aplica o ajuste à mão e guarda (ou, no editor, vira um nó próprio)
 var terrain_body: StaticBody3D   # colisão do chão (o carro não "bate" nele)
+var floor_body: StaticBody3D     # colisão de asfalto, calçadas e cimento (idem)
+var floor_faces := PackedVector3Array()
+var footprints := []     # [tipo, centro, giro, meia largura, meia profundidade] de tudo que foi construído
 var map_marks := []     # árvores, moitas e pedras (pontinhos no mapa)
 var map_fields := []    # plantações (listras no mapa)
 var map_streets := []   # ruas das cidades
@@ -2205,34 +2599,113 @@ func _map_line(img: Image, a: Vector2, b: Vector2, r: int, col: Color) -> void:
 					img.set_pixel(x + dx, y + dy, col)
 
 
+# colunas de fumaça subindo ao longe (coisa queimando): dá o clima de guerra de qualquer ponto do mapa
+var smoke_spots := []
+
+
+static func smoke_tex() -> Texture2D:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var nz := FastNoiseLite.new()
+	nz.frequency = 0.09
+	for y in n:
+		for x in n:
+			var d := Vector2(x - n / 2.0, y - n / 2.0).length() / (n / 2.0)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			a = a * a * (0.65 + 0.35 * (nz.get_noise_2d(x, y) * 0.5 + 0.5))
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+func _build_smoke() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED + 31
+	var tex := smoke_tex()
+	var spots := smoke_spots.duplicate()
+	for k in 5:
+		spots.append(Vector2(rng.randf_range(-PLAY, PLAY), rng.randf_range(-PLAY, PLAY)))
+	# e umas bem longe, fora do mapa (o horizonte também está em guerra)
+	for k in 4:
+		var a := rng.randf() * TAU
+		spots.append(Vector2(cos(a), sin(a)) * rng.randf_range(520.0, 700.0))
+	for sp: Vector2 in spots:
+		var big := sp.length() > 450.0
+		var ps := CPUParticles3D.new()
+		ps.amount = 18 if big else 14
+		ps.lifetime = 16.0 if big else 11.0
+		ps.preprocess = 3.0
+		ps.local_coords = false
+		var qm := QuadMesh.new()
+		qm.size = Vector2(1, 1) * (26.0 if big else 9.0)
+		var m := StandardMaterial3D.new()
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.vertex_color_use_as_albedo = true
+		m.albedo_texture = tex
+		m.disable_receive_shadows = true
+		qm.material = m
+		ps.mesh = qm
+		ps.direction = Vector3(0.25, 1, 0.1)
+		ps.spread = 12.0
+		ps.gravity = Vector3(0.6, 0.9, 0.2)
+		ps.initial_velocity_min = 2.0 if not big else 5.0
+		ps.initial_velocity_max = 3.5 if not big else 8.0
+		ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		ps.emission_sphere_radius = 1.5 if not big else 6.0
+		var sc := Curve.new()
+		sc.add_point(Vector2(0, 0.35))
+		sc.add_point(Vector2(1, 1.6))
+		ps.scale_amount_curve = sc
+		ps.angle_min = 0.0
+		ps.angle_max = 360.0
+		var g := Gradient.new()
+		g.set_color(0, Color(0.16, 0.15, 0.14, 0.75))
+		g.set_color(1, Color(0.45, 0.44, 0.42, 0.0))
+		ps.color_ramp = g
+		ps.position = Vector3(sp.x, height(sp.x, sp.y) + 1.0 if not big else 40.0, sp.y)
+		ps.visibility_aabb = AABB(Vector3(-80, -10, -80), Vector3(160, 260, 160))
+		ps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(ps)
+
+
 func _build_env() -> void:
 	var env := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.3, 0.47, 0.7)
-	sm.sky_horizon_color = Color(0.68, 0.74, 0.8)
-	sm.ground_horizon_color = Color(0.64, 0.69, 0.72)
-	sm.ground_bottom_color = Color(0.5, 0.55, 0.55)
-	sm.sun_angle_max = 20.0
+	# dia nublado e pesado (pré-guerra): céu cinza, sol fraco, névoa de poeira e fumaça
+	sm.sky_top_color = Color(0.4, 0.44, 0.49)
+	sm.sky_horizon_color = Color(0.64, 0.64, 0.62)
+	sm.ground_horizon_color = Color(0.56, 0.55, 0.52)
+	sm.ground_bottom_color = Color(0.42, 0.41, 0.39)
+	sm.sky_curve = 0.18
+	sm.sun_angle_max = 40.0
+	sm.sun_curve = 0.6
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.6, 0.66, 0.74)
-	env.ambient_light_energy = 0.42
+	env.ambient_light_color = Color(0.64, 0.64, 0.64)
+	env.ambient_light_energy = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.66, 0.72, 0.78)
-	env.fog_density = 0.0022
-	env.fog_sky_affect = 0.3
+	env.fog_light_color = Color(0.6, 0.59, 0.56)
+	env.fog_density = 0.0032
+	env.fog_sky_affect = 0.55
+	# cores mais secas e frias (o mundo parece cansado)
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 0.72
+	env.adjustment_contrast = 1.06
+	env.adjustment_brightness = 0.98
 	# chão em volta do mapa até o horizonte (só visual)
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
 	var h := SIZE / 2.0
 	var far := 4000.0
 	var y := 40.0
-	var oc := Color(0.75, 0.78, 0.7)
+	var oc := Color(0.62, 0.62, 0.54)
 	var rects := [[-far, -far, far, -h], [-far, h, far, far], [-far, -h, -h, h], [h, -h, far, h]]
 	for r in rects:
 		mb.quad(Vector3(r[0], y, r[1]), Vector3(r[2], y, r[1]), Vector3(r[2], y, r[3]), Vector3(r[0], y, r[3]), oc, Vector3.UP)
@@ -2271,8 +2744,8 @@ func _build_env() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-48, 35, 0)
-	sun.light_color = Color(1.0, 0.96, 0.88)
-	sun.light_energy = 1.05
+	sun.light_color = Color(0.94, 0.91, 0.85)
+	sun.light_energy = 0.78
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

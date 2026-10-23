@@ -624,9 +624,9 @@ func _move(delta: float) -> void:
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
 	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
-	var spd := lerpf(3.4, 4.5, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
+	var spd := lerpf(3.8, 5.0, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
 	if sprint:
-		spd = 6.2 if (sel < 0 or cur_wid() == "fist") else 5.8
+		spd = 6.9 if (sel < 0 or cur_wid() == "fist") else 6.5
 	# atirando ou dando soco anda bem mais devagar
 	if (aim_t > 0.0 and not sprint) or (is_local and game.hud != null and game.hud.fire_held):
 		spd = minf(spd, 2.6)
@@ -931,11 +931,12 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.play("Idle", 0.25)
 	elif sp < 2.9 or crouch:
 		# agachado o passo é bem mais curto e lento
-		sol.play("Walking", 0.2, clampf(sp / 1.4, 0.5, 2.0) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
-	elif sp < 5.3 or not ual:
-		sol.play("Running", 0.2, clampf(sp / 3.9, 0.7, 1.35) if ual else clampf(sp / 5.4, 0.62, 1.5))
+		sol.play("Walking", 0.2, clampf(sp / 1.15, 0.55, 2.3) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
+	elif sp < 5.8 or not ual:
+		# passada curta e mais rápida (o pé não vai tão lá na frente)
+		sol.play("Running", 0.2, clampf(sp / 3.2, 0.8, 1.7) if ual else clampf(sp / 5.4, 0.62, 1.5))
 	else:
-		sol.play("Sprint", 0.2, clampf(sp / 6.0, 0.8, 1.3))
+		sol.play("Sprint", 0.2, clampf(sp / 5.0, 0.9, 1.6))
 	if ual and crouch:
 		cr = -1.0     # a própria animação agacha (sem dobrar as pernas por código)
 	if heal_t > 0.0:

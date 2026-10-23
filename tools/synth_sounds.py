@@ -330,3 +330,41 @@ for i in range(7):
     place(x, bp(noise(0.04), 2500, 10000) * np.exp(-t_(0.04) * 120) * rng.uniform(0.3, 0.7), at)
 place(x, np.sin(2 * np.pi * np.cumsum(120 + 90 * np.exp(-t_(0.2) * 30)) / R) * np.exp(-t_(0.2) * 20) * 0.8, 0.0)
 save("gear_break", np.tanh(x * 1.5), 0.85)
+
+# ---------------- clima de guerra (sons ao fundo) ----------------
+# artilharia longe: estrondo grave e comprido que rola no horizonte
+d = 4.5
+t = t_(d)
+x = lp(noise(d), 140) * np.exp(-t * 1.1) * 5.0
+x += np.sin(2 * np.pi * np.cumsum(32 + 25 * np.exp(-t * 3)) / R) * np.exp(-t * 1.6) * 1.2
+x[:int(0.04 * R)] *= np.linspace(0, 1, int(0.04 * R))
+save("far_boom", reverb(np.tanh(x * 1.2), 2.0, 0.45), 0.9)
+# rajada de metralhadora longe: estalos abafados em sequência
+d = 2.2
+x = np.zeros(int(d * R))
+n = int(rng.integers(6, 11))
+for i in range(n):
+    c = lp(noise(0.12), 900) * np.exp(-t_(0.12) * 30) * 1.5 + np.sin(2 * np.pi * 95 * t_(0.12)) * np.exp(-t_(0.12) * 40)
+    place(x, c * rng.uniform(0.7, 1.0), 0.05 + i * 0.105)
+save("far_mg", reverb(x, 1.2, 0.4), 0.7)
+# sirene antiaérea ao longe (sobe e desce devagar)
+d = 9.0
+t = t_(d)
+f = 330 + 190 * (0.5 - 0.5 * np.cos(2 * np.pi * t / 4.5))
+ph = np.cumsum(f) / R
+sir = np.sin(2 * np.pi * ph) + 0.35 * np.sin(4 * np.pi * ph) + 0.15 * np.sin(6 * np.pi * ph)
+env = np.minimum(1.0, t / 1.5) * np.minimum(1.0, (d - t) / 2.0)
+save("far_siren", reverb(lp(sir * env, 2500), 1.8, 0.5), 0.55)
+# vento seco de fundo (loop)
+d = 6.0
+t = t_(d)
+wind = lp(noise(d), 450) * 2.0 * (0.6 + 0.4 * np.sin(2 * np.pi * 0.17 * t) * np.sin(2 * np.pi * 0.05 * t + 1.0))
+wind += bp(noise(d), 1200, 3000) * 0.08 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.31 * t))
+save("ambient_wind", loopify(wind, 0.6), 0.5)
+# avião de caça passando alto (rasgo de jato)
+d = 6.0
+t = t_(d)
+k = np.exp(-((t - 2.6) / 1.2) ** 2)
+jet = bp(noise(d), 300, 4000) * k * 2.0 + lp(noise(d), 200) * k * 2.0
+save("far_jet", reverb(jet, 1.0, 0.3), 0.7)
+print("clima de guerra ok")

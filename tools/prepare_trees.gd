@@ -179,22 +179,71 @@ func _add_obj(st: SurfaceTool, path: String, thick: float) -> void:
 		st.add_vertex(p)
 
 
+# tronco reto e grosso (serve de cobertura contra tiro) + galhos grossos retos subindo pra copa;
+# a copa (cartões) vem das folhas do modelo original, centrada em cima do tronco
+const TRUNK := {"oak": [0.5, 0.3], "tall": [0.44, 0.26]}
+
+
 func _build(kind: String, lod: int, leaves: Material) -> ArrayMesh:
 	var t: Array = TREES[kind]
 	var am := ArrayMesh.new()
-	for mname in t[2]:
-		var path := tmp + "/%s__%s_lod%d.obj" % [kind, mname, lod]
-		if not FileAccess.file_exists(path):
-			continue
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		_add_obj(st, path, 1.35)
-		st.generate_normals()
-		st.set_material(_bark_mat(mname))
-		st.commit(am)
-	_cards_from_points(am, tmp + "/%s__leafpts.txt" % kind, 0.62 if lod == 0 else 1.25, int(t[4]), leaves, kind.hash())
+	var path := tmp + "/%s__leafpts.txt" % kind
+	var pts := PackedVector3Array()
+	for line in FileAccess.get_file_as_string(path).split("\n"):
+		var w := line.split(" ", false)
+		if w.size() >= 3:
+			pts.append(Vector3(float(w[0]), float(w[1]), float(w[2])))
+	var c := Vector3.ZERO
+	var ys := []
+	for p in pts:
+		c += p
+		ys.append(p.y)
+	c /= maxf(pts.size(), 1)
+	ys.sort()
+	var bot: float = ys[int(ys.size() * 0.12)]
+	var top: float = ys[int(ys.size() * 0.97)]
+	var shift := Vector3(-c.x, 0, -c.z)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 10 if lod == 0 else 6
+	var tr: Array = TRUNK[kind]
+	var th := bot + (top - bot) * 0.35
+	# raiz alargada no chão, tronco reto até dentro da copa
+	_cyl(st, Vector3(0, -0.4, 0), Vector3(0, 0.6, 0), float(tr[0]) * 1.35, float(tr[0]), seg)
+	_cyl(st, Vector3(0, 0.6, 0), Vector3(0, th, 0), float(tr[0]), float(tr[1]), seg)
+	# galhos grossos e retos saindo do alto do tronco pra dentro da copa
+	var rng := RandomNumberGenerator.new()
+	rng.seed = kind.hash() + 3
+	var nl := 6 if lod == 0 else 4
+	for k in nl:
+		var a := TAU * k / nl + rng.randf_range(-0.3, 0.3)
+		var rr := (top - bot) * rng.randf_range(0.35, 0.55)
+		var from := Vector3(0, th * rng.randf_range(0.78, 0.95), 0)
+		var to := Vector3(cos(a) * rr, rng.randf_range(bot + (top - bot) * 0.35, bot + (top - bot) * 0.7), sin(a) * rr)
+		_cyl(st, from, to, float(tr[1]) * 0.55, float(tr[1]) * 0.18, maxi(seg - 4, 4))
+	st.generate_normals()
+	st.set_material(_bark_mat(t[2][0]))
+	st.commit(am)
+	_cards_from_points(am, path, 0.62 if lod == 0 else 1.25, int(t[4]), leaves, kind.hash(), shift)
 	print(kind, " lod", lod, ": ", _tris(am), " triângulos")
 	return am
+
+
+func _cyl(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float, seg: int) -> void:
+	var d := (b - a).normalized()
+	var up := Vector3.UP if absf(d.y) < 0.95 else Vector3.RIGHT
+	var u := d.cross(up).normalized()
+	var v := d.cross(u).normalized()
+	for i in seg:
+		var a0 := TAU * i / seg
+		var a1 := TAU * (i + 1) / seg
+		var p00 := a + (u * cos(a0) + v * sin(a0)) * r0
+		var p01 := a + (u * cos(a1) + v * sin(a1)) * r0
+		var p10 := b + (u * cos(a0) + v * sin(a0)) * r1
+		var p11 := b + (u * cos(a1) + v * sin(a1)) * r1
+		for q in [p00, p10, p11, p00, p11, p01]:
+			st.set_color(Color.WHITE)
+			st.add_vertex(q)
 
 
 func _tris(m: ArrayMesh) -> int:
@@ -205,7 +254,7 @@ func _tris(m: ArrayMesh) -> int:
 
 
 # junta os pontos de folha em cubinhos; cada cubinho com folha vira um cartão
-func _cards_from_points(am: ArrayMesh, path: String, cell: float, card: int, mat: Material, seed: int) -> void:
+func _cards_from_points(am: ArrayMesh, path: String, cell: float, card: int, mat: Material, seed: int, shift := Vector3.ZERO) -> void:
 	var cells := {}
 	var lo := Vector3(1e9, 1e9, 1e9)
 	var hi := -lo
@@ -213,7 +262,7 @@ func _cards_from_points(am: ArrayMesh, path: String, cell: float, card: int, mat
 		var w := line.split(" ", false)
 		if w.size() < 6:
 			continue
-		var p := Vector3(float(w[0]), float(w[1]), float(w[2]))
+		var p := Vector3(float(w[0]), float(w[1]), float(w[2])) + shift
 		lo = lo.min(p)
 		hi = hi.max(p)
 		var k := Vector3i((p / cell).floor())
@@ -282,8 +331,8 @@ func _pine(lod: int, leaves: Material) -> ArrayMesh:
 		for j in 4:
 			var y0 := H * 0.85 * j / 4.0
 			var y1 := H * 0.85 * (j + 1) / 4.0
-			var r0 := lerpf(0.32, 0.06, y0 / H)
-			var r1 := lerpf(0.32, 0.06, y1 / H)
+			var r0 := lerpf(0.46, 0.1, y0 / H)
+			var r1 := lerpf(0.46, 0.1, y1 / H)
 			var q := [Vector3(cos(a0) * r0, y0 - (0.3 if j == 0 else 0.0), sin(a0) * r0), Vector3(cos(a1) * r0, y0 - (0.3 if j == 0 else 0.0), sin(a1) * r0),
 				Vector3(cos(a1) * r1, y1, sin(a1) * r1), Vector3(cos(a0) * r1, y1, sin(a0) * r1)]
 			var uv := [Vector2(float(i) / seg, y0 / 3.0), Vector2(float(i + 1) / seg, y0 / 3.0), Vector2(float(i + 1) / seg, y1 / 3.0), Vector2(float(i) / seg, y1 / 3.0)]

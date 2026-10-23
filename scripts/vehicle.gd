@@ -253,7 +253,7 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 	var only_ground := get_slide_collision_count() > 0
 	for ci in get_slide_collision_count():
 		var c := get_slide_collision(ci)
-		if c.get_collider() == game.world.terrain_body:
+		if c.get_collider() == game.world.terrain_body or c.get_collider() == game.world.floor_body:
 			continue
 		only_ground = false
 		var n := c.get_normal()

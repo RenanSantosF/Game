@@ -65,7 +65,9 @@ const NO_YAW := ["barrel", "water_tower", "silo", "radio_tower", "well"]
 const FOOT := {"monument": 2.4, "windmill": 1.8, "bus": 5.6, "shack": 3.8, "warehouse": 10.0, "church": 11.0, "barracks": 9.8, "store": 7.2, "ruin": 6.5,
 	"watchtower": 2.8, "water_tower": 3.2, "silo": 3.4, "radio_tower": 4.2, "well": 1.8,
 	"crates": 1.9, "barrel": 0.7, "container": 3.8, "barrier": 1.9, "barricade": 2.0, "gun_crate": 2.0,
-	"hay": 1.6, "logs": 3.2, "car": 3.0}
+	"hay": 1.6, "logs": 3.2, "car": 3.0,
+	"hangar": 16.0, "galpao": 8.0, "stilt_hut": 3.6, "tent": 3.2, "bunker": 4.4, "tank_wreck": 4.2, "hedgehog": 1.4,
+	"mg_nest": 3.0, "artillery": 2.8, "fuel_tank": 4.0, "checkpoint": 2.2}
 const PROPS := ["crates", "barrel", "container", "sandbags", "barrier", "barricade", "gun_crate", "hay", "logs", "car"]
 const AB := ["low_wall", "fence"]
 
@@ -116,6 +118,20 @@ static func _apply_args(kind: String, args: Array, o: Array, e: Dictionary) -> A
 	return a2
 
 
+# área ocupada de cada coisa construída (pra achar uma estrutura dentro da outra)
+func _footprint(kind: String, a: Array) -> void:
+	var p: Vector3 = a[0]
+	var yaw: float = a[1] if a.size() > 1 and typeof(a[1]) == TYPE_FLOAT else 0.0
+	if kind == "house":
+		var sp: Dictionary = a[2]
+		w.footprints.append([kind, Vector2(p.x, p.z), yaw, float(sp.get("w", 8.0)) / 2.0, float(sp.get("d", 7.0)) / 2.0])
+	else:
+		var r: float = FOOT.get(kind, 1.0)
+		w.footprints.append([kind, Vector2(p.x, p.z), yaw, r, r])
+		# toda coisa construída reserva o espaço dela (nada nasce em cima depois)
+		w.claim(Vector2(p.x, p.z), r * 0.85)
+
+
 func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
 	if _depth > 0:
 		callv("_k_" + kind, args)
@@ -149,6 +165,8 @@ func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
 	_depth += 1
 	callv("_k_" + kind, a2)
 	_depth -= 1
+	if not _skip and not kind in AB:
+		_footprint(kind, a2)
 	if _skip or no_items:
 		w.items.resize(its)
 	if _skip:
@@ -196,7 +214,17 @@ func _ground_pad(kind: String, a2: Array, edited: bool) -> void:
 		a2[0] = Vector3(pos.x, gy - 0.03, pos.z)
 		w.add_pad(c, r, gy, 3.0)
 	else:
-		w.add_pad(c, r, pos.y + 0.02, 6.0)
+		# a rampa em volta cresce com o desnível (nunca vira barranco)
+		w.add_pad(c, r, pos.y + 0.02, maxf(6.0, _pad_blend(c, r, pos.y)))
+
+
+# largura da rampa em volta do chão plano: ~4x o maior desnível até o terreno em volta
+func _pad_blend(c: Vector2, r: float, y: float) -> float:
+	var dh := 0.0
+	for k in 8:
+		var o := Vector2(r + 3.0, 0).rotated(k * TAU / 8.0)
+		dh = maxf(dh, absf(w.height(c.x + o.x, c.y + o.y) - y))
+	return minf(dh * 3.0, 14.0)
 
 
 # editor: remonta um objeto depois de mexer nele (mesmo sorteio de antes)
@@ -332,7 +360,9 @@ func _style_tex(style: String) -> Array:
 		"concrete":
 			return [U.CONCRETE, 0.3, Color(0.95, 0.95, 0.92)]
 	var tints: Array = theme_tints if not theme_tints.is_empty() else PLASTER_TINTS
-	return [U.PLASTER, 0.3, (tints[rng.randi() % tints.size()] as Color).darkened(rng.randf() * 0.08)]
+	# reboco desbotado e encardido (cidade abandonada às pressas)
+	var c: Color = (tints[rng.randi() % tints.size()] as Color).darkened(rng.randf() * 0.1)
+	return [U.PLASTER, 0.3, c.lerp(Color(c.get_luminance(), c.get_luminance(), c.get_luminance()), 0.4).darkened(0.08)]
 
 
 func _gable(root: Node3D, wdt: float, dpt: float, y: float, rise: float, layer: int, col: Color, wall_col: Color, wall_layer: int) -> void:
@@ -437,7 +467,7 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	# telhado
 	match roof:
 		"tile":
-			_gable(root, wd, dp, top, 1.4 if wd < 11.0 else 1.8, U.ROOF, theme_roof.darkened(rng.randf() * 0.2), col, lay)
+			_gable(root, wd, dp, top, 1.4 if wd < 11.0 else 1.8, U.ROOF, (theme_roof * Color(0.78, 0.76, 0.74)).darkened(rng.randf() * 0.2), col, lay)
 		"metal":
 			_gable(root, wd, dp, top, 0.9, U.METAL, Color(0.9, 0.92, 0.95), col, lay)
 		"burnt":
@@ -1369,3 +1399,574 @@ func _k_car(pos: Vector3, yaw: float) -> void:
 		if wreck:
 			mi.rotation.z = 0.04
 			mi.position.y = -0.08
+
+
+# ---------------- estruturas de guerra e de cidade (cenário pré-guerra) ----------------
+
+# escada reta: rampa na colisão, degraus no desenho. Sai de "top" (beira de cima, altura h em cima de top.y)
+# e desce na direção dir (local, horizontal).
+func stairs(root: Node3D, top: Vector3, dir: Vector3, h: float, wdt: float, col: Color, solid := true) -> void:
+	var L := h * 1.45
+	var rot := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var ang := atan2(h, L)
+	col_box(root, Vector3(wdt, 0.15, sqrt(L * L + h * h)), top + dir * (L / 2.0) - Vector3(0, h / 2.0 + 0.06, 0), rot * Basis(Vector3.RIGHT, ang))
+	if headless:
+		return
+	var n := maxi(3, int(ceil(h / 0.2)))
+	for i in n:
+		var sy := h - (i + 1) * h / n
+		var c := top + dir * ((i + 0.5) * L / n)
+		if solid:
+			vis(root, Vector3(wdt, sy + h / n, L / n + 0.01), Vector3(c.x, top.y - h + (sy + h / n) / 2.0, c.z), col.darkened((i % 2) * 0.05), U.CONCRETE, 0.4, rot)
+		else:
+			vis(root, Vector3(wdt, 0.06, L / n * 0.8), Vector3(c.x, top.y - h + sy + h / n - 0.03, c.z), col, U.WOOD, 0.8, rot)
+	if not solid:
+		for sx in [-1.0, 1.0]:
+			var o := rot * Vector3(sx * (wdt / 2.0 + 0.05), 0, 0)
+			vis(root, Vector3(0.08, 0.2, sqrt(L * L + h * h)), top + o + dir * (L / 2.0) - Vector3(0, h / 2.0, 0), col.darkened(0.25), U.WOOD, 0.6, rot * Basis(Vector3.RIGHT, ang))
+
+
+# guarda-corpo reto de a até b (local), com colisão
+func railing(root: Node3D, a: Vector3, b2: Vector3, col: Color, layer := U.METAL, h := 1.0) -> void:
+	var d := b2 - a
+	var L := Vector2(d.x, d.z).length()
+	if L < 0.1:
+		return
+	var rot := Basis(Vector3.UP, atan2(d.x, d.z))
+	var m := (a + b2) / 2.0
+	col_box(root, Vector3(0.1, h, L), m + Vector3(0, h / 2.0, 0), rot)
+	if headless:
+		return
+	vis(root, Vector3(0.08, 0.08, L), m + Vector3(0, h, 0), col, layer, 0.6, rot)
+	vis(root, Vector3(0.05, 0.05, L), m + Vector3(0, h * 0.5, 0), col, layer, 0.6, rot)
+	for i in int(L / 1.5) + 1:
+		var p := a + d * (float(i) / maxf(1.0, float(int(L / 1.5))))
+		vis(root, Vector3(0.07, h, 0.07), p + Vector3(0, h / 2.0, 0), col.darkened(0.1), layer, 0.6)
+
+
+# hangar de avião: teto em arco, frente aberta, fundo fechado com porta
+func hangar(pos: Vector3, yaw: float) -> void:
+	_obj("hangar", [pos, yaw])
+
+
+func _k_hangar(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var W := 22.0
+	var D := 28.0
+	var H := 9.0
+	var col := Color(0.86, 0.88, 0.82).darkened(rng.randf() * 0.12)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 17.0)
+	piece(root, Vector3(W, 0.12, D), Vector3(0, 0.0, 0), Color(0.7, 0.7, 0.68), U.CONCRETE, 0.25)
+	var n := 9
+	for k in n:
+		var t0 := PI * k / n
+		var t1 := PI * (k + 1) / n
+		var p0 := Vector2(cos(t0) * W / 2.0, sin(t0) * H)
+		var p1 := Vector2(cos(t1) * W / 2.0, sin(t1) * H)
+		var dd := p1 - p0
+		var rot := Basis(Vector3(0, 0, 1), atan2(dd.y, dd.x))
+		piece(root, Vector3(dd.length() + 0.12, 0.2, D), Vector3((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0, 0), col.darkened((k % 2) * 0.06), U.METAL, 0.3, true, rot)
+		if not headless:
+			for rz in range(-2, 3):
+				vis(root, Vector3(dd.length() + 0.1, 0.32, 0.25), Vector3((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0 - 0.12, rz * D / 4.4), col.darkened(0.35), U.METAL, 0.5, rot)
+	# fundo (fatias verticais seguindo o arco) com porta no meio; na frente só a testeira de cima
+	var sl := 11
+	for i in sl:
+		var x := -W / 2.0 + (i + 0.5) * W / sl
+		# altura pela beira de fora da fatia, um pouco abaixo do arco (não fura o teto)
+		var xe := minf(absf(x) + W / sl / 2.0, W / 2.0)
+		var hh := H * sqrt(maxf(0.0, 1.0 - pow(xe / (W / 2.0), 2.0))) * 0.96 - 0.15
+		if hh < 0.4:
+			continue
+		if i == sl / 2:
+			piece(root, Vector3(W / sl, hh - 2.6, 0.2), Vector3(x, 2.6 + (hh - 2.6) / 2.0, D / 2.0 - 0.1), col, U.METAL, 0.3)
+		else:
+			piece(root, Vector3(W / sl + 0.02, hh, 0.2), Vector3(x, hh / 2.0, D / 2.0 - 0.1), col, U.METAL, 0.3)
+		if hh > 6.8:
+			piece(root, Vector3(W / sl + 0.02, hh - 6.8, 0.2), Vector3(x, 6.8 + (hh - 6.8) / 2.0, -D / 2.0 + 0.1), col.darkened(0.08), U.METAL, 0.3)
+	if not headless:
+		# número pintado e faixa de alerta na entrada
+		vis(root, Vector3(4.0, 1.2, 0.02), Vector3(0, 7.6, -D / 2.0 - 0.01), Color(0.9, 0.88, 0.8), U.PLAIN, 1.0)
+		for k in 8:
+			vis(root, Vector3(1.0, 0.012, 0.5), Vector3(-W / 2.0 + 1.5 + k * 2.7, 0.07, -D / 2.0 + 0.4), Color(0.85, 0.7, 0.15) if k % 2 == 0 else Color(0.12, 0.12, 0.12), U.PLAIN, 1.0)
+	# dentro: caixotes, tambores e um bimotor velho desmontado (asa e fuselagem)
+	piece(root, Vector3(2.0, 1.6, 8.0), Vector3(-1.5, 1.4, 2.0), Color(0.4, 0.43, 0.38), U.METAL, 0.4)
+	piece(root, Vector3(12.0, 0.25, 2.2), Vector3(-1.5, 1.6, 0.5), Color(0.38, 0.41, 0.36), U.METAL, 0.4)
+	for sx in [-5.0, 2.0]:
+		piece(root, Vector3(0.25, 1.5, 0.25), Vector3(sx, 0.75, 0.5), Color(0.2, 0.2, 0.2), U.METAL, 0.6)
+	crates(pos + bs * Vector3(W / 2.0 - 2.5, 0.05, D / 2.0 - 3.0), yaw, false)
+	crates(pos + bs * Vector3(-W / 2.0 + 2.8, 0.05, -3.0), yaw + 0.3, false)
+	for k in 3:
+		barrel(pos + bs * Vector3(W / 2.0 - 2.0 - k * 1.0, 0.05, -D / 2.0 + 4.0 + (k % 2) * 0.9))
+	var din := pos + bs * Vector3(0, 0.3, -D / 2.0 + 3.0)
+	var dout := pos + bs * Vector3(0, 0.3, -D / 2.0 - 3.0)
+	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 11.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	for k in 4:
+		w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.1, rng.randf_range(-D * 0.35, D * 0.35)), w.loot_kind(rng, k < 2), dout, din)
+
+
+# galpão industrial comprido: portão grande, janelas altas e mezanino com escada por dentro
+func galpao(pos: Vector3, yaw: float) -> void:
+	_obj("galpao", [pos, yaw])
+
+
+func _k_galpao(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var W := rng.randf_range(22.0, 28.0)
+	var D := 15.0
+	var H := 6.2
+	var col: Color = [Color(0.62, 0.58, 0.5), Color(0.5, 0.55, 0.52), Color(0.66, 0.5, 0.42)][rng.randi() % 3].darkened(rng.randf() * 0.15)
+	var bs := Basis(Vector3.UP, yaw)
+	for k in [-1.0, 0.0, 1.0]:
+		var cp: Vector3 = pos + bs * Vector3(k * W / 3.0, 0, 0)
+		w.claim(Vector2(cp.x, cp.z), D * 0.58)
+	var gx := rng.randf_range(-W * 0.2, W * 0.2)
+	var hi := []
+	for k in int(W / 5.0):
+		var x := -W / 2.0 + 2.5 + k * 5.0
+		if absf(x - gx) > 3.6:
+			hi.append([x, 2.0, 4.3, 5.4])
+	hi.append([gx, 5.0, 0.0, 4.6])
+	wall(root, true, -D / 2.0, W, H, 0.0, hi, col, U.METAL, 0.3, false)
+	wall(root, true, D / 2.0, W, H, 0.0, [[-W / 2.0 + 3.0, 1.4, 0.0, 2.3], [W / 4.0, 2.0, 4.3, 5.4], [-W / 4.0, 2.0, 4.3, 5.4]], col, U.METAL, 0.3, false)
+	wall(root, false, -W / 2.0, D, H, 0.0, [_door(2.0, 1.4), [-3.0, 2.0, 4.3, 5.4]], col, U.METAL, 0.3, false)
+	wall(root, false, W / 2.0, D, H, 0.0, [[0.0, 2.0, 4.3, 5.4]], col, U.METAL, 0.3, false)
+	piece(root, Vector3(W, 0.12, D), Vector3(0, 0, 0), Color(0.66, 0.65, 0.62), U.CONCRETE, 0.25)
+	_gable(root, W, D, H, 2.2, U.METAL, Color(0.75, 0.75, 0.72), col, U.METAL)
+	# mezanino no fundo, com guarda-corpo e escada
+	var mh := 3.3
+	var md := 3.4
+	var x0 := -W / 2.0 + 1.8
+	var x1 := W / 2.0 - 0.2
+	piece(root, Vector3(x1 - x0, 0.18, md), Vector3((x0 + x1) / 2.0, mh, D / 2.0 - md / 2.0 - 0.15), Color(0.42, 0.4, 0.38), U.METAL, 0.4)
+	for k in int((x1 - x0) / 4.0) + 1:
+		piece(root, Vector3(0.22, mh, 0.22), Vector3(x0 + 0.3 + k * 4.0, mh / 2.0, D / 2.0 - md - 0.05), Color(0.3, 0.3, 0.3), U.METAL, 0.5)
+	railing(root, Vector3(x0 + 1.4, mh + 0.09, D / 2.0 - md - 0.1), Vector3(x1, mh + 0.09, D / 2.0 - md - 0.1), Color(0.75, 0.6, 0.15))
+	stairs(root, Vector3(x0 + 0.65, mh + 0.09, D / 2.0 - md - 0.15), Vector3(0, 0, -1), mh + 0.09, 1.2, Color(0.4, 0.4, 0.4), false)
+	for k in 3:
+		crates(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.05, rng.randf_range(-D * 0.3, D * 0.05)), yaw + rng.randf_range(-0.3, 0.3), false)
+	var din := pos + bs * Vector3(gx, 0.3, -D / 2.0 + 2.0)
+	var dout := pos + bs * Vector3(gx, 0.3, -D / 2.0 - 3.0)
+	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": D * 0.5, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), mh + 0.12, D / 2.0 - md / 2.0), w.loot_kind(rng, true), null, null, true)
+	w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), mh + 0.12, D / 2.0 - md / 2.0), w.loot_kind(rng, false), null, null, true)
+	for k in 2:
+		w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.1, rng.randf_range(-D * 0.3, 0.0)), w.loot_kind(rng, k == 0), dout, din)
+
+
+# casinha pobre de madeira em cima de estacas (chão seco), com varandinha e escada
+# linked: a frente da varanda encosta numa passarela (sem guarda-corpo nem escada na frente)
+func stilt_hut(pos: Vector3, yaw: float, linked := false) -> void:
+	_obj("stilt_hut", [pos, yaw, linked])
+
+
+func _k_stilt_hut(pos: Vector3, yaw: float, linked := false) -> void:
+	var root := body(pos, yaw)
+	var h := 2.4 if linked else rng.randf_range(2.0, 2.8)
+	var wd := rng.randf_range(3.8, 4.8)
+	var dp := 3.8 if linked else rng.randf_range(3.4, 4.0)
+	var wh := 2.4
+	var col := Color(1.0, 0.88, 0.72).darkened(rng.randf() * 0.3)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 4.2)
+	for sx in [-1.0, 0.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			piece(root, Vector3(0.2, h, 0.2), Vector3(sx * (wd / 2.0 - 0.15), h / 2.0, sz * (dp / 2.0 - 0.15)), col.darkened(0.3), U.WOOD, 0.8)
+	# estacas da varanda e escoras em X
+	for sx in [-1.0, 1.0]:
+		piece(root, Vector3(0.16, h, 0.16), Vector3(sx * (wd / 2.0 - 0.15), h / 2.0, -dp / 2.0 - 1.4), col.darkened(0.3), U.WOOD, 0.8)
+		vis(root, Vector3(0.08, sqrt(h * h + dp * dp) * 0.9, 0.08), Vector3(sx * (wd / 2.0 - 0.15), h / 2.0, 0), col.darkened(0.4), U.WOOD, 0.8, Basis(Vector3.RIGHT, atan2(dp, h)))
+	piece(root, Vector3(wd + 0.2, 0.14, dp + 1.6), Vector3(0, h, -0.8), col, U.WOOD, 0.6)
+	wall(root, true, -dp / 2.0, wd, wh, h + 0.07, [_door(-wd * 0.18, 0.9), [wd * 0.22, 0.9, 1.0, 1.7]], col, U.WOOD, 0.45)
+	wall(root, true, dp / 2.0, wd, wh, h + 0.07, [[0.0, 0.8, 1.0, 1.6]], col, U.WOOD, 0.45)
+	wall(root, false, -wd / 2.0, dp, wh, h + 0.07, [], col.darkened(0.05), U.WOOD, 0.45)
+	wall(root, false, wd / 2.0, dp, wh, h + 0.07, [[0.0, 0.8, 1.0, 1.6]], col.darkened(0.05), U.WOOD, 0.45)
+	# telhado de zinco torto (uma água), enferrujado
+	piece(root, Vector3(wd + 0.7, 0.06, dp + 2.2), Vector3(0, h + wh + 0.35, -0.6), Color(0.62, 0.5, 0.42), U.METAL, 0.3, true, Basis(Vector3.RIGHT, -0.16))
+	if not linked:
+		railing(root, Vector3(-wd / 2.0, h + 0.07, -dp / 2.0 - 1.55), Vector3(wd / 2.0 - 1.3, h + 0.07, -dp / 2.0 - 1.55), col.darkened(0.2), U.WOOD, 0.9)
+		railing(root, Vector3(-wd / 2.0 - 0.02, h + 0.07, -dp / 2.0 - 1.55), Vector3(-wd / 2.0 - 0.02, h + 0.07, -dp / 2.0), col.darkened(0.2), U.WOOD, 0.9)
+		stairs(root, Vector3(wd / 2.0 - 0.6, h + 0.07, -dp / 2.0 - 1.6), Vector3(0, 0, -1), h + 0.07, 1.0, col.darkened(0.1), false)
+	if not headless:
+		# varal, bacia e lenha embaixo da casa
+		vis(root, Vector3(0.6, 0.25, 0.6), Vector3(0.6, 0.12, 0.3), Color(0.5, 0.5, 0.5), U.METAL, 0.6)
+		for k in 4:
+			vis(root, Vector3(1.4, 0.16, 0.16), Vector3(-0.8, 0.08 + k * 0.15, -0.2 + (k % 2) * 0.12), Color(0.55, 0.42, 0.3), U.WOOD, 0.8, Basis(Vector3.UP, k * 0.2))
+	if not linked:
+		w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 2.4, "yaw": yaw, "w": wd, "d": dp,
+			"din": pos + bs * Vector3(-wd * 0.18, h + 0.3, -dp / 2.0 + 1.0), "dout": pos + bs * Vector3(wd / 2.0 - 0.6, 0.3, -dp / 2.0 - 1.6 - h * 1.6)})
+	w.add_item(pos + bs * Vector3(rng.randf_range(-wd * 0.3, wd * 0.3), h + 0.14, rng.randf_range(0.0, dp * 0.3)), w.loot_kind(rng, rng.randf() < 0.45), null, null, true)
+
+
+# passarela (madeira ou concreto) de comprimento L (no Z local), em cima de altura h; pos = chão no meio.
+# ends: escada descendo nas duas pontas; rails: guarda-corpo dos lados
+func walkway(pos: Vector3, yaw: float, length: float, h: float, wood := true, ends := false, rails := true) -> void:
+	_obj("walkway", [pos, yaw, length, h, wood, ends, rails])
+
+
+func _k_walkway(pos: Vector3, yaw: float, length: float, h: float, wood := true, ends := false, rails := true) -> void:
+	var root := body(pos, yaw)
+	var col := Color(0.66, 0.55, 0.42).darkened(rng.randf() * 0.2) if wood else Color(0.78, 0.77, 0.74)
+	var lay := U.WOOD if wood else U.CONCRETE
+	var wd := 1.6 if wood else 2.4
+	piece(root, Vector3(wd, 0.14, length), Vector3(0, h, 0), col, lay, 0.6)
+	for k in int(length / 3.0) + 1:
+		var z := -length / 2.0 + 0.3 + k * (length - 0.6) / maxf(1.0, float(int(length / 3.0)))
+		for sx in [-1.0, 1.0]:
+			piece(root, Vector3(0.16, h + 2.0, 0.16) if wood else Vector3(0.35, h + 2.0, 0.35), Vector3(sx * (wd / 2.0 - 0.1), h / 2.0 - 1.0, z), col.darkened(0.3), lay, 0.6)
+	var bw := Basis(Vector3.UP, yaw)
+	for k in int(length / 3.0) + 1:
+		var cp: Vector3 = pos + bw * Vector3(0, 0, -length / 2.0 + k * 3.0)
+		w.claim(Vector2(cp.x, cp.z), 1.6)
+	if rails:
+		for sx in [-1.0, 1.0]:
+			railing(root, Vector3(sx * wd / 2.0, h + 0.07, -length / 2.0 + 0.4), Vector3(sx * wd / 2.0, h + 0.07, length / 2.0 - 0.4), col.darkened(0.2), lay if wood else U.METAL, 0.95)
+	if ends:
+		for sg in [-1.0, 1.0]:
+			stairs(root, Vector3(0, h + 0.07, sg * length / 2.0), Vector3(0, 0, sg), h + 0.07, wd - 0.1, col.darkened(0.1), not wood)
+
+
+# plataforma elevada (chão de concreto acima do chão) com pilares, escadas dos dois lados e quiosque em cima
+# open: 1 = lado +X sem mureta, 2 = lado -X sem mureta (onde chega uma passarela)
+func platform(pos: Vector3, yaw: float, sx: float, sz: float, h: float, open := 0) -> void:
+	_obj("platform", [pos, yaw, sx, sz, h, open])
+
+
+func _k_platform(pos: Vector3, yaw: float, sx: float, sz: float, h: float, open := 0) -> void:
+	var root := body(pos, yaw)
+	var col := Color(0.74, 0.73, 0.7)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), maxf(sx, sz) * 0.62)
+	piece(root, Vector3(sx, 0.35, sz), Vector3(0, h - 0.175, 0), col, U.CONCRETE, 0.3)
+	var nx := int(sx / 6.0) + 1
+	var nz := int(sz / 6.0) + 1
+	for i in nx:
+		for j in nz:
+			var px := -sx / 2.0 + 0.5 + i * (sx - 1.0) / maxf(1.0, nx - 1)
+			var pz := -sz / 2.0 + 0.5 + j * (sz - 1.0) / maxf(1.0, nz - 1)
+			piece(root, Vector3(0.6, h + 1.5, 0.6), Vector3(px, (h - 1.5) / 2.0, pz), col.darkened(0.12), U.CONCRETE, 0.4)
+	# mureta em volta com abertura das escadas (frente e fundo, cantos opostos)
+	var gap := 2.0
+	var ex := sx / 2.0 - 1.4
+	for sg in [-1.0, 1.0]:
+		var zz: float = sg * sz / 2.0
+		var gx: float = sg * ex
+		railing(root, Vector3(-sx / 2.0, h, zz), Vector3(gx - gap / 2.0, h, zz), Color(0.35, 0.36, 0.34))
+		railing(root, Vector3(gx + gap / 2.0, h, zz), Vector3(sx / 2.0, h, zz), Color(0.35, 0.36, 0.34))
+		if not (open & (1 if sg > 0 else 2)):
+			railing(root, Vector3(sg * sx / 2.0, h, -sz / 2.0), Vector3(sg * sx / 2.0, h, sz / 2.0), Color(0.35, 0.36, 0.34))
+		else:
+			# mureta só nas pontas, com a passagem de 3 m no meio
+			railing(root, Vector3(sg * sx / 2.0, h, -sz / 2.0), Vector3(sg * sx / 2.0, h, -1.6), Color(0.35, 0.36, 0.34))
+			railing(root, Vector3(sg * sx / 2.0, h, 1.6), Vector3(sg * sx / 2.0, h, sz / 2.0), Color(0.35, 0.36, 0.34))
+		stairs(root, Vector3(gx, h, zz), Vector3(0, 0, sg), h, gap - 0.1, col.darkened(0.05))
+	# em cima: quiosque com cobertura, sacos de areia e caixotes (troca de tiro lá do alto)
+	for px in [-1.6, 1.6]:
+		for pz in [-1.6, 1.6]:
+			piece(root, Vector3(0.18, 2.6, 0.18), Vector3(px, h + 1.3, pz), Color(0.3, 0.3, 0.3), U.METAL, 0.6)
+	piece(root, Vector3(4.4, 0.1, 4.4), Vector3(0, h + 2.65, 0), Color(0.55, 0.3, 0.22), U.METAL, 0.3)
+	sandbags(pos + bs * Vector3(-sx * 0.28, h, sz * 0.2), yaw + 0.2, 3.0)
+	sandbags(pos + bs * Vector3(sx * 0.3, h, -sz * 0.22), yaw - 0.15, 3.0)
+	crates(pos + bs * Vector3(sx * 0.25, h, sz * 0.28), yaw, false)
+	for k in 3:
+		w.add_item(pos + bs * Vector3(rng.randf_range(-sx * 0.35, sx * 0.35), h + 0.1, rng.randf_range(-sz * 0.35, sz * 0.35)), w.loot_kind(rng, k == 0), null, null, true)
+
+
+# tenda militar (lona em V), aberta na frente
+func tent(pos: Vector3, yaw: float) -> void:
+	_obj("tent", [pos, yaw])
+
+
+func _k_tent(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var col := Color(0.42, 0.45, 0.32).darkened(rng.randf() * 0.2)
+	var W := 3.6
+	var D := 5.2
+	var H := 2.4
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 3.4)
+	var sl := sqrt(H * H + W * W / 4.0)
+	for sg in [-1.0, 1.0]:
+		piece(root, Vector3(sl, 0.06, D), Vector3(sg * W / 4.0, H / 2.0, 0), col, U.FABRIC, 0.6, true, Basis(Vector3(0, 0, 1), -sg * atan2(H, W / 2.0)))
+	if not headless:
+		var t := root.transform
+		mb.tex(U.FABRIC, 0.6)
+		mb.tri(t * Vector3(-W / 2.0, 0, D / 2.0), t * Vector3(W / 2.0, 0, D / 2.0), t * Vector3(0, H, D / 2.0), col.darkened(0.15), bs * Vector3(0, 0, 1))
+		mb.tri(t * Vector3(W / 2.0, 0, D / 2.0), t * Vector3(-W / 2.0, 0, D / 2.0), t * Vector3(0, H, D / 2.0), col.darkened(0.3), bs * Vector3(0, 0, -1))
+		vis(root, Vector3(0.08, 0.08, D + 0.4), Vector3(0, H, 0), Color(0.3, 0.25, 0.2), U.WOOD, 0.8)
+		for sx in [-0.8, 0.8]:
+			vis(root, Vector3(0.7, 0.35, 1.9), Vector3(sx, 0.18, 0.6), Color(0.35, 0.38, 0.28), U.FABRIC, 0.8)
+	col_box(root, Vector3(W, H * 0.8, 0.1), Vector3(0, H * 0.4, D / 2.0))
+	w.add_item(pos + bs * Vector3(0, 0.1, 0.2), w.loot_kind(rng, rng.randf() < 0.4), pos + bs * Vector3(0, 0.3, -D / 2.0 - 1.5), pos + bs * Vector3(0, 0.3, -D / 2.0 + 1.0))
+
+
+# casamata de concreto: paredes grossas, seteira na frente, porta atrás, sacos de areia no teto
+func bunker(pos: Vector3, yaw: float) -> void:
+	_obj("bunker", [pos, yaw])
+
+
+func _k_bunker(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var W := 6.4
+	var D := 5.0
+	var H := 2.4
+	var col := Color(0.62, 0.62, 0.58).darkened(rng.randf() * 0.15)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 4.8)
+	for f in [[true, -D / 2.0, W, [[0.0, 3.6, 1.2, 1.6]]], [true, D / 2.0, W, [[1.6, 1.0, 0.0, 2.0]]], [false, -W / 2.0, D, [[0.0, 1.4, 1.2, 1.6]]], [false, W / 2.0, D, [[0.0, 1.4, 1.2, 1.6]]]]:
+		var holes: Array = f[3]
+		var segs := []
+		var x := -float(f[2]) / 2.0
+		for hl in holes:
+			segs.append([x, hl[0] - hl[1] / 2.0, 0.0, H])
+			if hl[2] > 0.0:
+				segs.append([hl[0] - hl[1] / 2.0, hl[0] + hl[1] / 2.0, 0.0, hl[2]])
+			segs.append([hl[0] - hl[1] / 2.0, hl[0] + hl[1] / 2.0, hl[3], H])
+			x = hl[0] + hl[1] / 2.0
+		segs.append([x, float(f[2]) / 2.0, 0.0, H])
+		for s in segs:
+			var ls: float = s[1] - s[0]
+			var hh: float = s[3] - s[2]
+			if ls < 0.01 or hh < 0.01:
+				continue
+			var c := Vector3((s[0] + s[1]) / 2.0, (s[2] + s[3]) / 2.0, f[1])
+			if f[0]:
+				piece(root, Vector3(ls, hh, 0.5), c, col, U.CONCRETE, 0.3)
+			else:
+				piece(root, Vector3(0.5, hh, ls), Vector3(f[1], c.y, c.x), col, U.CONCRETE, 0.3)
+	piece(root, Vector3(W + 0.6, 0.55, D + 0.6), Vector3(0, H + 0.27, 0), col.darkened(0.08), U.CONCRETE, 0.3)
+	piece(root, Vector3(W, 0.1, D), Vector3(0, 0, 0), col.darkened(0.2), U.CONCRETE, 0.4)
+	if not headless:
+		mb.tex(U.FABRIC, 1.5)
+		for i in 9:
+			mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(0.32, 0.18, 0.36)), Vector3(-W / 2.0 + 0.5 + i * 0.7, H + 0.72, -D / 2.0 + 0.2)), 6, 3, Color(0.7, 0.62, 0.46).darkened(vrng.randf() * 0.15))
+		mb.tex(U.DIRT, 0.4)
+		mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(W * 0.42, 0.6, D * 0.42)), Vector3(0, H + 0.55, 0.3)), 8, 3, Color(0.5, 0.44, 0.34), vrng, 0.2)
+	var din := pos + bs * Vector3(1.6, 0.3, D / 2.0 - 1.0)
+	var dout := pos + bs * Vector3(1.6, 0.3, D / 2.0 + 1.8)
+	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 2.6, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.add_item(pos + bs * Vector3(-1.2, 0.1, 0.4), w.loot_kind(rng, true), dout, din)
+	w.add_item(pos + bs * Vector3(1.4, 0.1, -0.6), w.loot_kind(rng, false), dout, din)
+
+
+# tanque de guerra destruído (queimado), boa cobertura
+func tank_wreck(pos: Vector3, yaw: float) -> void:
+	_obj("tank_wreck", [pos, yaw])
+
+
+func _k_tank_wreck(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var col := Color(0.3, 0.32, 0.26).lerp(Color(0.16, 0.15, 0.14), rng.randf() * 0.7)
+	w.claim(Vector2(pos.x, pos.z), 4.6)
+	piece(root, Vector3(3.2, 1.25, 6.4), Vector3(0, 1.0, 0), col, U.METAL, 0.35)
+	for sx in [-1.0, 1.0]:
+		piece(root, Vector3(0.62, 1.0, 6.9), Vector3(sx * 1.85, 0.5, 0), col.darkened(0.4), U.METAL, 0.5)
+	var ty := rng.randf_range(-1.2, 1.2)
+	var tr := Basis(Vector3.UP, ty)
+	piece(root, Vector3(2.3, 0.85, 2.8), Vector3(0, 2.05, 0.4), col.darkened(0.08), U.METAL, 0.4, true, tr)
+	if not headless:
+		var droop := rng.randf_range(0.0, 0.22)
+		mb.tex(U.METAL, 0.6)
+		mb.cyl(root.transform * Transform3D(tr * Basis(Vector3.RIGHT, -PI / 2.0 + droop), Vector3(0, 2.05, 0.4) + tr * Vector3(0, -droop * 1.4, -1.3)), 0.13, 0.11, 4.2, 8, col.darkened(0.2))
+		mb.tex(U.PLAIN, 1.0)
+		for sx in [-1.0, 1.0]:
+			for k in 5:
+				mb.cyl(root.transform * Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(sx * 1.88, 0.42, -2.6 + k * 1.3)), 0.38, 0.38, 0.66, 10, Color(0.1, 0.1, 0.1))
+		# manchas de queimado no chão em volta
+		mb.cyl(Transform3D(Basis(), pos + Vector3(0, 0.03, 0)), 4.2, 4.2, 0.01, 12, Color(0.12, 0.11, 0.1), true, false, null, 0.35, vrng)
+	if rng.randf() < 0.5:
+		w.smoke_spots.append(Vector2(pos.x, pos.z))
+
+
+# cratera de bomba: o chão afunda num buraco raso, com terra revirada e queimado
+func crater(pos: Vector3) -> void:
+	_obj("crater", [pos])
+
+
+func _k_crater(pos: Vector3) -> void:
+	var r := rng.randf_range(2.5, 4.2)
+	var c := Vector2(pos.x, pos.z)
+	w.claim(c, r)
+	w.add_pad(c, r * 0.35, pos.y - r * 0.32, r * 0.75)
+	if headless:
+		return
+	mb.tex(U.DIRT, 0.5)
+	for k in 9:
+		var a := TAU * k / 9.0 + vrng.randf() * 0.3
+		var p := pos + Vector3(cos(a), 0, sin(a)) * r * 1.05
+		mb.blob(Transform3D(Basis(Vector3.UP, a).scaled(Vector3(vrng.randf_range(0.8, 1.4), vrng.randf_range(0.25, 0.45), 0.6)), p), 6, 3, Color(0.42, 0.35, 0.27).darkened(vrng.randf() * 0.25), vrng, 0.3)
+	rubble(pos, r * 0.9, 6, Color(0.4, 0.36, 0.32))
+
+
+# arame farpado em sanfona entre estacas em X (pula por cima com dificuldade, segura bala nenhuma)
+func wire(pos: Vector3, yaw: float, length := 6.0) -> void:
+	_obj("wire", [pos, yaw, length])
+
+
+func _k_wire(pos: Vector3, yaw: float, length := 6.0) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), length * 0.5)
+	col_box(root, Vector3(length, 0.8, 0.9), Vector3(0, 0.4, 0))
+	if headless:
+		return
+	var wc := Color(0.5, 0.4, 0.3)
+	var n := int(length / 2.5) + 1
+	for i in n:
+		var x := -length / 2.0 + i * length / maxf(1.0, n - 1)
+		for sg in [-1.0, 1.0]:
+			vis(root, Vector3(0.08, 1.2, 0.08), Vector3(x, 0.5, 0), wc, U.WOOD, 0.8, Basis(Vector3.RIGHT, sg * 0.5))
+	# espirais de arame (anéis inclinados)
+	mb.tex(U.METAL, 1.0)
+	var rings := int(length / 0.45)
+	for i in rings:
+		var x := -length / 2.0 + (i + 0.5) * length / rings
+		mb.cyl(root.transform * Transform3D(Basis(Vector3(0, 0, 1), PI / 2.0 + 0.35), Vector3(x, 0.45, 0)), 0.42, 0.42, 0.02, 9, Color(0.32, 0.3, 0.28), false, false)
+
+
+# ouriço tcheco (três vigas de aço cruzadas): barra carro
+func hedgehog(pos: Vector3, yaw: float) -> void:
+	_obj("hedgehog", [pos, yaw])
+
+
+func _k_hedgehog(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	w.claim(Vector2(pos.x, pos.z), 1.5)
+	var c := Color(0.32, 0.28, 0.24)
+	for b3 in [Basis(Vector3(1, 0, 1).normalized(), 0.9), Basis(Vector3(1, 0, -1).normalized(), 0.9), Basis(Vector3.RIGHT, PI / 2.0)]:
+		piece(root, Vector3(0.18, 2.1, 0.18), Vector3(0, 0.7, 0), c.darkened(vrng.randf() * 0.2), U.METAL, 0.6, true, b3)
+
+
+# ninho de metralhadora: anel de sacos de areia com a arma e munição
+func mg_nest(pos: Vector3, yaw: float) -> void:
+	_obj("mg_nest", [pos, yaw])
+
+
+func _k_mg_nest(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 3.4)
+	var rr := 2.3
+	for k in 7:
+		var a := -PI * 0.75 + k * PI * 1.5 / 6.0
+		var p := Vector3(sin(a) * rr, 0, -cos(a) * rr)
+		_k_sandbags(pos + bs * p, yaw - a + PI, 1.8)
+	if not headless:
+		var gp := Vector3(0, 1.25, -1.5)
+		mb.tex(U.METAL, 1.0)
+		mb.box(root.transform * Transform3D(Basis(), gp), Vector3(0.22, 0.2, 0.9), Color(0.15, 0.15, 0.14))
+		mb.cyl(root.transform * Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), gp + Vector3(0, 0.04, -0.45)), 0.04, 0.04, 0.9, 6, Color(0.1, 0.1, 0.1))
+		for k in 3:
+			var a := k * TAU / 3.0
+			mb.box(root.transform * Transform3D(Basis(Vector3.UP, a) * Basis(Vector3.RIGHT, 0.5), gp + Vector3(sin(a) * 0.25, -0.55, cos(a) * 0.25)), Vector3(0.04, 1.2, 0.04), Color(0.15, 0.15, 0.14))
+	w.add_item(pos + bs * Vector3(0.6, 0.1, 0.3), w.loot_kind(rng, true), null, null, true)
+
+
+# canhão de artilharia de campo (escudo, rodas, cano erguido) com caixas de munição
+func artillery(pos: Vector3, yaw: float) -> void:
+	_obj("artillery", [pos, yaw])
+
+
+func _k_artillery(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var c := Color(0.38, 0.4, 0.32).darkened(rng.randf() * 0.2)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 3.2)
+	piece(root, Vector3(2.4, 1.5, 0.12), Vector3(0, 1.15, -0.4), c, U.METAL, 0.4)
+	piece(root, Vector3(0.7, 0.7, 1.6), Vector3(0, 0.85, 0.2), c.darkened(0.15), U.METAL, 0.4)
+	for sg in [-1.0, 1.0]:
+		piece(root, Vector3(0.18, 0.18, 3.0), Vector3(sg * 0.6, 0.35, 1.7), c.darkened(0.2), U.METAL, 0.5, true, Basis(Vector3.UP, sg * 0.25))
+	if not headless:
+		mb.tex(U.METAL, 0.6)
+		mb.cyl(root.transform * Transform3D(Basis(Vector3.RIGHT, -PI / 2.0 + 0.32), Vector3(0, 1.15, -1.9)), 0.12, 0.09, 3.6, 8, c.darkened(0.1))
+		for sx in [-1.0, 1.0]:
+			mb.cyl(root.transform * Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(sx * 1.05, 0.6, 0.0)), 0.6, 0.6, 0.18, 12, Color(0.12, 0.12, 0.12))
+	crates(pos + bs * Vector3(2.4, 0.0, 1.0), yaw + 0.4, false)
+	w.add_item(pos + bs * Vector3(-1.6, 0.1, 1.2), w.loot_kind(rng, false), null, null)
+
+
+# tanque de combustível deitado em berços (tem que contornar)
+func fuel_tank(pos: Vector3, yaw: float) -> void:
+	_obj("fuel_tank", [pos, yaw])
+
+
+func _k_fuel_tank(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var c: Color = [Color(0.82, 0.8, 0.72), Color(0.45, 0.5, 0.4), Color(0.65, 0.3, 0.22)][rng.randi() % 3].darkened(rng.randf() * 0.2)
+	var L := rng.randf_range(6.0, 8.0)
+	w.claim(Vector2(pos.x, pos.z), L * 0.55)
+	col_box(root, Vector3(2.6, 2.6, L), Vector3(0, 1.75, 0))
+	for sz in [-L * 0.32, L * 0.32]:
+		piece(root, Vector3(2.4, 0.55, 0.4), Vector3(0, 0.28, sz), Color(0.5, 0.5, 0.48), U.CONCRETE, 0.5)
+	if not headless:
+		mb.tex(U.METAL, 0.3)
+		mb.cyl(root.transform * Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(0, 1.75, -L / 2.0)), 1.3, 1.3, L, 14, c)
+		mb.tex(U.PLAIN, 1.0)
+		vis(root, Vector3(0.9, 0.18, 0.6), Vector3(0, 3.1, 0), Color(0.3, 0.3, 0.3), U.METAL, 0.6)
+		vis(root, Vector3(2.62, 0.5, 0.02), Vector3(0, 1.8, -L / 2.0 - 0.01), Color(0.85, 0.7, 0.15), U.PLAIN, 1.0)
+
+
+# posto de controle na estrada: guarita, cancela levantada, sacos de areia e ouriços na beira
+func checkpoint(pos: Vector3, yaw: float) -> void:
+	_obj("checkpoint", [pos, yaw])
+
+
+func _k_checkpoint(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var bs := Basis(Vector3.UP, yaw)
+	var c := Color(0.82, 0.8, 0.74)
+	var side := 6.6
+	w.claim(Vector2(pos.x, pos.z), 3.0)
+	# guarita (2x2) do lado direito
+	var gx := side + 0.6
+	for f in [[0.0, -1.0], [0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]]:
+		var along: bool = f[0] == 0.0
+		var hh := 2.5
+		var p := Vector3(gx + f[0] * 1.0, 0, f[1] * 1.0)
+		if along:
+			piece(root, Vector3(2.1, 1.0, 0.12), p + Vector3(0, 0.5, 0), c, U.CONCRETE, 0.4)
+			piece(root, Vector3(2.1, 0.3, 0.12), p + Vector3(0, hh - 0.15, 0), c, U.CONCRETE, 0.4)
+		elif f[0] > 0.0:
+			piece(root, Vector3(0.12, hh, 2.1), p + Vector3(0, hh / 2.0, 0), c, U.CONCRETE, 0.4)
+		else:
+			piece(root, Vector3(0.12, 1.0, 0.6), p + Vector3(0, 0.5, -0.75), c, U.CONCRETE, 0.4)
+			piece(root, Vector3(0.12, 0.3, 2.1), p + Vector3(0, hh - 0.15, 0), c, U.CONCRETE, 0.4)
+	piece(root, Vector3(2.6, 0.12, 2.6), Vector3(gx, 2.56, 0), Color(0.75, 0.2, 0.15), U.METAL, 0.4)
+	piece(root, Vector3(2.1, 0.1, 2.1), Vector3(gx, 0.0, 0), c.darkened(0.2), U.CONCRETE, 0.4)
+	if not headless:
+		# cancela levantada (listrada)
+		piece(root, Vector3(0.3, 1.1, 0.3), Vector3(side - 0.4, 0.55, -1.6), Color(0.3, 0.3, 0.3), U.METAL, 0.6, false)
+		var arm := Basis(Vector3(0, 0, 1), -1.25)
+		for k in 6:
+			vis(root, Vector3(1.0, 0.12, 0.12), Vector3(side - 0.4, 1.1, -1.6) + arm * Vector3(-0.5 - k * 1.0, 0, 0), Color(0.9, 0.9, 0.88) if k % 2 == 0 else Color(0.8, 0.15, 0.12), U.PLAIN, 1.0, arm)
+	_k_sandbags(pos + bs * Vector3(side + 0.4, 0, -3.2), yaw, 3.0)
+	_k_sandbags(pos + bs * Vector3(-side - 0.2, 0, -2.4), yaw, 3.2)
+	_k_hedgehog(pos + bs * Vector3(-side - 0.8, 0, 2.6), yaw + 0.5)
+	_k_hedgehog(pos + bs * Vector3(side + 2.8, 0, 3.4), yaw - 0.3)
+	w.add_item(pos + bs * Vector3(gx, 0.1, 0.3), w.loot_kind(rng, true), pos + bs * Vector3(gx - 2.2, 0.3, 0.0), pos + bs * Vector3(gx, 0.3, 0.0))
+
+
+# trincheira: duas linhas de sacos de areia com escoras de madeira e tábuas no chão
+func trench(pos: Vector3, yaw: float, length := 12.0) -> void:
+	_obj("trench", [pos, yaw, length])
+
+
+func _k_trench(pos: Vector3, yaw: float, length := 12.0) -> void:
+	var root := body(pos, yaw)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), length * 0.5)
+	var seg := 3.0
+	var n := int(length / seg)
+	for i in n:
+		var x := -length / 2.0 + (i + 0.5) * length / n
+		var zig := (0.6 if i % 2 == 0 else -0.6)
+		_k_sandbags(pos + bs * Vector3(x, 0, -1.0 + zig * 0.3), yaw, length / n + 0.15)
+		if i % 3 != 1:
+			_k_sandbags(pos + bs * Vector3(x, 0, 1.2 + zig * 0.3), yaw, length / n + 0.15)
+	if not headless:
+		for i in int(length / 1.2):
+			vis(root, Vector3(0.25, 0.04, 1.3), Vector3(-length / 2.0 + 0.6 + i * 1.2, 0.03, 0.1), Color(0.5, 0.4, 0.3), U.WOOD, 0.8)
+		for i in n + 1:
+			var x := -length / 2.0 + i * length / n
+			vis(root, Vector3(0.14, 1.6, 0.14), Vector3(x, 0.8, -0.55), Color(0.42, 0.34, 0.26), U.WOOD, 0.8)
+	w.add_item(pos + bs * Vector3(rng.randf_range(-length * 0.3, length * 0.3), 0.08, 0.1), w.loot_kind(rng, rng.randf() < 0.5), null, null)

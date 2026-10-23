@@ -1762,7 +1762,7 @@ func _apply_quality() -> void:
 	far *= vk
 	world.set_view(far * 0.8)
 	cam.far = far
-	fog_base = 2.2 / far * 0.38
+	fog_base = 2.2 / far * 0.55
 	if env:
 		env.environment.fog_density = fog_base
 
@@ -1966,7 +1966,35 @@ func _process(delta: float) -> void:
 	_update_world_fx(delta)
 
 
+# clima de guerra: vento seco sempre, e de vez em quando artilharia, rajada, sirene ou jato ao longe
+var _amb_wind: AudioStreamPlayer
+var _amb_t := 4.0
+
+
+func _war_ambience(delta: float) -> void:
+	if dedicated or sfxn == null or cam == null:
+		return
+	if _amb_wind == null:
+		_amb_wind = AudioStreamPlayer.new()
+		_amb_wind.stream = sfxn.streams.get("ambient_wind")
+		add_child(_amb_wind)
+	if _amb_wind.stream and not _amb_wind.playing:
+		_amb_wind.play()
+	_amb_wind.volume_db = sfxn.db(-17.0)
+	_amb_t -= delta
+	if _amb_t > 0.0:
+		return
+	_amb_t = randf_range(7.0, 18.0)
+	var r := randf()
+	var n := "far_boom" if r < 0.5 else ("far_mg" if r < 0.8 else ("far_jet" if r < 0.93 else "far_siren"))
+	# vem de um lado (com fone dá pra saber de onde): longe, fora do mapa
+	var a := randf() * TAU
+	var p := cam.global_position + Vector3(cos(a), 0.2, sin(a)) * 160.0
+	sfxn.play_at(n, p, {"far_boom": 4.0, "far_mg": -2.0, "far_jet": 0.0, "far_siren": -4.0}[n], 400.0, randf_range(0.85, 1.1), 70.0)
+
+
 func _update_world_fx(_delta: float) -> void:
+	_war_ambience(_delta)
 	plane_node.visible = phase == PLANE and plane_t < plane_dur + 3.0
 	if plane_node.visible:
 		var dir := (plane_b - plane_a).normalized()

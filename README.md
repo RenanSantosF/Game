@@ -17,7 +17,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 ## Conteúdo
 
 - Personagem com textura (modelo feito no Meshy, reduzido pra celular por tools/prepare_man.gd): jaqueta e calça mudam de cor por jogador; animações da Universal Animation Library (Quaternius, CC0): parado, andar, corrida leve, corrida forte, agachado, pulo, morte e dirigindo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
-- Árvores realistas (Poly Haven, CC0): tronco de verdade e copa de cartões de folhas, leves pro celular; três tipos + moita
+- Árvores (folhas do Poly Haven, CC0): tronco reto e grosso (dá pra se proteger atrás) e copa falhada de cartões de folhas, leves pro celular; três tipos + moita
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
 - Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta. Energético, kits e bandagens
@@ -31,7 +31,11 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
 - Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
-- Mapa de 800 m com 23 localidades fictícias e formatos diferentes: vilas redondas, bairros com ruas curvas, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
+- Clima de pré-guerra: dia nublado e triste, névoa, mato seco com manchas queimadas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
+- Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela
+- Marcas da guerra no mapa todo: postos de controle nas rodovias, tanques queimados, crateras, trincheiras, arame farpado, ouriços de aço, casamatas e canhões
+- Asfalto, calçadas, pistas e cimento com colisão de verdade (o pé não afunda); nenhuma estrutura nasce dentro da outra; sem barranco onde as rampas das cidades se encontram
+- Mapa de 800 m com 26 localidades fictícias e formatos diferentes: vilas redondas, bairros com ruas curvas, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
 - Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco
 - Casas quase todas térreas (algumas de dois andares, com escada e sacada), varandas, muros baixos, cercas, carros e picapes abandonados
