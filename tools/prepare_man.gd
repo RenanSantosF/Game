@@ -297,7 +297,7 @@ func _pose_from(src: Animation, t: float) -> Animation:
 # morrer: dobra os joelhos e cai de costas (o quadril gira e desce até o chão)
 func _dead(src: Animation, sk: Skeleton3D) -> Animation:
 	var an := Animation.new()
-	an.length = 1.2
+	an.length = 0.7
 	an.loop_mode = Animation.LOOP_NONE
 	var hips := sk.find_bone("mixamorig_Hips")
 	var hrest := sk.get_bone_rest(hips)
@@ -318,22 +318,22 @@ func _dead(src: Animation, sk: Skeleton3D) -> Animation:
 			Animation.TYPE_ROTATION_3D:
 				if bi == hips:
 					an.rotation_track_insert_key(k, 0.0, q0)
-					an.rotation_track_insert_key(k, 0.35, Quaternion(Vector3.RIGHT, -0.35) * q0)
-					an.rotation_track_insert_key(k, 0.8, fall * q0)
-					an.rotation_track_insert_key(k, 1.0, Quaternion(Vector3.RIGHT, -1.52) * q0)
+					an.rotation_track_insert_key(k, 0.16, Quaternion(Vector3.RIGHT, -0.35) * q0)
+					an.rotation_track_insert_key(k, 0.45, fall * q0)
+					an.rotation_track_insert_key(k, 0.58, Quaternion(Vector3.RIGHT, -1.52) * q0)
 				else:
 					var ang: float = bend.get(bn, 0.0)
 					var q1 := q0 * Quaternion(Vector3.RIGHT, ang)
 					an.rotation_track_insert_key(k, 0.0, q0)
-					an.rotation_track_insert_key(k, 0.45, q0.slerp(q1, 0.8))
-					an.rotation_track_insert_key(k, 0.9, q1)
+					an.rotation_track_insert_key(k, 0.24, q0.slerp(q1, 0.8))
+					an.rotation_track_insert_key(k, 0.5, q1)
 			Animation.TYPE_POSITION_3D:
 				var p0 := hrest.origin if bi == hips else rest.origin
 				an.position_track_insert_key(k, 0.0, p0)
 				if bi == hips:
-					an.position_track_insert_key(k, 0.35, p0 + Vector3(0, 0.08, -0.3))
-					an.position_track_insert_key(k, 0.8, Vector3(p0.x, 0.35, 0.16))
-					an.position_track_insert_key(k, 1.0, Vector3(p0.x, 0.4, 0.12))
+					an.position_track_insert_key(k, 0.16, p0 + Vector3(0, 0.08, -0.3))
+					an.position_track_insert_key(k, 0.45, Vector3(p0.x, 0.35, 0.16))
+					an.position_track_insert_key(k, 0.58, Vector3(p0.x, 0.4, 0.12))
 			Animation.TYPE_SCALE_3D:
 				an.scale_track_insert_key(k, 0.0, Vector3.ONE)
 	return an

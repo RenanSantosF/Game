@@ -47,6 +47,7 @@ var shown_wid := "glock"
 var air := 0             # 0 = no chão, 1 = queda livre, 2 = paraquedas, 3 = no avião
 var armor := 0.0
 var helmet := 0          # nível do capacete (0 = sem)
+var helmet_hp := 100.0   # durabilidade do capacete (só no servidor); quebra no zero
 var vest_lv := 0          # nível do colete
 var bag := 0             # nível da mochila (0 = sem mochila)
 var sprint := false
@@ -518,7 +519,7 @@ func _physics_process(delta: float) -> void:
 				if is_local or (is_bot and multiplayer.is_server()):
 					game.ammo_used(self, am, take)
 			if is_local:
-				game.sfx("reload_in")
+				game.sfx("reload_in", 3.0)
 	var sim := is_local or (is_bot and multiplayer.is_server())
 	stun_t = maxf(stun_t - delta, 0.0)
 	if sim and heal_t > 0.0:
@@ -580,13 +581,19 @@ func _move(delta: float) -> void:
 		elif air == 1 and position.y - game.world.height(position.x, position.z) < CHUTE_OPEN_H:
 			air = 2
 			if is_local:
-				game.sfx("chute")
+				game.sfx("chute", 4.0)
 		_keep_in()
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
-	var spd := lerpf(1.6, 4.7, clampf((dir.length() - 0.15) / 0.75, 0.0, 1.0))
+	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
+	var spd := lerpf(3.4, 4.5, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
 	if sprint:
 		spd = 6.2 if (sel < 0 or cur_wid() == "fist") else 5.8
+	# atirando ou dando soco anda bem mais devagar
+	if (aim_t > 0.0 and not sprint) or (is_local and game.hud != null and game.hud.fire_held):
+		spd = minf(spd, 2.6)
+	if punch_t > 0.0:
+		spd = minf(spd, 2.2)
 	if crouch:
 		spd = 2.8
 	if scoped:
@@ -608,6 +615,9 @@ func _move(delta: float) -> void:
 		velocity.z = dir.z * spd
 	# corpo vira pra onde anda, ou pra mira quando está atirando (no ar não gira)
 	if not is_bot and on_floor:
+		# soltou o tiro e mexeu no analógico: já larga a mira e vira pra onde anda (sem atraso)
+		if aim_t > 0.0 and not scoped and dir.length() > 0.3 and is_local and game.hud != null and not game.hud.fire_held:
+			aim_t = 0.0
 		if aim_t > 0.0 or scoped:
 			yaw = lerp_angle(yaw, game.cam_yaw_v, minf(1.0, 28.0 * delta))
 		elif dir.length() > 0.15:
@@ -628,6 +638,7 @@ func _move(delta: float) -> void:
 				game.sfx("jump")
 	want_jump = false
 	move_and_slide()
+	_step_up(dir, spd, delta)
 	if is_on_floor() and not _was_floor and _air_time > 0.35:
 		game.sfx_at("land", global_position, is_local)
 		# queda alta: dano e um tempinho sem conseguir andar (pular da janela de cima = ~1 s)
@@ -644,6 +655,32 @@ func _move(delta: float) -> void:
 		_fall_v = 0.0
 	_was_floor = is_on_floor()
 	_keep_in()
+
+
+# sobe em coisa baixa (pedra, degrau, meio-fio) sem precisar pular: até ~55 cm
+const STEP_H := 0.55
+
+
+func _step_up(dir: Vector3, spd: float, delta: float) -> void:
+	if not is_on_floor() or not is_on_wall() or dir.length() < 0.2 or spd <= 0.0 or vault_t >= 0.0:
+		return
+	var f := Vector3(dir.x, 0, dir.z).normalized() * maxf(spd * delta, 0.08) * 2.0
+	var xf := global_transform
+	# cabe lá em cima?
+	if test_move(xf, Vector3(0, STEP_H, 0)):
+		return
+	var up := xf.translated(Vector3(0, STEP_H, 0))
+	if test_move(up, f):
+		return
+	# desce até encostar no degrau
+	var top := up.translated(f)
+	var col := KinematicCollision3D.new()
+	if not test_move(top, Vector3(0, -STEP_H, 0), col):
+		return
+	if col.get_normal().y < 0.7:
+		return
+	var drop := col.get_travel().y
+	global_position = top.origin + Vector3(0, drop + 0.02, 0)
 
 
 func _keep_in() -> void:
@@ -687,6 +724,26 @@ func try_vault(dir: Vector3) -> bool:
 	var top: float = tr["position"].y - base.y
 	if top < 0.4 or top > 1.45:
 		return false
+	# coisa larga (caixote, feno, caixa de arma, pedra): sobe e fica em cima, não atravessa
+	var on_top := true
+	for extra in [0.35, 0.9]:
+		var pp: Vector3 = base + f * (hit_d + extra)
+		var oq := PhysicsRayQueryParameters3D.create(pp + Vector3(0, top + 0.5, 0), pp + Vector3(0, top - 0.3, 0), 1, ex)
+		var orr := space.intersect_ray(oq)
+		if orr.is_empty() or absf((orr["position"] as Vector3).y - (base.y + top)) > 0.25:
+			on_top = false
+	if on_top:
+		var spot: Vector3 = base + f * (hit_d + 0.45) + Vector3(0, top + 0.04, 0)
+		var hq := PhysicsRayQueryParameters3D.create(spot + Vector3(0, 0.2, 0), spot + Vector3(0, 1.75, 0), 1, ex)
+		if space.intersect_ray(hq).is_empty():
+			_vault_drop = false
+			_vault = [base, base + f * (hit_d * 0.5) + Vector3(0, top + 0.45, 0), spot]
+			vault_t = 0.0
+			collision_mask = 0
+			yaw = atan2(-f.x, -f.z)
+			set_crouch(false)
+			game.sfx_at("vault", base, is_local)
+			return true
 	# onde vai cair do outro lado
 	for extra in [0.75, 1.1, 1.5]:
 		var p: Vector3 = base + f * (hit_d + extra)
@@ -827,11 +884,11 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.play("Air", 0.12)
 	elif sp < 0.35:
 		sol.play("Idle", 0.25)
-	elif sp < 5.0 or crouch:
+	elif sp < 2.9 or crouch:
 		# agachado o passo é bem mais curto e lento
-		sol.play("Walking", 0.2, clampf(sp / 1.25, 0.5, 3.0) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
+		sol.play("Walking", 0.2, clampf(sp / 1.25, 0.5, 2.2) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
 	else:
-		sol.play("Running", 0.2, clampf(sp / 5.2, 0.8, 1.6))
+		sol.play("Running", 0.2, clampf(sp / 5.4, 0.62, 1.5))
 	if heal_t > 0.0:
 		# curando: braço esquerdo na frente e a mão direita dá voltas nele (enrolando a faixa)
 		_heal_anim += delta

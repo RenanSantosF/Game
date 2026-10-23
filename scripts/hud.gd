@@ -8,14 +8,21 @@ signal inv_action(act: String, a: String, b: int)
 const JOY_R := 90.0
 const MINI := 170.0
 const MINI_M := 170.0      # metros mostrados no minimapa
-const EDITABLE := ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]
+# botões que dá pra arrastar/mudar de tamanho no editor de controles (a pé e no carro)
+const ED_GROUND := ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car"]
+const ED_CAR := ["gas", "brake", "steer_l", "steer_r", "car", "heal"]
+const EDITABLE := ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car", "gas", "brake", "steer_l", "steer_r"]
+const HOLD := ["gas", "brake", "steer_l", "steer_r"]   # botões de segurar (carro)
 # posição padrão dos botões (fração da tela) e raio base
 # mochila e cura ficam embaixo do minimapa; correr do lado do minimapa
 const DEFAULTS := {
 	"fire": [0.883, 0.757, 78.0], "fire2": [0.3, 0.46, 46.0], "jump": [0.765, 0.882, 44.0], "crouch": [0.945, 0.917, 40.0],
-	"reload": [0.945, 0.54, 38.0], "scope": [0.85, 0.54, 40.0], "heal": [0.112, 0.345, 32.0], "bag": [0.04, 0.345, 32.0],
-	"sprint": [0.18, 0.13, 36.0],
+	"scope": [0.85, 0.54, 40.0], "heal": [0.112, 0.345, 32.0], "bag": [0.04, 0.345, 32.0],
+	"sprint": [0.18, 0.13, 36.0], "grenade": [0.33, 0.66, 34.0], "gren_cancel": [0.68, 0.6, 30.0],
+	"car": [0.66, 0.68, 40.0],
+	"gas": [0.9, 0.72, 62.0], "brake": [0.765, 0.86, 46.0], "steer_l": [0.075, 0.8, 52.0], "steer_r": [0.225, 0.8, 52.0],
 }
+const SCALE_MAX := 2.4
 
 var game: Node
 var mode := "ground"       # lobby, plane, fall, glide, ground, dead, end
@@ -25,7 +32,9 @@ var iron := false
 var gren_left := -1.0     # segundos até a granada na mão explodir (-1 = sem granada na mão)
 var fire_held := false
 var _look := Vector2.ZERO
-var touches := {}    # dedo -> "joy" | "look" | "fire" | "btn" | "gui" | "drag:<botão>"
+var touches := {}    # dedo -> "joy" | "look" | "fire" | "btn" | "gui" | "drag:<botão>" | "hold:<botão>"
+var held := {}       # botões de segurar apertados agora (pedais e volante do carro)
+var edit_car := false   # editor de controles mostrando os botões do carro
 
 var pad: Control
 var mini: Control
@@ -91,6 +100,9 @@ var bag_open := false
 var _pick_sig := ""
 var _pick_n := 0
 var kill_t := 0.0
+var win_ctl: Control
+var win_t := -1.0          # vitória: tempo desde que apareceu (-1 = não)
+var win_sub := ""
 var _pick_touch := {}
 var kill_txt := ""
 var kill_head := false
@@ -125,7 +137,13 @@ func _ready() -> void:
 	mini.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(mini)
 	mini.draw.connect(_draw_mini)
-	lbl_center = _label(30)
+	mini.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	win_ctl = Control.new()
+	win_ctl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	win_ctl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(win_ctl)
+	win_ctl.draw.connect(_draw_win)
+	lbl_center = _label(21)
 	lbl_center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl_zone = _label(17)
 	lbl_fps = _label(14)
@@ -142,6 +160,7 @@ func _ready() -> void:
 	bigmap.visible = false
 	add_child(bigmap)
 	bigmap.draw.connect(_draw_bigmap)
+	bigmap.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	make_icons()
 
 
@@ -343,9 +362,57 @@ func set_spec(t: String) -> void:
 	lbl_spec.text = t
 
 
-func center(t: String, secs: float) -> void:
+# aviso no meio da tela; a cor diz o tipo: info (branco), warn (zona/atenção, laranja),
+# bad (ruim pra você, vermelho), good (bom pra você, verde)
+const ALERT_COL := {"info": Color(1, 1, 1), "warn": Color(1.0, 0.72, 0.2), "bad": Color(1.0, 0.36, 0.3), "good": Color(0.45, 1.0, 0.5)}
+
+
+func center(t: String, secs: float, kind := "info") -> void:
 	lbl_center.text = t
 	center_t = secs
+	lbl_center.add_theme_color_override("font_color", ALERT_COL.get(kind, Color.WHITE))
+
+
+func alert(t: String, kind := "info") -> void:
+	center(t, 2.0, kind)
+
+
+# vitória: faixa grande "INVICTO!" que entra batendo e fica
+func victory(sub: String) -> void:
+	win_t = 0.0
+	win_sub = sub
+
+
+func _draw_win() -> void:
+	if win_t < 0.0:
+		return
+	var s := win_ctl.size
+	var font := ThemeDB.fallback_font
+	var k := clampf(win_t / 0.35, 0.0, 1.0)
+	var pop := 1.0 + (1.0 - k) * 1.6 + sin(clampf(win_t - 0.35, 0.0, 0.5) * 18.0) * 0.06 * (1.0 - clampf((win_t - 0.35) / 0.5, 0.0, 1.0))
+	var cy := s.y * 0.36
+	var band := 120.0 * minf(1.0, win_t / 0.25)
+	win_ctl.draw_rect(Rect2(0, cy - band / 2.0, s.x, band), Color(0.05, 0.03, 0.0, 0.62))
+	var gold := Color(1.0, 0.78, 0.18)
+	win_ctl.draw_rect(Rect2(0, cy - band / 2.0, s.x, 3), gold)
+	win_ctl.draw_rect(Rect2(0, cy + band / 2.0 - 3, s.x, 3), gold)
+	# brilho passando
+	var sx := fmod(win_t * 520.0, s.x + 400.0) - 200.0
+	win_ctl.draw_rect(Rect2(sx, cy - band / 2.0, 80, band), Color(1, 0.9, 0.5, 0.08))
+	var fs := int(78 * pop)
+	var txt := "INVICTO!"
+	var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var a := k
+	var bp := Vector2(s.x / 2.0 - w / 2.0, cy + fs * 0.33)
+	win_ctl.draw_string_outline(font, bp + Vector2(0, 4), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color(0, 0, 0, 0.8 * a))
+	win_ctl.draw_string_outline(font, bp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 6, Color(0.55, 0.25, 0.0, a))
+	win_ctl.draw_string(font, bp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(gold.r, gold.g, gold.b, a))
+	if win_t > 0.6:
+		var sa := clampf((win_t - 0.6) / 0.4, 0.0, 1.0)
+		var sw := font.get_string_size(win_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+		var sp := Vector2(s.x / 2.0 - sw / 2.0, cy + band / 2.0 + 34)
+		win_ctl.draw_string_outline(font, sp, win_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, 5, Color(0, 0, 0, 0.8 * sa))
+		win_ctl.draw_string(font, sp, win_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(1, 1, 1, sa))
 
 
 func hit(head: bool, kill: bool) -> void:
@@ -409,7 +476,7 @@ func set_bag(open: bool) -> void:
 func set_pickups(list: Array) -> void:
 	var sig := ""
 	for e in list:
-		sig += "%s:%s:%d;" % [str(e["key"]), e["kind"], e["n"]]
+		sig += "%s:%s:%d:%s;" % [str(e["key"]), e["kind"], e["n"], str(e.get("best", false))]
 	sig += str(icons.size())
 	if sig == _pick_sig:
 		return
@@ -426,8 +493,16 @@ func set_pickups(list: Array) -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.set_meta("key", e["key"])
-		b.add_theme_stylebox_override("normal", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
-		b.add_theme_stylebox_override("hover", _tile_style(Color(0.62, 0.66, 0.62, 0.3)))
+		var best: bool = e.get("best", false)
+		var st := _tile_style(Color(0.62, 0.66, 0.62, 0.3))
+		if best:
+			# melhor que o que você tem: borda dourada brilhando
+			st = _tile_style(Color(0.75, 0.6, 0.2, 0.42), Color(1.0, 0.82, 0.25, 1.0))
+			st.set_border_width_all(2)
+			st.shadow_color = Color(1.0, 0.75, 0.2, 0.55)
+			st.shadow_size = 6
+		b.add_theme_stylebox_override("normal", st)
+		b.add_theme_stylebox_override("hover", st)
 		b.add_theme_stylebox_override("pressed", _tile_style(Color(1, 0.8, 0.3, 0.35)))
 		var vb := VBoxContainer.new()
 		vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -459,6 +534,19 @@ func set_pickups(list: Array) -> void:
 			nl.position = Vector2(4, 1)
 			nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			b.add_child(nl)
+		if best:
+			var up := Label.new()
+			up.text = "▲"
+			up.add_theme_font_size_override("font_size", 13)
+			up.add_theme_color_override("font_color", Color(0.4, 1.0, 0.45))
+			up.add_theme_constant_override("outline_size", 4)
+			up.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+			up.position = Vector2(56, 0)
+			up.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(up)
+			var tw := b.create_tween().set_loops()
+			tw.tween_property(b, "modulate", Color(1.25, 1.15, 0.85), 0.55)
+			tw.tween_property(b, "modulate", Color(1, 1, 1), 0.55)
 		var key: Array = e["key"]
 		b.pressed.connect(func(): pick.emit(key))
 		pick_list.add_child(b)
@@ -677,14 +765,19 @@ func _buttons() -> Dictionary:
 	var s := get_viewport().get_visible_rect().size
 	var b := {}
 	if edit_mode:
-		for k in EDITABLE:
+		for k in (ED_CAR if edit_car else ED_GROUND):
 			var bp := btn_pos(k, s)
 			b[k] = [bp[0], bp[1], _btn_icon(k)]
-		b["e_small"] = [Vector2(s.x * 0.5 - 200, 60), 30.0, "minus"]
-		b["e_big"] = [Vector2(s.x * 0.5 - 110, 60), 30.0, "plus"]
-		b["e_reset"] = [Vector2(s.x * 0.5 - 20, 60), 30.0, "reset"]
-		b["e_save"] = [Vector2(s.x * 0.5 + 70, 60), 30.0, "check"]
-		b["e_cancel"] = [Vector2(s.x * 0.5 + 160, 60), 30.0, "close"]
+		# − e + ficam colados no botão escolhido
+		var sp := _edit_sel_pos(s)
+		if sp.size() == 2:
+			var sr: float = sp[1]
+			b["e_small"] = [(sp[0] as Vector2) + Vector2(-sr - 30, 0), 24.0, "minus"]
+			b["e_big"] = [(sp[0] as Vector2) + Vector2(sr + 30, 0), 24.0, "plus"]
+		b["e_page"] = [Vector2(s.x * 0.5 - 135, 60), 30.0, "sprint" if edit_car else "car"]
+		b["e_reset"] = [Vector2(s.x * 0.5 - 45, 60), 30.0, "reset"]
+		b["e_save"] = [Vector2(s.x * 0.5 + 45, 60), 30.0, "check"]
+		b["e_cancel"] = [Vector2(s.x * 0.5 + 135, 60), 30.0, "close"]
 		return b
 	b["exit"] = [Vector2(s.x - 300, 34), 22.0, "exit"]
 	b["settings"] = [Vector2(s.x - 352, 34), 22.0, "gear"]
@@ -701,15 +794,22 @@ func _buttons() -> Dictionary:
 		"fall":
 			b["chute"] = [fp[0], 70.0, "chute"]
 		"ground", "lobby":
-			if car_near:
-				b["car"] = [Vector2(s.x * 0.66, s.y * 0.68), 40.0, "car"]
+			if car_near or driving:
+				var cp := btn_pos("car", s)
+				b["car"] = [cp[0], cp[1], "car"]
 			if driving:
+				# no carro: volante (esq/dir), acelerar, freio/ré e curar
+				for k in ["gas", "brake", "steer_l", "steer_r", "heal"]:
+					var bp := btn_pos(k, s)
+					b[k] = [bp[0], bp[1], _btn_icon(k)]
 				return b
 			if grenades > 0:
-				b["grenade"] = [Vector2(s.x * 0.66, s.y * 0.88), 34.0, "grenade"]
+				var gp := btn_pos("grenade", s)
+				b["grenade"] = [gp[0], gp[1], "grenade"]
 			if gren_left >= 0.0:
-				b["gren_cancel"] = [Vector2(s.x * 0.66, s.y * 0.72), 28.0, "close"]
-			for k in ["fire", "fire2", "jump", "crouch", "reload", "scope", "heal", "bag", "sprint"]:
+				var gc := btn_pos("gren_cancel", s)
+				b["gren_cancel"] = [gc[0], gc[1], "close"]
+			for k in ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint"]:
 				if k == "scope" and not can_scope:
 					continue
 				var bp := btn_pos(k, s)
@@ -728,6 +828,8 @@ func _buttons() -> Dictionary:
 
 func _btn_icon(k: String) -> String:
 	match k:
+		"gren_cancel":
+			return "close"
 		"fire", "fire2":
 			return "fire" if (sel >= 1 and _slot_has(sel)) else "punch"
 		"crouch":
@@ -739,12 +841,36 @@ func _slot_has(i: int) -> bool:
 	return i >= 0 and i < slots.size() and str(slots[i]["id"]) != ""
 
 
+func _edit_sel_pos(s: Vector2) -> Array:
+	if edit_sel == "slots":
+		var r := Rect2()
+		for e in _slot_rects:
+			r = (e[0] as Rect2) if r.size == Vector2.ZERO else r.merge(e[0])
+		if r.size == Vector2.ZERO:
+			return []
+		return [Vector2(r.position.x - 10, r.get_center().y), 10.0]
+	if edit_sel in DEFAULTS:
+		return btn_pos(edit_sel, s)
+	return []
+
+
 func _hit_button(p: Vector2) -> String:
 	var b := _buttons()
+	# os − / + do editor ficam por cima dos outros botões
+	for k in ["e_small", "e_big"]:
+		if b.has(k) and p.distance_to(b[k][0]) <= float(b[k][1]) * 1.15:
+			return k
 	for k in b:
 		if p.distance_to(b[k][0]) <= float(b[k][1]) * 1.12:
 			return k
 	return ""
+
+
+# carro: [acelerador (-1 ré .. 1), volante (-1 esq .. 1 dir)] pelos botões
+func drive_input() -> Vector2:
+	var th := (1.0 if held.has("gas") else 0.0) - (1.0 if held.has("brake") else 0.0)
+	var st := (1.0 if held.has("steer_r") else 0.0) - (1.0 if held.has("steer_l") else 0.0)
+	return Vector2(th, st)
 
 
 func _hit_slot(p: Vector2) -> int:
@@ -830,6 +956,10 @@ func _down(i: int, p: Vector2) -> void:
 	if b == "fire" or b == "fire2":
 		touches[i] = "fire"
 		return
+	if b in HOLD:
+		touches[i] = "hold:" + b
+		held[b] = true
+		return
 	if b == "grenade":
 		# segura pra tirar o pino; solta pra jogar
 		touches[i] = "gren"
@@ -874,6 +1004,8 @@ func _up(i: int) -> void:
 		move_vec = Vector2.ZERO
 	if r == "gren":
 		action.emit("grenade_throw")
+	if r.begins_with("hold:"):
+		held.erase(r.substr(5))
 
 
 func _drag(i: int, p: Vector2, rel: Vector2) -> void:
@@ -904,12 +1036,15 @@ func _edit_cmd(b: String) -> void:
 		"e_small", "e_big":
 			if edit_sel == "slots":
 				var sc0 := slot_scale()
-				layout["slots"] = [0.0, 0.0, clampf(sc0 + (-0.1 if b == "e_small" else 0.1), 0.7, 1.5)]
+				layout["slots"] = [0.0, 0.0, clampf(sc0 + (-0.1 if b == "e_small" else 0.1), 0.7, 1.9)]
 			elif edit_sel != "":
 				var d: Array = DEFAULTS[edit_sel]
 				var cur: Array = layout.get(edit_sel, [d[0], d[1], 1.0])
-				var sc: float = clampf(float(cur[2]) + (-0.1 if b == "e_small" else 0.1), 0.6, 1.8)
+				var sc: float = clampf(float(cur[2]) + (-0.1 if b == "e_small" else 0.1), 0.6, SCALE_MAX)
 				layout[edit_sel] = [cur[0], cur[1], sc]
+		"e_page":
+			edit_car = not edit_car
+			edit_sel = ""
 		"e_reset":
 			layout = {}
 		"e_save":
@@ -928,6 +1063,9 @@ func _process(delta: float) -> void:
 		lbl_center.text = ""
 	hit_t = maxf(hit_t - delta, 0.0)
 	kill_t = maxf(kill_t - delta, 0.0)
+	if win_t >= 0.0:
+		win_t += delta
+		win_ctl.queue_redraw()
 	flash.color.a = maxf(flash.color.a - delta * 1.5, 0.0)
 	var ta := 0.0
 	if out_zone:
@@ -992,10 +1130,10 @@ func _process(delta: float) -> void:
 # ---------------- desenho ----------------
 
 func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> void:
-	var held: bool = (k == "fire" or k == "fire2") and fire_held
+	var hd: bool = ((k == "fire" or k == "fire2") and fire_held) or held.has(k)
 	var bg := Color(0, 0, 0, 0.32)
 	var ring := Color(1, 1, 1, 0.55)
-	if held:
+	if hd:
 		bg = Color(1, 0.4, 0.2, 0.5)
 	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
 		bg = Color(0.85, 0.55, 0.1, 0.6)
@@ -1023,6 +1161,18 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 static func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -> void:
 	var w := maxf(2.0, r * 0.13)
 	match k:
+		"gas", "brake":
+			# pedal: placa inclinada com ranhuras; acelerar tem seta pra cima, freio tem "R"
+			var pts := PackedVector2Array([c + Vector2(-r * 0.45, -r * 0.75), c + Vector2(r * 0.45, -r * 0.75), c + Vector2(r * 0.55, r * 0.75), c + Vector2(-r * 0.55, r * 0.75), c + Vector2(-r * 0.45, -r * 0.75)])
+			ci.draw_polyline(pts, col, w)
+			for i in 3:
+				var yy := -r * 0.35 + i * r * 0.35
+				ci.draw_line(c + Vector2(-r * 0.3, yy), c + Vector2(r * 0.3, yy), col, w * 0.7)
+			if k == "gas":
+				ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.9, -r * 0.2), c + Vector2(-r * 0.9, -r * 0.95), c + Vector2(-r * 1.15, -r * 0.7)]), col, w * 0.8)
+		"steer_l", "steer_r":
+			var sg := -1.0 if k == "steer_l" else 1.0
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(sg * r * 0.8, 0), c + Vector2(-sg * r * 0.4, -r * 0.7), c + Vector2(-sg * r * 0.4, r * 0.7)]), col)
 		"fire":
 			ci.draw_arc(c, r * 0.62, 0, TAU, 28, col, w)
 			for i in 4:
@@ -1192,6 +1342,8 @@ func _draw_slots(font: Font, s: Vector2) -> void:
 	for i in slots.size():
 		if i != cur:
 			others.append(i)
+	# a mão (soco) fica sempre no canto direito das armas pequenas
+	others.sort_custom(func(a, b): return (100 if str(slots[a]["id"]) == "fist" else 0) + a < (100 if str(slots[b]["id"]) == "fist" else 0) + b)
 	_slot_cell(font, big, cur, true)
 	var gap := 4.0
 	var sw := (bw - gap * (others.size() - 1)) / others.size()
@@ -1279,8 +1431,8 @@ func _draw_pad() -> void:
 	var c := s / 2.0
 	var white := Color(1, 1, 1, 0.9)
 	if edit_mode:
-		pad.draw_rect(Rect2(Vector2.ZERO, s), Color(0, 0, 0, 0.35))
-		var msg := "Arraste os botões. Toque num botão (ou no painel das armas) e use − / + pra mudar o tamanho."
+		pad.draw_rect(Rect2(Vector2.ZERO, s), Color(0, 0, 0, 0.72))
+		var msg := ("CARRO — " if edit_car else "A PÉ — ") + "arraste os botões; toque num botão e use o − / + do lado dele pra mudar o tamanho."
 		var mw := font.get_string_size(msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
 		pad.draw_string(font, Vector2(c.x - mw / 2.0, 120), msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color.WHITE)
 		var b := _buttons()
@@ -1316,25 +1468,30 @@ func _draw_pad() -> void:
 			pad.draw_rect(Rect2(0, 0, c.x - s.y * 0.46, s.y), Color(0, 0, 0, 0.92))
 			pad.draw_rect(Rect2(c.x + s.y * 0.46, 0, s.x, s.y), Color(0, 0, 0, 0.92))
 		elif iron:
-			# mira de ferro (sem acessório): alça atrás e massa de mira na frente
-			var dk := Color(0.08, 0.08, 0.08, 0.95)
-			pad.draw_rect(Rect2(c.x - 9, c.y + 2, 18, s.y * 0.2), dk)
-			pad.draw_arc(c + Vector2(0, 26), 46.0, PI * 1.08, PI * 1.92, 24, dk, 10.0)
-			pad.draw_rect(Rect2(c.x - 70, c.y + 28, 52, 14), dk)
-			pad.draw_rect(Rect2(c.x + 18, c.y + 28, 52, 14), dk)
-			pad.draw_circle(c, 2.0, Color(1, 0.3, 0.2))
+			# mira de ferro: a arma 3D aparece embaixo; aqui só o ponto de mira fino
+			pad.draw_circle(c, 2.2, Color(0, 0, 0, 0.6))
+			pad.draw_circle(c, 1.4, Color(1, 0.95, 0.85))
 		elif red_dot:
-			pad.draw_arc(c, 14.0, 0, TAU, 24, Color(0.1, 0.1, 0.1, 0.6), 2.0)
-			pad.draw_circle(c, 2.5, Color(1, 0.15, 0.1))
+			# mira holográfica: armação preta em volta do vidro (levemente azulado), anel e ponto vermelhos
+			var hw := s.y * 0.2
+			var hh := s.y * 0.15
+			var fr := Rect2(c.x - hw, c.y - hh, hw * 2.0, hh * 2.0)
+			pad.draw_rect(fr, Color(0.55, 0.75, 0.85, 0.07))
+			pad.draw_rect(fr.grow(10), Color(0.06, 0.06, 0.07, 0.96), false, 20.0)
+			pad.draw_rect(Rect2(fr.position.x - 20, fr.end.y + 10, fr.size.x + 40, s.y - fr.end.y), Color(0.06, 0.06, 0.07, 0.96))
+			pad.draw_rect(Rect2(fr.position.x + 4, fr.position.y - 26, 30, 8), Color(0.15, 0.15, 0.16, 0.96))
+			pad.draw_arc(c, 14.0, 0, TAU, 40, Color(1, 0.15, 0.1, 0.9), 1.8)
+			pad.draw_circle(c, 2.0, Color(1, 0.15, 0.1))
 		else:
 			# a mira abre junto com o tiro (segurando o dedo)
 			var g := 7.0 + cross_bloom * 9.0
-			var L := 11.0
-			pad.draw_line(c + Vector2(g, 0), c + Vector2(g + L, 0), white, 2.0)
-			pad.draw_line(c - Vector2(g, 0), c - Vector2(g + L, 0), white, 2.0)
-			pad.draw_line(c + Vector2(0, g), c + Vector2(0, g + L), white, 2.0)
-			pad.draw_line(c - Vector2(0, g), c - Vector2(0, g + L), white, 2.0)
-			pad.draw_circle(c, 1.5, white)
+			var L := 10.0
+			var dk := Color(0, 0, 0, 0.55)
+			for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				pad.draw_line(c + d * (g - 1.0), c + d * (g + L + 1.0), dk, 4.0)
+				pad.draw_line(c + d * g, c + d * (g + L), white, 2.0)
+			pad.draw_circle(c, 2.4, dk)
+			pad.draw_circle(c, 1.4, white)
 	if hit_t > 0.0:
 		var hc := Color(1, 0.2, 0.2) if (hit_head or hit_kill) else Color(1, 1, 1)
 		for k in 4:
@@ -1401,8 +1558,11 @@ func _draw_pad() -> void:
 			pad.draw_rect(Rect2(bx, by - 10, bw * clampf(armor / 100.0, 0.0, 1.0), 5), Color(0.35, 0.6, 1.0))
 
 
+var _map_rot := 0.0     # giro do minimapa enquanto ele é desenhado
+
+
 func _w2map(p: Vector2, center: Vector2, scale: float, origin: Vector2) -> Vector2:
-	return origin + (p - center) * scale
+	return origin + ((p - center) * scale).rotated(_map_rot)
 
 
 func _draw_mini() -> void:
@@ -1412,13 +1572,19 @@ func _draw_mini() -> void:
 	var mp := Vector2(me.x, me.z)
 	var tex: Texture2D = game.world.map_tex
 	var tpm := tex.get_width() / World.SIZE
-	var src := Rect2((mp + Vector2(World.SIZE, World.SIZE) / 2.0) * tpm - Vector2(MINI_M, MINI_M) * tpm / 2.0, Vector2(MINI_M, MINI_M) * tpm)
-	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), Color(0.1, 0.12, 0.1))
-	mini.draw_texture_rect_region(tex, Rect2(Vector2.ZERO, mini.size), src, Color(1, 1, 1, 0.92))
+	# o minimapa gira junto com a câmera: pra onde você olha é sempre pra cima
+	var cy: float = game.cam_yaw.rotation.y
+	_map_rot = cy
 	var sc := MINI / MINI_M
 	var o := mini.size / 2.0
+	var R := mini.size.x * 0.72
+	var src := Rect2((mp + Vector2(World.SIZE, World.SIZE) / 2.0) * tpm - Vector2(R, R) / sc * tpm, Vector2(R, R) * 2.0 / sc * tpm)
+	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), Color(0.1, 0.12, 0.1))
+	mini.draw_set_transform(o, cy, Vector2.ONE)
+	mini.draw_texture_rect_region(tex, Rect2(-Vector2(R, R), Vector2(R, R) * 2.0), src, Color(1, 1, 1, 0.95))
+	mini.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_zone(mini, mp, sc, o)
-	# nomes das cidades que aparecem no minimapa
+	# nomes das cidades que aparecem no minimapa (o texto fica sempre em pé)
 	var font := ThemeDB.fallback_font
 	for t in game.world.towns:
 		var q := _w2map(t["pos"], mp, sc, o)
@@ -1434,15 +1600,21 @@ func _draw_mini() -> void:
 		var al := clampf(float(st[1]), 0.0, 1.0)
 		mini.draw_circle(q, 3.0, Color(1, 0.3, 0.2, al))
 		mini.draw_circle(q + Vector2(3, -4), 2.2, Color(1, 0.3, 0.2, al * 0.8))
-	# uma seta só: pra onde a câmera olha
-	var cy: float = game.cam_yaw.rotation.y
-	var fwd := Vector2(-sin(cy), -cos(cy))
-	var rt := Vector2(fwd.y, -fwd.x)
+	# você: seta sempre pra cima, com o cone de visão
+	var fwd := Vector2(0, -1)
+	var rt := Vector2(1, 0)
 	mini.draw_colored_polygon(PackedVector2Array([o, o + fwd.rotated(-0.45) * 34.0, o + fwd.rotated(0.45) * 34.0]), Color(1, 1, 1, 0.1))
 	var tri := PackedVector2Array([o + fwd * 10.0, o - fwd * 6.0 + rt * 6.5, o - fwd * 2.5, o - fwd * 6.0 - rt * 6.5])
 	mini.draw_colored_polygon(tri, Color(1, 0.85, 0.2))
 	mini.draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[3], tri[0]]), Color(0, 0, 0, 0.7), 1.2)
+	# norte na borda
+	var nd := Vector2(0, -1).rotated(cy)
+	var np := o + nd * (mini.size.x * 0.5 - 11.0) / maxf(absf(nd.x), absf(nd.y))
+	np = np.clamp(Vector2(10, 10), mini.size - Vector2(10, 10))
+	mini.draw_circle(np, 8.5, Color(0.08, 0.08, 0.08, 0.85))
+	mini.draw_string(font, np + Vector2(-4.5, 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.35, 0.3))
 	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), Color(0, 0, 0, 0.7), false, 2.0)
+	_map_rot = 0.0
 
 
 func _draw_zone(cv: Control, center: Vector2, sc: float, o: Vector2) -> void:

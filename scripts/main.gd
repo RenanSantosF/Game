@@ -1241,12 +1241,30 @@ func on_car(i: int, id: int) -> void:
 		if p:
 			p.car = -1
 			# desce do lado do motorista
-			var out := v.global_position + Basis(Vector3.UP, v.yaw) * Vector3(-1.7, 0.4, 0)
+			var out := _exit_spot(v)
 			p.position = out
 			p.target_pos = out
 			p.velocity = Vector3.ZERO
 			if old == local_id:
 				sfx("door", -2.0)
+
+
+# lugar pra descer do carro: do lado do motorista (ou do outro, se tiver parede), em cima do chão
+func _exit_spot(v: Vehicle) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	for sx in [-1.9, 1.9, 0.0]:
+		var off := Vector3(sx, 0, 0) if sx != 0.0 else Vector3(0, 0, 3.2)
+		var o := v.global_position + Basis(Vector3.UP, v.yaw) * off
+		var gy := world.height(o.x, o.z)
+		var q := PhysicsRayQueryParameters3D.create(Vector3(o.x, maxf(gy, v.global_position.y) + 2.5, o.z), Vector3(o.x, gy - 0.5, o.z), 1)
+		var hit := space.intersect_ray(q)
+		var y := gy
+		if not hit.is_empty():
+			y = maxf(gy, (hit["position"] as Vector3).y)
+		# não desce dentro de parede: confere se cabe a pessoa ali
+		if hit.is_empty() or y - gy < 1.2:
+			return Vector3(o.x, y + 0.12, o.z)
+	return v.global_position + Vector3(0, 2.2, 0)
 
 
 # posição do carro: motorista -> servidor -> todos
@@ -1272,6 +1290,9 @@ func _server_car_damage(v: Vehicle, amount: float, by: int) -> void:
 	if v.dead:
 		return
 	v.hp -= amount
+	if v.hp > 0.0:
+		# vida do carro pra todo mundo (a fumaça engrossa conforme apanha)
+		_all("on_car_hp", [v.idx, v.hp])
 	if v.hp <= 0.0:
 		_all("on_explode", [v.idx])
 		# explosão: machuca quem estiver perto (quem está dentro quase morre)
@@ -1284,6 +1305,12 @@ func _server_car_damage(v: Vehicle, amount: float, by: int) -> void:
 				_server_damage(id, by, 180.0, false, "explosão", true)
 			elif d < 7.0:
 				_server_damage(id, by, 150.0 * (1.0 - d / 7.0) + 15.0, false, "explosão", true)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func on_car_hp(i: int, hp: float) -> void:
+	if i >= 0 and i < vehicles.size():
+		vehicles[i].hp = hp
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1476,7 +1503,11 @@ func _server_runover(driver: int, vid: int, spd: float) -> void:
 func _drive_local(lp: Player, delta: float) -> void:
 	var v: Vehicle = vehicles[lp.car]
 	var mv := hud.move_vec
-	v.drive(delta, -mv.y, mv.x)
+	# botões do carro (pedais e volante); o analógico/teclado continua valendo
+	var di := hud.drive_input()
+	var th := clampf(di.x - mv.y, -1.0, 1.0)
+	var st := clampf(di.y + mv.x, -1.0, 1.0)
+	v.drive(delta, th, st)
 	lp.position = v.seat_pos()
 	lp.velocity = Vector3.ZERO
 	lp.yaw = v.yaw
@@ -1559,6 +1590,40 @@ func _menu_music_on() -> void:
 		menu_music.stop()
 
 
+# vitória: tema pesado (sounds/win.wav) e depois o metal "Monolith" em loop
+var win_music: AudioStreamPlayer
+
+
+func _victory_music() -> void:
+	_victory_music_off()
+	var mv := float(Cfg.get_v("volume")) * maxf(float(Cfg.get_v("music_vol")), 0.35)
+	if mv <= 0.0:
+		return
+	win_music = AudioStreamPlayer.new()
+	win_music.stream = sfxn.streams.get("win")
+	win_music.volume_db = linear_to_db(mv) + 2.0
+	add_child(win_music)
+	win_music.play()
+	var wm := win_music
+	wm.finished.connect(func():
+		if wm != win_music or not is_instance_valid(wm):
+			return
+		wm.stream = load("res://sounds/lobby_rock2.ogg")
+		wm.volume_db = linear_to_db(mv) - 3.0
+		wm.play())
+
+
+func _victory_music_off() -> void:
+	if win_music == null:
+		return
+	var wm := win_music
+	win_music = null
+	if is_instance_valid(wm):
+		var tw := create_tween()
+		tw.tween_property(wm, "volume_db", -40.0, 1.0)
+		tw.tween_callback(wm.queue_free)
+
+
 func _menu_music_off() -> void:
 	if menu_music == null:
 		return
@@ -1571,6 +1636,7 @@ func _menu_music_off() -> void:
 
 func _enter_game() -> void:
 	_menu_music_off()
+	_victory_music_off()
 	if menu:
 		menu.queue_free()
 		menu = null
@@ -1938,7 +2004,7 @@ func _update_world_fx(_delta: float) -> void:
 			loop_player.stop()
 		else:
 			loop_player.stream = sfxn.streams[want]
-			loop_player.volume_db = sfxn.db({"plane": -10.0, "wind_fall": -6.0, "wind_chute": -9.0}[want])
+			loop_player.volume_db = sfxn.db({"plane": -1.0, "wind_fall": -6.0, "wind_chute": -9.0}[want])
 			loop_player.play()
 
 
@@ -2021,7 +2087,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		_was_firing = firing
 		if not firing:
 			lp.bloom = maxf(lp.bloom - delta * 4.0, 0.0)
-		hud.cross_bloom = lp.bloom
+		hud.cross_bloom = lp.bloom + clampf(Vector2(lp.velocity.x, lp.velocity.z).length() / 2.6, 0.0, 1.6) * 0.8
 		if _snap_t > 0.0:
 			_snap_t -= delta
 		if firing or _shot_pending or _snap_t > 0.0:
@@ -2113,6 +2179,7 @@ func _local_update(lp: Player, delta: float) -> void:
 	hud.overlay = lp.scoped and bool(w["overlay"])
 	hud.red_dot = lp.scoped and not bool(w["overlay"]) and ("holo" in lp.cur_att() or "scope2" in lp.cur_att())
 	hud.iron = lp.scoped and not hud.overlay and not hud.red_dot
+	_view_gun_tick(lp.scoped and lp.air == 0 and lp.car < 0 and playing and not hud.overlay, lp.cur_wid(), lp.cur_att(), delta)
 	hud.can_scope = float(w["zoom"]) > 1.0
 	hud.reloading = lp.reload_t > 0.0
 	var sl := [{"id": "fist", "att": [], "ammo": 0, "max": 0}]
@@ -2133,7 +2200,8 @@ func _local_update(lp: Player, delta: float) -> void:
 # Arrastar pra cima atirando sobe pra cabeça (capa).
 func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	var mode: int = int(Cfg.get_v("aim_assist"))
-	if mode == 0 or (mode == 1 and lp.scoped) or lp.cur_wid() == "fist":
+	# armas de munição de sniper (Kar98, AWM) não têm mira assistida
+	if mode == 0 or (mode == 1 and lp.scoped) or lp.cur_wid() == "fist" or Weapons.ammo_of(lp.cur_wid()) == "a762":
 		return
 	assist_t -= delta
 	var from := cam.global_position
@@ -2186,6 +2254,84 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
 
+# mirando em primeira pessoa: a arma de verdade na frente da câmera, olhando por cima dela
+# (alça e massa / mira holográfica alinhadas no meio da tela)
+var view_gun: Node3D
+var _view_key := ""
+var _view_k := 0.0
+var _view_top := 0.0
+
+
+func _view_gun_tick(on: bool, wid: String, att: Array, delta: float) -> void:
+	if wid == "fist" or wid == "" or not GunInfo.INFO.has(wid):
+		on = false
+	var key := wid + "|" + ",".join(att)
+	if on and key != _view_key:
+		if view_gun:
+			view_gun.queue_free()
+		# a holográfica/luneta curta não entra no modelo: a janela dela é desenhada na tela
+		var a2 := att.filter(func(a): return a != "holo" and a != "scope2")
+		view_gun = Weapons.build_model(wid, a2)
+		_view_key = key
+		cam.add_child(view_gun)
+		_view_top = 0.0
+		for mi in view_gun.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var ab: AABB = (mi as MeshInstance3D).get_aabb()
+			_view_top = maxf(_view_top, ab.end.y)
+	_view_k = move_toward(_view_k, 1.0 if on else 0.0, delta * 7.0)
+	if view_gun == null:
+		return
+	view_gun.visible = _view_k > 0.02
+	if not view_gun.visible:
+		return
+	# olha por cima do ponto mais alto da arma (alça/massa de mira ficam logo abaixo do centro)
+	var top: float = maxf(_view_top, float(GunInfo.INFO[wid]["rail"]))
+	var pistol: bool = Weapons.get_w(wid)["type"] == "pistol"
+	# entra de baixo/da direita enquanto levanta a arma
+	var e := 1.0 - _view_k
+	view_gun.position = Vector3(0.06 * e, -top - 0.006 - 0.12 * e, -(0.36 if pistol else 0.3))
+	view_gun.rotation = Vector3(0.0, 0.25 * e, 0.0)
+
+
+# item no chão melhor do que o que você tem (brilha dourado na faixa de coleta)
+func _is_better(lp: Player, kind: String, extra = null) -> bool:
+	if Weapons.is_vest(kind):
+		var dur: float = float(extra) if (extra is float or extra is int) and float(extra) > 0.0 else 100.0
+		return Weapons.level_of(kind) > lp.vest_lv or (Weapons.level_of(kind) == lp.vest_lv and dur > lp.armor + 15.0) or lp.armor <= 0.0
+	if Weapons.is_helmet(kind):
+		return Weapons.level_of(kind) > lp.helmet
+	if Weapons.is_bag(kind):
+		return int(kind.substr(3)) > lp.bag
+	if Weapons.is_gun(kind):
+		if lp.wants(kind):
+			return true
+		# arma mais forte que a mais fraca que você carrega no mesmo lugar
+		var w := Weapons.get_w(kind)
+		var worst := 1e9
+		for i in ([2] if int(w["slot"]) == 1 else [0, 1]):
+			var g: String = lp.guns[i]["id"]
+			if g != "" and g != kind:
+				worst = minf(worst, _gun_power(g))
+		return worst < 1e8 and _gun_power(kind) > worst * 1.15
+	if Weapons.is_att(kind):
+		if not lp.wants(kind):
+			return false
+		# acessório com nível: só brilha se for de nível maior do que o já equipado
+		var lv := Weapons.level_of(kind)
+		for g in lp.guns:
+			for a in g["att"]:
+				if str(a).rstrip("0123456789") == kind.rstrip("0123456789") and Weapons.level_of(str(a)) >= lv:
+					return false
+		return true
+	return false
+
+
+func _gun_power(id: String) -> float:
+	var w := Weapons.get_w(id)
+	return float(w["dmg"]) * float(w.get("pellets", 1)) * float(w["rate"]) * (1.0 + float(w["range"]) / 200.0)
+
+
 func _ui_slow(lp: Player, playing: bool) -> void:
 	# itens por perto (lista do canto direito)
 	var list := []
@@ -2203,14 +2349,14 @@ func _ui_slow(lp: Player, playing: bool) -> void:
 				var bl: Array = it.get("list", [])
 				for j in bl.size():
 					var e: Array = bl[j]
-					list.append({"key": [i, j], "kind": e[0], "n": e[1], "label": Weapons.item_name(e[0])})
+					list.append({"key": [i, j], "kind": e[0], "n": e[1], "label": Weapons.item_name(e[0]), "best": _is_better(lp, e[0], e[2] if e.size() > 2 else null)})
 				continue
 			# colete, capacete e mochila pegam sozinhos quando servem
 			if (Weapons.is_vest(kind) or Weapons.is_helmet(kind) or Weapons.is_bag(kind)) and lp.wants(kind) and dd < 1.8 and now - int(auto_tried.get(i, 0)) > 1500:
 				auto_tried[i] = now
 				_to_server("req_pickup", [i, -1])
 				continue
-			list.append({"key": [i, -1], "kind": kind, "n": it.get("n", 1), "label": Weapons.item_name(kind)})
+			list.append({"key": [i, -1], "kind": kind, "n": it.get("n", 1), "label": Weapons.item_name(kind), "best": _is_better(lp, kind, it.get("extra"))})
 	hud.set_pickups(list)
 	var me = info.get(local_id)
 	hud.alive_n = _alive_count()
@@ -2292,7 +2438,7 @@ func _on_action(act: String) -> void:
 		"chute":
 			if lp.air == 1:
 				lp.air = 2
-				sfx("chute")
+				sfx("chute", 4.0)
 		"jump":
 			lp.want_jump = true
 		"crouch":
@@ -2343,15 +2489,18 @@ func _select(lp: Player, s: int) -> void:
 		return
 	# tocar na arma que já está na mão recarrega; só guarda tocando na mão
 	if s == lp.sel and s >= 0:
+		lp.scoped = false
 		_start_reload(lp)
 		return
 	if s == lp.sel:
 		return
 	lp.sel = s
 	lp.reload_t = 0.0
+	# trocar ou guardar a arma desfaz a mira na hora
 	lp.scoped = false
+	_view_k = 0.0
 	lp.update_gun()
-	sfx("switch")
+	sfx("switch", 2.0)
 
 
 func _start_heal(lp: Player, kind: String) -> void:
@@ -2375,7 +2524,7 @@ func _start_heal(lp: Player, kind: String) -> void:
 				kind = o
 				break
 	if lp.count(kind) <= 0:
-		hud.center("Sem bandagem nem kit médico", 1.2)
+		hud.center("Sem bandagem nem kit médico", 1.2, "bad")
 		return
 	lp.heal_kind = kind
 	lp.heal_t = float(Weapons.ITEMS[kind]["time"])
@@ -2443,11 +2592,11 @@ func _start_reload(lp: Player) -> void:
 	var w := lp.cur_stat()
 	if lp.reload_t <= 0.0 and lp.mag[wid] < int(w["mag"]):
 		if phase != LOBBY and lp.count(Weapons.ammo_of(wid)) <= 0:
-			hud.center("Sem munição", 1.2)
+			hud.center("Sem munição", 1.2, "bad")
 			return
 		lp.reload_t = w["reload"]
 		lp.scoped = false
-		sfx("reload_out")
+		sfx("reload_out", 3.0)
 
 
 func _local_fire(lp: Player) -> void:
@@ -2480,8 +2629,10 @@ func _local_fire(lp: Player) -> void:
 		spread *= float(w["ads"])
 	if lp.crouch:
 		spread *= 0.7
-	if Vector2(lp.velocity.x, lp.velocity.z).length() > 1.0:
-		spread *= 1.4
+	# andando o tiro abre bem mais (parado/agachado é que é preciso)
+	var hv := Vector2(lp.velocity.x, lp.velocity.z).length()
+	if hv > 0.6:
+		spread *= 1.0 + clampf(hv / 2.6, 0.4, 1.6)
 	if not lp.is_on_floor():
 		spread *= 2.0
 	# segurando o dedo o tiro vai abrindo (cada arma do seu jeito); soltando volta a ficar preciso
@@ -2956,16 +3107,21 @@ func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, 
 		return
 	if not raw and v.car >= 0:
 		amount *= 0.75     # dentro do carro é mais difícil, mas dá pra acertar
+	var broke := ""
 	if not raw:
 		# capacete segura parte do tiro na cabeça; colete segura parte do tiro no corpo (e vai gastando)
 		if head and v.helmet > 0:
-			amount *= 1.0 - float(Weapons.HELMET_ABSORB[clampi(v.helmet, 0, 3)])
+			var hab := amount * float(Weapons.HELMET_ABSORB[clampi(v.helmet, 0, 3)])
+			amount -= hab
+			v.helmet_hp -= hab * 1.5
+			if v.helmet_hp <= 0.0:
+				broke = "helmet"
 		elif not head and v.armor > 0.0 and v.vest_lv > 0:
 			var ab := minf(v.armor, amount * float(Weapons.VEST_ABSORB[clampi(v.vest_lv, 0, 3)]))
 			v.armor -= ab
 			amount -= ab
 			if v.armor <= 0.0:
-				v.vest_lv = 0
+				broke = "vest"
 	if v.is_bot and aid != vid and players.has(aid):
 		v.b_target = aid
 		v.b_react = minf(v.b_react, 0.3)
@@ -2979,6 +3135,29 @@ func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, 
 		_check_end()
 	else:
 		_all("on_hp", [vid, hp, v.armor, aid, head, amount])
+		# colete/capacete quebrou: some do corpo e avisa
+		if broke != "":
+			if broke == "helmet":
+				v.helmet = 0
+			else:
+				v.vest_lv = 0
+				v.armor = 0.0
+			_p_inv(v)
+			_all("on_gear_break", [vid, aid, broke])
+
+
+@rpc("authority", "call_remote", "reliable")
+func on_gear_break(vid: int, aid: int, what: String) -> void:
+	if hud == null:
+		return
+	var v: Player = players.get(vid)
+	if v:
+		sfx_at("gear_break", v.position + Vector3(0, 1.4, 0), vid == local_id, 2.0, 40.0)
+	var nm := "Capacete" if what == "helmet" else "Colete"
+	if vid == local_id:
+		hud.alert("%s quebrou!" % nm, "bad")
+	elif aid == local_id:
+		hud.alert("%s do inimigo quebrou" % nm, "good")
 
 
 # Quem morre vira uma caixinha com tudo o que tinha
@@ -2993,7 +3172,7 @@ func _server_death_box(v: Player) -> void:
 	if v.armor > 0.0 and v.vest_lv > 0:
 		list.append(["vest%d" % v.vest_lv, 1, v.armor])
 	if v.helmet > 0:
-		list.append(["helmet%d" % v.helmet, 1, null])
+		list.append(["helmet%d" % v.helmet, 1, v.helmet_hp])
 	if v.bag > 0:
 		list.append(["bag%d" % v.bag, 1, null])
 	if list.is_empty():
@@ -3089,11 +3268,13 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 		return 1
 	if Weapons.is_helmet(kind):
 		var lv := Weapons.level_of(kind)
-		if lv <= p.helmet:
+		var hd: float = float(extra) if (extra is float or extra is int) and float(extra) > 0.0 else 100.0
+		if lv < p.helmet or (lv == p.helmet and hd <= p.helmet_hp + 1.0):
 			return 0
 		if p.helmet > 0:
-			_server_drop("helmet%d" % p.helmet, p.position)
+			_server_drop("helmet%d" % p.helmet, p.position, 1, p.helmet_hp)
 		p.helmet = lv
+		p.helmet_hp = hd
 		_p_inv(p)
 		return 1
 	if Weapons.is_bag(kind):
@@ -3315,7 +3496,7 @@ func req_drop(kind: String, n: int) -> void:
 		"helmet":
 			if p.helmet <= 0:
 				return
-			_server_drop("helmet%d" % p.helmet, p.position)
+			_server_drop("helmet%d" % p.helmet, p.position, 1, p.helmet_hp)
 			p.helmet = 0
 		_:
 			var c := mini(p.count(kind), maxi(n, 1))
@@ -3519,7 +3700,7 @@ func zone_set(stage: int, c0: Vector2, r0: float, c1: Vector2, r1: float, wait: 
 	z_dmg = dmg
 	z_t = t
 	if hud and stage > 0:
-		hud.center("A zona vai fechar! Veja o círculo branco no mapa.", 3.0)
+		hud.center("A zona vai fechar! Veja o círculo branco no mapa.", 3.0, "warn")
 		sfx("zone")
 
 
@@ -3544,7 +3725,13 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 	# acerto (vale também no lobby, onde ninguém perde vida: mostra quanto teria tirado)
 	if amount > 0.0 and aid == local_id and vid != local_id:
 		hud.hit(head, false)
-		sfx("headshot" if head else "hit", -6.0)
+		# o "tim" metálico só quando bate no capacete
+		if head and v and v.helmet > 0:
+			sfx("headshot", -6.0)
+		elif head:
+			sfx("head_flesh", -3.0)
+		else:
+			sfx("hit", -6.0)
 		if v:
 			hud.dmg_number(v.position, amount, head, false)
 	if amount > 0.0 and v and aid != 0 and bool(Cfg.get_v("blood")):
@@ -3600,7 +3787,7 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		hud.kill_banner(vn, head, int(info[local_id]["kills"]) if info.has(local_id) else 0)
 		sfx("kill", 0.0)
 		hud.dmg_number(vpos, amount, head, true)
-		hud.center("Você eliminou %s" % vn, 2.0)
+		hud.center("Você eliminou %s" % vn, 2.0, "good")
 	if vid == local_id:
 		my_rank = rank
 		hud.hurt()
@@ -3611,7 +3798,7 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 			_spec_next()
 		var me = info.get(local_id)
 		var why := "na queda" if wid == "queda" else ("na zona" if (wid == "zona" or aid == 0) else "por %s" % kn)
-		hud.center("Eliminado %s\nColocação: #%d    Abates: %d    Dano: %d" % [why, rank, me["kills"] if me else 0, int(me["dmg"]) if me else 0], 7.0)
+		hud.center("Eliminado %s\nColocação: #%d    Abates: %d    Dano: %d" % [why, rank, me["kills"] if me else 0, int(me["dmg"]) if me else 0], 7.0, "bad")
 	elif vid == spec_id:
 		get_tree().create_timer(2.0).timeout.connect(func():
 			if players.has(spec_id) and not players[spec_id].alive:
@@ -3634,8 +3821,8 @@ func on_winner(id: int) -> void:
 	var k: int = me["kills"] if me else 0
 	var dmg: int = int(me["dmg"]) if me else 0
 	if id == local_id:
-		hud.center("VITÓRIA!\nVocê é o último de pé!\nAbates: %d    Dano: %d" % [k, dmg], 999.0)
-		sfx("kill")
+		hud.victory("Último de pé    ·    Abates: %d    ·    Dano: %d" % [k, dmg])
+		_victory_music()
 	else:
 		var wn: String = info[id]["name"] if info.has(id) else "Ninguém"
 		var lp: Player = players.get(local_id)
@@ -3670,8 +3857,11 @@ func match_reset() -> void:
 		info[id]["kills"] = 0
 		info[id]["dmg"] = 0.0
 	auto_tried = {}
+	_victory_music_off()
 	if hud:
 		hud.center("", 0.0)
+		hud.win_t = -1.0
+		hud.win_ctl.queue_redraw()
 		hud.can_retry = false
 
 

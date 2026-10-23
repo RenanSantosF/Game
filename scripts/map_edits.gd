@@ -8,6 +8,7 @@ extends RefCounted
 # A chave é tipo@posição original (em meio metro), então continua valendo enquanto o objeto
 # for gerado no mesmo lugar.
 # Arquivos: res://data/map_edits.json (vai junto no jogo) e user://map_edits.json (do aparelho).
+# Quando o jogo atualiza com um map_edits.json diferente, as alterações do aparelho são zeradas.
 
 const SHIPPED := "res://data/map_edits.json"
 const LOCAL := "user://map_edits.json"
@@ -21,7 +22,10 @@ static func empty() -> Dictionary:
 static func load_data(local: bool) -> Dictionary:
 	if local and FileAccess.file_exists(LOCAL):
 		var d := _read(LOCAL)
-		if not d.is_empty():
+		# o jogo veio com um mapa novo (as alterações já foram pra dentro dele): zera as do aparelho
+		if str(d.get("base", "")) != shipped_hash():
+			clear_local()
+		elif not d.is_empty():
 			return d
 	var s := _read(SHIPPED)
 	return s if not s.is_empty() else empty()
@@ -49,7 +53,15 @@ static func parse(txt: String) -> Dictionary:
 	return d
 
 
+# marca de qual mapa do jogo as alterações do aparelho partiram
+static func shipped_hash() -> String:
+	if not FileAccess.file_exists(SHIPPED):
+		return "-"
+	return FileAccess.get_file_as_string(SHIPPED).md5_text()
+
+
 static func save_local(d: Dictionary) -> void:
+	d["base"] = shipped_hash()
 	var f := FileAccess.open(LOCAL, FileAccess.WRITE)
 	if f:
 		f.store_string(to_text(d))

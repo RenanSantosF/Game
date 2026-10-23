@@ -733,12 +733,13 @@ func _k_sandbags(pos: Vector3, yaw: float, length := 3.0) -> void:
 	var root := body(pos, yaw)
 	var c := Color(0.72, 0.64, 0.48)
 	w.claim(Vector2(pos.x, pos.z), length * 0.6)
-	col_box(root, Vector3(length, 1.05, 0.7), Vector3(0, 0.52, 0))
+	# 4 fileiras (~1,3 m): agachado atrás fica bem protegido
+	col_box(root, Vector3(length, 1.32, 0.75), Vector3(0, 0.66, 0))
 	if headless:
 		return
 	mb.tex(U.FABRIC, 1.5)
 	var n := int(length / 0.55)
-	for row in 3:
+	for row in 4:
 		for i in n - (row % 2):
 			var x := -length / 2.0 + 0.3 + i * 0.55 + (0.27 if row % 2 == 1 else 0.0)
 			mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(0.3, 0.18, 0.34)), Vector3(x, 0.18 + row * 0.33, 0)), 6, 3, c.darkened(rng.randf() * 0.15))

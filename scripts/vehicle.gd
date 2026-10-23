@@ -35,6 +35,7 @@ var target_yaw := 0.0
 var steer_v := 0.0
 var _tilt := Basis()
 var _spin := 0.0
+var smoke: CPUParticles3D
 var _vy := 0.0
 static var _mesh_cache := {}
 
@@ -78,6 +79,40 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 				w.visibility_range_end = 200.0
 				piv.add_child(w)
 				wheels.append([piv, z == wh[2]])
+		# fumaça do motor: aparece e engrossa conforme o carro perde vida (preta perto de explodir)
+		smoke = CPUParticles3D.new()
+		smoke.amount = 40
+		smoke.lifetime = 2.2
+		smoke.emitting = false
+		smoke.local_coords = false
+		smoke.position = Vector3(0, 1.1, float(wh[2]) - 0.3)
+		smoke.direction = Vector3(0, 1, 0)
+		smoke.spread = 18.0
+		smoke.gravity = Vector3(0, 1.2, 0)
+		smoke.initial_velocity_min = 0.6
+		smoke.initial_velocity_max = 1.4
+		smoke.scale_amount_min = 0.6
+		smoke.scale_amount_max = 1.4
+		var sc := Curve.new()
+		sc.add_point(Vector2(0, 0.4))
+		sc.add_point(Vector2(1, 2.6))
+		smoke.scale_amount_curve = sc
+		var sm := SphereMesh.new()
+		sm.radius = 0.35
+		sm.height = 0.7
+		sm.radial_segments = 6
+		sm.rings = 3
+		var smat := StandardMaterial3D.new()
+		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		smat.vertex_color_use_as_albedo = true
+		sm.material = smat
+		smoke.mesh = sm
+		var grad := Gradient.new()
+		grad.set_color(0, Color(0.55, 0.55, 0.55, 0.55))
+		grad.set_color(1, Color(0.4, 0.4, 0.4, 0.0))
+		smoke.color_ramp = grad
+		add_child(smoke)
 		crash_snd = AudioStreamPlayer3D.new()
 		crash_snd.stream = load("res://sounds/crash.wav")
 		crash_snd.unit_size = 10.0
@@ -195,23 +230,40 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 	else:
 		speed = move_toward(speed, 0.0, 3.5 * delta)
 	steer_v = lerpf(steer_v, steer, minf(1.0, 6.0 * delta))
-	var turn_k := clampf(absf(speed) / 6.0, 0.0, 1.0) * signf(speed)
-	yaw -= steer_v * TURN[kind] * turn_k * delta
+	# vira como carro de verdade: em volta do eixo de trás, raio pelo ângulo das rodas da frente
+	# (devagar vira pouco, sem parecer que o carro escorrega de lado)
+	var wh: Array = wh_of(kind)
+	var wb := absf(float(wh[3]) - float(wh[2]))
+	var rate := clampf(speed * tan(steer_v * 0.55) / maxf(wb, 1.5), -TURN[kind], TURN[kind])
+	var rear := Vector3(0, 0, float(wh[3]))
+	var rear_w0 := Basis(Vector3.UP, yaw) * rear
+	yaw -= rate * delta
+	var rear_w1 := Basis(Vector3.UP, yaw) * rear
+	global_position += rear_w0 - rear_w1
 	rotation.y = yaw
 	var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
-	# subindo morro perde um pouco de força, descendo ganha
+	# subindo morro perde um pouco de força, descendo ganha (os dois têm torque pra subir morro)
 	var up_k := -_tilt.z.y if mesh else 0.0
-	# o jeep sobe morro e anda no mato quase sem perder força; o esportivo sente mais
-	speed -= up_k * (5.0 if kind == 0 else 1.8) * delta * signf(speed)
+	speed -= up_k * (3.0 if kind == 0 else 0.9) * delta * signf(speed)
 	velocity = Vector3(fwd.x * speed, 0, fwd.z * speed)
 	var before := global_position
 	move_and_slide()
-	# bateu de frente em algo: perde velocidade (o som sai em _update_visual)
+	# o chão (terreno) nunca segura o carro de frente: as rodas é que acompanham o morro
+	var hit_wall := false
+	var only_ground := get_slide_collision_count() > 0
 	for ci in get_slide_collision_count():
-		var n := get_slide_collision(ci).get_normal()
+		var c := get_slide_collision(ci)
+		if c.get_collider() == game.world.terrain_body:
+			continue
+		only_ground = false
+		var n := c.get_normal()
 		if absf(n.y) < 0.6 and fwd.dot(-n) * signf(speed) > 0.45 and absf(speed) > 4.0:
-			speed *= 0.5
-			break
+			hit_wall = true
+	if only_ground:
+		global_position = Vector3(before.x + velocity.x * delta, global_position.y, before.z + velocity.z * delta)
+	# bateu de frente em algo: perde velocidade (o som sai em _update_visual)
+	if hit_wall:
+		speed *= 0.5
 	var moved := Vector2(global_position.x - before.x, global_position.z - before.z).length()
 	if absf(speed) > 3.0 and moved < absf(speed) * delta * 0.15:
 		speed *= 0.5
@@ -322,6 +374,15 @@ func _update_visual(delta: float) -> void:
 		crash_snd.pitch_scale = randf_range(0.9, 1.1)
 		crash_snd.play()
 	_last_speed = speed
+	if smoke:
+		var dmg := 1.0 - hp / HP
+		smoke.emitting = not dead and dmg > 0.3
+		if smoke.emitting:
+			var k := clampf((dmg - 0.3) / 0.6, 0.0, 1.0)
+			smoke.amount_ratio = lerpf(0.25, 1.0, k)
+			var g := lerpf(0.6, 0.08, k)
+			smoke.color_ramp.set_color(0, Color(g, g, g, lerpf(0.35, 0.8, k)))
+			smoke.scale_amount_max = lerpf(1.0, 2.2, k)
 	if engine:
 		var on := driver != 0 and not dead
 		if on and not engine.playing:

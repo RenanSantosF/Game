@@ -12,7 +12,8 @@ const NAMES := ["shot_pistol", "shot_deagle", "shot_smg", "shot_ump", "shot_rifl
 	"step_gravel0", "step_gravel1", "step_gravel2", "step_gravel3", "step_gravel4", "step_gravel5", "jump",
 	"land", "vault", "switch", "reload_out", "reload_in", "bolt", "pickup", "equip", "heal", "heal_done", "hit",
 	"headshot", "kill", "punch_swing", "punch_hit", "chute", "zone", "click", "empty", "impact", "ricochet", "hurt",
-	"wind_fall", "wind_chute", "plane", "pain0", "pain1", "pain2", "door", "explosion", "drop", "pin", "beep", "crash"]
+	"wind_fall", "wind_chute", "plane", "pain0", "pain1", "pain2", "door", "explosion", "drop", "pin", "beep", "crash",
+	"head_flesh", "win", "gear_break"]
 const MAX_3D := 20
 
 var streams := {}
@@ -56,6 +57,10 @@ func play_at(n: String, pos: Vector3, vol := 0.0, max_d := 60.0, pitch := 1.0, u
 	ap.unit_size = unit
 	ap.max_distance = max_d
 	ap.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+	# som 3D bem marcado: com fone dá pra saber de que lado vem (e de longe fica abafado)
+	ap.panning_strength = 1.6
+	ap.attenuation_filter_cutoff_hz = 6000.0
+	ap.attenuation_filter_db = -12.0
 	add_child(ap)
 	ap.global_position = pos
 	ap.play()

@@ -212,3 +212,121 @@ eng += lp(noise(d), 500) * 0.9
 eng = np.tanh(eng * 1.5)
 save("engine_jeep", eng, 0.65)
 print("sons novos ok")
+
+
+# ---------------- lote 8: sons mais claros ----------------
+
+def metal(d, freqs, decay, seed_off=0):
+    t = t_(d)
+    return sum(np.sin(2 * np.pi * f * t + i) * np.exp(-t * decay * (1 + i * 0.3)) / (1 + i * 0.5) for i, f in enumerate(freqs))
+
+
+def place(buf, x, at):
+    i = int(at * R)
+    n = min(len(x), len(buf) - i)
+    buf[i:i + n] += x[:n]
+
+
+# trocar arma: "tchec-tchac" metálico (trava + ferrolho), bem claro
+d = 0.42
+x = np.zeros(int(d * R))
+c1 = metal(0.08, [1850, 3120, 4700, 6900], 70) + bp(noise(0.08), 2500, 9000) * np.exp(-t_(0.08) * 140) * 0.8
+c2 = metal(0.12, [1300, 2450, 3900, 5600], 45) + bp(noise(0.12), 1500, 7000) * np.exp(-t_(0.12) * 90) * 0.9
+body = np.sin(2 * np.pi * 160 * t_(0.12)) * np.exp(-t_(0.12) * 40) * 0.8
+cloth = bp(noise(0.25), 300, 2000) * np.exp(-t_(0.25) * 14) * 0.25
+place(x, cloth, 0.0)
+place(x, c1, 0.05)
+place(x, c2 + body, 0.2)
+save("switch", np.tanh(x * 1.5), 0.85)
+
+# recarga, tirar o pente: clique da trava + pente deslizando pra fora
+d = 0.4
+x = np.zeros(int(d * R))
+place(x, metal(0.05, [2600, 4100, 6300], 110) + bp(noise(0.05), 3000, 9000) * np.exp(-t_(0.05) * 200), 0.0)
+t = t_(0.22)
+slide = bp(noise(0.22), 1200, 5000) * np.sin(np.pi * t / 0.22) ** 2 * 0.6
+place(x, slide, 0.06)
+place(x, np.sin(2 * np.pi * 220 * t_(0.08)) * np.exp(-t_(0.08) * 50) * 0.5, 0.27)
+save("reload_out", x, 0.8)
+
+# recarga, pôr o pente: desliza e trava com um "TLAC" forte
+d = 0.42
+x = np.zeros(int(d * R))
+t = t_(0.14)
+place(x, bp(noise(0.14), 1000, 4500) * np.sin(np.pi * t / 0.14) ** 2 * 0.5, 0.0)
+clack = metal(0.16, [1500, 2700, 4300, 6200], 40) * 1.2 + bp(noise(0.16), 2000, 8000) * np.exp(-t_(0.16) * 110)
+thud = np.sin(2 * np.pi * np.cumsum(130 + 120 * np.exp(-t_(0.16) * 40)) / R) * np.exp(-t_(0.16) * 35)
+place(x, clack + thud, 0.13)
+save("reload_in", np.tanh(x * 1.4), 0.9)
+
+# abate: "check" de confirmação — duas notas de sino subindo, limpas e satisfatórias
+d = 0.9
+x = np.zeros(int(d * R))
+def bell(f, dur, dec):
+    t = t_(dur)
+    a = np.minimum(1.0, t / 0.004)
+    return a * (np.sin(2 * np.pi * f * t) * np.exp(-t * dec) + 0.35 * np.sin(2 * np.pi * f * 2.0 * t) * np.exp(-t * dec * 1.8)
+                + 0.15 * np.sin(2 * np.pi * f * 3.01 * t) * np.exp(-t * dec * 2.6))
+place(x, bell(1318.5, 0.5, 9) * 0.8, 0.0)       # mi
+place(x, bell(1975.5, 0.8, 6), 0.085)           # si (quinta acima)
+place(x, np.sin(2 * np.pi * np.cumsum(90 + 80 * np.exp(-t_(0.2) * 30)) / R) * np.exp(-t_(0.2) * 22) * 0.5, 0.0)
+save("kill", reverb(x, 0.6, 0.18), 0.85)
+
+# tiro na cabeça sem capacete: estalo seco e "carnudo" (o "tim" metálico fica pra quando tem capacete)
+t = t_(0.18)
+flesh = np.sin(2 * np.pi * np.cumsum(220 + 300 * np.exp(-t * 60)) / R) * np.exp(-t * 30) + bp(noise(0.18), 700, 4000) * np.exp(-t * 55) * 0.9
+save("head_flesh", np.tanh(flesh * 1.6), 0.7)
+
+# abrir paraquedas: estrondo de pano (WHUMP grave) + tremida
+d = 1.3
+t = t_(d)
+boom = lp(noise(d), 260) * np.exp(-t * 6) * 4.0
+sub = np.sin(2 * np.pi * np.cumsum(45 + 70 * np.exp(-t * 12)) / R) * np.exp(-t * 5) * 1.6
+snap = bp(noise(d), 600, 4000) * np.exp(-t * 18) * 0.9
+flap = bp(noise(d), 150, 1500) * np.exp(-t * 3) * (0.5 + 0.5 * np.sin(2 * np.pi * 24 * t)) * 0.6
+x = boom + sub + snap + flap
+x[:int(0.012 * R)] *= np.linspace(0, 1, int(0.012 * R))
+save("chute", np.tanh(reverb(x, 0.5, 0.2) * 1.3), 0.95)
+
+# vitória: tema pesado e lento (acordes distorcidos, bumbo e prato), sem pressa mas agressivo
+bpm = 78.0
+beat = 60.0 / bpm
+chords = [(82.41, 2), (82.41, 1), (98.0, 1), (110.0, 2), (123.47, 1), (110.0, 1), (82.41, 4)]   # mi mi sol lá si lá mi
+total = sum(b for _, b in chords) * beat + 2.5
+out = np.zeros(int(total * R))
+pos = 0.0
+for f, b in chords:
+    dur = b * beat
+    t = t_(dur + 0.3)
+    env = np.minimum(1.0, t / 0.01) * np.where(t < dur, 1.0, np.exp(-(t - dur) * 12)) * (0.75 + 0.25 * np.exp(-t * 3))
+    sig = np.zeros_like(t)
+    for m, a in [(1.0, 1.0), (1.4983, 0.8), (2.0, 0.6)]:
+        for det in (0.996, 1.004):
+            ph = (f * m * det * t) % 1.0
+            sig += (2 * ph - 1) * a
+    gtr = lp(np.tanh(sig * 2.5), 2600) * env
+    place(out, gtr * 0.55, pos)
+    # bumbo forte em cada acorde e caixa no meio
+    k = np.sin(2 * np.pi * np.cumsum(50 + 110 * np.exp(-t_(0.4) * 25)) / R) * np.exp(-t_(0.4) * 9)
+    place(out, k * 1.4, pos)
+    if b >= 2:
+        sn = bp(noise(0.3), 900, 6000) * np.exp(-t_(0.3) * 16) + np.sin(2 * np.pi * 190 * t_(0.3)) * np.exp(-t_(0.3) * 25)
+        place(out, sn * 0.8, pos + beat)
+    pos += dur
+# prato no começo e no fim
+for at in (0.0, pos - 4 * beat):
+    cr = hp(noise(2.5), 5000) * np.exp(-t_(2.5) * 1.8) * 0.5
+    place(out, cr, at)
+save("win", np.tanh(reverb(out, 1.4, 0.25) * 1.2), 0.95)
+print("lote 8 ok")
+
+# colete/capacete quebrando: estalo de placa rachando + cacos
+d = 0.6
+x = np.zeros(int(d * R))
+place(x, bp(noise(0.06), 1500, 9000) * np.exp(-t_(0.06) * 60) * 1.5, 0.0)
+place(x, metal(0.3, [880, 1430, 2210, 3500], 18) * 0.6, 0.0)
+for i in range(7):
+    at = 0.04 + i * 0.05 + rng.uniform(0, 0.03)
+    place(x, bp(noise(0.04), 2500, 10000) * np.exp(-t_(0.04) * 120) * rng.uniform(0.3, 0.7), at)
+place(x, np.sin(2 * np.pi * np.cumsum(120 + 90 * np.exp(-t_(0.2) * 30)) / R) * np.exp(-t_(0.2) * 20) * 0.8, 0.0)
+save("gear_break", np.tanh(x * 1.5), 0.85)

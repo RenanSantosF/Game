@@ -633,6 +633,7 @@ func _build_terrain() -> PackedColorArray:
 	cs.shape = shape
 	body.add_child(cs)
 	add_child(body)
+	terrain_body = body
 	return cols
 
 
@@ -772,6 +773,10 @@ func _build_loc(ti: int) -> void:
 			_estacao(c, y, r)
 		"porto":
 			_porto(c, y, r)
+	# localidade pequena com pouca casa: completa (cidade grande ganha algumas a mais também)
+	var extra: int = {"posto": 3, "serraria": 3, "fazenda": 2, "estacao": 3, "porto": 3, "esparso": 2, "vila": 2, "igreja": 2, "bairro": 2, "centro": 3}.get(t["kind"], 0)
+	if extra > 0:
+		_more_houses(c, y, r, extra)
 	if t["kind"] in ["vila", "igreja", "bairro", "centro", "esparso"]:
 		_war_props(c, y, r)
 	if t["name"] in HILL_TOWNS:
@@ -877,6 +882,23 @@ func _face(from: Vector2, to: Vector2) -> float:
 	return atan2(-d.x, -d.y)
 
 
+# mais casas em volta do centro (sem encostar em nada: confere o espaço livre antes)
+func _more_houses(c: Vector2, y: float, r: float, n: int, d0 := 0.55, d1 := 0.92, on_ground := false) -> void:
+	var rng := b.rng
+	var made := 0
+	for t in n * 6:
+		if made >= n:
+			return
+		var a := rng.randf() * TAU
+		var p := c + Vector2(cos(a), sin(a)) * r * rng.randf_range(d0, d1)
+		var spec := _house_spec(rng)
+		if not is_free(p, maxf(spec["w"], spec["d"]) * 0.55) or road_dist(p.x, p.y) < 5.0 or hw_dist(p.x, p.y) < 9.0 or rail_dist(p) < 7.0:
+			continue
+		var hy := height(p.x, p.y) - 0.1 if on_ground else y
+		b.house(_p3(p, hy), _face(p, c) + rng.randf_range(-0.3, 0.3), spec)
+		made += 1
+
+
 func _vila(c: Vector2, y: float, r: float, church: bool) -> void:
 	var rng := b.rng
 	var n := rng.randi_range(8, 11)
@@ -933,6 +955,7 @@ func _yard(p: Vector2, yaw: float, spec: Dictionary, y: float) -> void:
 
 # rua em pedaços que acompanham o chão (com "saia" pra baixo: nunca fica flutuando)
 func _street(a: Vector2, c: Vector2, y: float, width := 6.0) -> void:
+	map_streets.append([a, c, width])
 	if headless:
 		return
 	var d := c - a
@@ -1118,7 +1141,7 @@ func _esparso(c: Vector2, y: float, r: float) -> void:
 		for q in placed:
 			if p.distance_to(q) < 13.0:
 				ok = false
-		if not ok:
+		if not ok or not is_free(p, 5.0):
 			continue
 		placed.append(p)
 		var yaw := rng.randf() * TAU
@@ -1258,11 +1281,8 @@ func _pedreira(c: Vector2, y: float, r: float) -> void:
 	var tp := c + Vector2(rng.randf_range(-r * 0.3, r * 0.3), rng.randf_range(-r * 0.3, r * 0.3))
 	if is_free(tp, 3.0):
 		b.car(_p3(tp, pit), rng.randf() * TAU)
-	# casinhas na borda de cima
-	for k in 2:
-		var a := rng.randf() * TAU
-		var p := c + Vector2(cos(a), sin(a)) * (r + 8.0)
-		b.house(_p3(p, height(p.x, p.y) - 0.1), _face(p, c), _house_spec(rng))
+	# casinhas na borda de cima (sem uma dentro da outra)
+	_more_houses(c, y, r, 4, 1.15, 1.35, true)
 
 
 func _serraria(c: Vector2, y: float, r: float) -> void:
@@ -1464,6 +1484,7 @@ func _build_fields() -> void:
 		var col := Color(0.55, 0.6, 0.28) if corn else Color(0.42, 0.55, 0.22)
 		if rng.randf() < 0.3:
 			col = Color(0.78, 0.66, 0.36)
+		map_fields.append([c, fw, fd, yaw, col])
 		var hh := 1.7 if corn else 0.55
 		if not headless:
 			var rows := int(fw / 1.3)
@@ -1623,6 +1644,12 @@ const BUSH_LAYER := 1 << 9
 
 
 # árvore/pedra/moita/tronco: aplica o ajuste à mão e guarda (ou, no editor, vira um nó próprio)
+var terrain_body: StaticBody3D   # colisão do chão (o carro não "bate" nele)
+var map_marks := []     # árvores, moitas e pedras (pontinhos no mapa)
+var map_fields := []    # plantações (listras no mapa)
+var map_streets := []   # ruas das cidades
+
+
 func _nat(kind: String, xf: Transform3D, sets: Dictionary, key := "", e_over = null) -> void:
 	if key == "":
 		key = MapEdits.key(kind, xf.origin)
@@ -1635,6 +1662,8 @@ func _nat(kind: String, xf: Transform3D, sets: Dictionary, key := "", e_over = n
 	if bool(e.get("d", false)):
 		return
 	var x2 := MapEdits.nat_apply(xf, e)
+	if kind != "grass":
+		map_marks.append([kind, Vector2(x2.origin.x, x2.origin.z), x2.basis.get_scale().x])
 	if editor and not headless:
 		var n := Node3D.new()
 		n.set_meta("key", key)
@@ -2007,28 +2036,57 @@ func _build_bounds() -> void:
 # Mapa visto de cima (minimapa)
 # Mapa visto de cima (minimapa e mapa grande): 1024 px, com estradas, rodovias, trilho,
 # casas e lagoa desenhados nítidos por cima do relevo
-const MAP_PX := 1024
+const MAP_PX := 2048
 
 
 func _build_map(wts: PackedColorArray) -> void:
 	var n := RES + 1
 	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	var cg := Color(0.4, 0.5, 0.25)
-	var cd := Color(0.6, 0.52, 0.38)
-	var cr := Color(0.55, 0.54, 0.5)
-	var cs := Color(0.76, 0.7, 0.52)
+	var cg := Color(0.42, 0.55, 0.27)
+	var cg2 := Color(0.33, 0.46, 0.22)
+	var cd := Color(0.66, 0.55, 0.38)
+	var cr := Color(0.58, 0.57, 0.53)
+	var cs := Color(0.8, 0.73, 0.54)
+	var cell := SIZE / RES
+	var light := Vector3(-0.6, 0.75, -0.45).normalized()   # sol do noroeste
 	for j in n:
 		for i in n:
 			var c: Color = wts[j * n + i]
 			var gw := clampf(1.0 - c.r - c.g - c.b, 0.0, 1.0)
-			var col := cg * gw + cd * c.r + cr * c.g + cs * c.b
-			col = col.lightened((c.a - 0.5) * 0.12)
-			# relevo: morro mais claro, baixada mais escura (dá noção de altura)
-			col = col.lightened(clampf(_hs[j * n + i] / 120.0, -0.15, 0.2))
+			# grama com dois tons (manchas), terra, pedra e areia
+			var gc := cg.lerp(cg2, clampf(noise2.get_noise_2d(i * 7.0, j * 7.0) * 1.2 + 0.5, 0.0, 1.0))
+			var col := gc * gw + cd * c.r + cr * c.g + cs * c.b
+			col = col.lightened((c.a - 0.5) * 0.1)
+			# relevo sombreado (luz do noroeste) + morro um pouco mais claro: dá pra "ver" a altura
+			var hx := _hs[j * n + mini(i + 1, n - 1)] - _hs[j * n + maxi(i - 1, 0)]
+			var hz := _hs[mini(j + 1, n - 1) * n + i] - _hs[maxi(j - 1, 0) * n + i]
+			var nr := Vector3(-hx / (2.0 * cell), 1.0, -hz / (2.0 * cell)).normalized()
+			var sh := clampf(nr.dot(light) / light.y, 0.55, 1.25)
+			col = Color(col.r * sh, col.g * sh, col.b * sh)
+			col = col.lightened(clampf(_hs[j * n + i] / 160.0, -0.1, 0.14))
 			img.set_pixel(i, j, col)
 	img.resize(MAP_PX, MAP_PX, Image.INTERPOLATE_CUBIC)
 	var px := MAP_PX / SIZE
 	var off := Vector2(SIZE, SIZE) / 2.0
+	# plantações: listras
+	for f in map_fields:
+		var fc: Vector2 = f[0]
+		var fw: float = f[1]
+		var fd: float = f[2]
+		var rot := Vector2(cos(f[3]), sin(f[3]))
+		var col: Color = f[4]
+		var cp := (fc + off) * px
+		var ext := (fw + fd) * 0.5 * px
+		for y in range(int(cp.y - ext), int(cp.y + ext) + 1):
+			for x in range(int(cp.x - ext), int(cp.x + ext) + 1):
+				if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
+					continue
+				var d := (Vector2(x, y) - cp) / px
+				var lx := d.x * rot.x - d.y * rot.y
+				var lz := d.x * rot.y + d.y * rot.x
+				if absf(lx) <= fw / 2.0 and absf(lz) <= fd / 2.0:
+					var row := int((lx + fw / 2.0) / 1.3) % 2 == 0
+					img.set_pixel(x, y, col.darkened(0.18) if row else col.lightened(0.05))
 	# lagoa com borda nítida
 	var lc := (LAKE_C + off) * px
 	var lr := (LAKE_R + 1.0) * px
@@ -2036,41 +2094,93 @@ func _build_map(wts: PackedColorArray) -> void:
 		for x in range(int(lc.x - lr), int(lc.x + lr) + 1):
 			var d := Vector2(x, y).distance_to(lc)
 			if d < lr and x >= 0 and y >= 0 and x < MAP_PX and y < MAP_PX:
-				img.set_pixel(x, y, Color(0.2, 0.42, 0.55) if d < lr - 2.0 else Color(0.85, 0.82, 0.65))
-	# estradas de terra
+				var wc := Color(0.2, 0.44, 0.58).lerp(Color(0.14, 0.33, 0.48), clampf(1.0 - d / lr, 0.0, 1.0))
+				img.set_pixel(x, y, wc if d < lr - 3.0 else Color(0.86, 0.82, 0.64))
+	# pedras, moitas e árvores: pontinhos com sombra (copa verde-escura)
+	for mk in map_marks:
+		var q: Vector2 = (Vector2(mk[1]) + off) * px
+		var sc: float = mk[2]
+		match mk[0]:
+			"rock":
+				_map_dot(img, q, maxf(1.2, sc * 0.5 * px * 0.5), Color(0.62, 0.6, 0.56), 0.7)
+			"bush":
+				_map_dot(img, q, maxf(1.2, sc * 0.45 * px * 0.5), Color(0.3, 0.42, 0.18), 0.6)
+			"log":
+				_map_dot(img, q, 1.2, Color(0.4, 0.3, 0.2), 0.5)
+			_:
+				_map_dot(img, q, maxf(2.0, 2.2 * sc * px * 0.5), Color(0.2, 0.33, 0.14) if mk[0] != "pine" else Color(0.15, 0.27, 0.13), 1.0)
+	# estradas de terra (com borda)
 	for r in roads:
-		_map_line(img, (r[0] + off) * px, (r[1] + off) * px, 2, Color(0.72, 0.6, 0.42))
+		_map_line(img, (r[0] + off) * px, (r[1] + off) * px, 4, Color(0.5, 0.42, 0.3))
+	for r in roads:
+		_map_line(img, (r[0] + off) * px, (r[1] + off) * px, 3, Color(0.78, 0.66, 0.46))
+	# ruas das cidades (asfalto com calçada)
+	for st in map_streets:
+		_map_line(img, (Vector2(st[0]) + off) * px, (Vector2(st[1]) + off) * px, int(float(st[2]) * 0.5 * px) + 1, Color(0.62, 0.6, 0.56))
+	for st in map_streets:
+		_map_line(img, (Vector2(st[0]) + off) * px, (Vector2(st[1]) + off) * px, int(float(st[2]) * 0.5 * px) - 1, Color(0.3, 0.3, 0.32))
 	# trilho
 	for i in RAIL.size() - 1:
-		_map_line(img, (RAIL[i] + off) * px, (RAIL[i + 1] + off) * px, 1, Color(0.35, 0.3, 0.27))
-	# rodovias asfaltadas com faixa no meio
+		_map_line(img, (RAIL[i] + off) * px, (RAIL[i + 1] + off) * px, 2, Color(0.4, 0.33, 0.28))
+	for i in RAIL.size() - 1:
+		if i % 2 == 0:
+			_map_line(img, (RAIL[i] + off) * px, (RAIL[i + 1] + off) * px, 0, Color(0.7, 0.68, 0.62))
+	# rodovias asfaltadas com borda clara e faixa no meio
 	for line in hw_pts:
 		for i in line.size() - 1:
-			_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 3, Color(0.25, 0.25, 0.27))
+			_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 7, Color(0.62, 0.6, 0.56))
+		for i in line.size() - 1:
+			_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 6, Color(0.24, 0.24, 0.26))
 		for i in line.size() - 1:
 			if i % 2 == 0:
 				_map_line(img, (Vector2(line[i][0]) + off) * px, (Vector2(line[i + 1][0]) + off) * px, 0, Color(0.95, 0.82, 0.3))
-	# casas: retângulos certinhos (telhado escuro com borda)
+	# casas: sombra, telhado com cumeeira e borda
 	for h in houses:
 		var yaw: float = h["yaw"]
 		var hw: float = h["w"] / 2.0
 		var hd: float = h["d"] / 2.0
 		var c: Vector2 = (Vector2(h["pos"]) + off) * px
-		var ext := (hw + hd) * px + 2.0
+		var ext := (hw + hd) * px + 6.0
 		var rot := Vector2(cos(yaw), sin(yaw))
-		for y in range(int(c.y - ext), int(c.y + ext) + 1):
-			for x in range(int(c.x - ext), int(c.x + ext) + 1):
-				if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
-					continue
-				var d := (Vector2(x, y) - c) / px
-				# casa gira no sentido do Basis(UP, yaw): x' = x cos + z sin ; z' = -x sin + z cos
-				var lx := d.x * rot.x - d.y * rot.y
-				var lz := d.x * rot.y + d.y * rot.x
-				if absf(lx) <= hw and absf(lz) <= hd:
-					var edge := absf(lx) > hw - 0.7 or absf(lz) > hd - 0.7
-					img.set_pixel(x, y, Color(0.2, 0.17, 0.15) if edge else Color(0.55, 0.36, 0.3))
+		var hh := absi(hash(Vector2i(int(c.x), int(c.y))))
+		var roof: Color = [Color(0.62, 0.33, 0.26), Color(0.5, 0.48, 0.46), Color(0.55, 0.4, 0.3), Color(0.68, 0.42, 0.3)][hh % 4]
+		var shadow := Vector2(1.6, 1.6) * px
+		for pass_i in 2:
+			for y in range(int(c.y - ext), int(c.y + ext) + 1):
+				for x in range(int(c.x - ext), int(c.x + ext) + 1):
+					if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
+						continue
+					var d := (Vector2(x, y) - c - (shadow if pass_i == 0 else Vector2.ZERO)) / px
+					# casa gira no sentido do Basis(UP, yaw): x' = x cos + z sin ; z' = -x sin + z cos
+					var lx := d.x * rot.x - d.y * rot.y
+					var lz := d.x * rot.y + d.y * rot.x
+					if absf(lx) <= hw and absf(lz) <= hd:
+						if pass_i == 0:
+							img.set_pixel(x, y, img.get_pixel(x, y).darkened(0.35))
+							continue
+						var edge := absf(lx) > hw - 0.5 or absf(lz) > hd - 0.5
+						var half := roof.darkened(0.12) if lz > 0.0 else roof.lightened(0.08)
+						img.set_pixel(x, y, Color(0.18, 0.15, 0.13) if edge else half)
 	img.generate_mipmaps()
 	map_tex = ImageTexture.create_from_image(img)
+
+
+func _map_dot(img: Image, q: Vector2, r: float, col: Color, shadow: float) -> void:
+	var ri := int(ceil(r)) + 2
+	for dy in range(-ri, ri + 1):
+		for dx in range(-ri, ri + 1):
+			var x := int(q.x) + dx
+			var y := int(q.y) + dy
+			if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
+				continue
+			var d := Vector2(dx, dy).length()
+			var ds := Vector2(dx - r * 0.5, dy - r * 0.5).length()
+			if d <= r:
+				# copa com um lado iluminado
+				var k := clampf((dx + dy) / (r * 2.0 + 0.01), -1.0, 1.0)
+				img.set_pixel(x, y, col.lightened(0.12 * -k) if k < 0.0 else col.darkened(0.15 * k))
+			elif ds <= r and shadow > 0.0:
+				img.set_pixel(x, y, img.get_pixel(x, y).darkened(0.25 * shadow))
 
 
 func _map_line(img: Image, a: Vector2, b: Vector2, r: int, col: Color) -> void:
