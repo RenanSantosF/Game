@@ -3,3 +3,4 @@ build/
 server/Godot_*
 *.tmp
 tests_tmp/
+tools/__pycache__/
