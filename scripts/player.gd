@@ -119,6 +119,8 @@ var regen := 0.0
 var _breath := 0.0
 var _crouch_k := 0.0
 var _heal_anim := 0.0
+var _last_hp := 200.0
+var _hit_t := 0.0       # tomou tiro agora (animação de reação parado)
 var _wall_chk := 0.0
 var _wall_near := false
 var _gun_low := 0.0
@@ -317,10 +319,10 @@ func _build_model() -> void:
 	var skin: Color = SKINS[rng.randi() % SKINS.size()]
 	var hair: Color = HAIRS[rng.randi() % HAIRS.size()]
 	var long_sleeve := rng.randf() < 0.5
-	var cap_hat := rng.randf() < 0.3
+	var cap_hat := false     # skin fixa: ninguém ganha boné sorteado
 	model = Node3D.new()
 	add_child(model)
-	# boneco animado (modelo do Meshy); cada jogador com as suas cores
+	# boneco animado (Mixamo), com a mesma skin pra todos
 	sol = Soldier.new()
 	model.add_child(sol)
 	sol.setup(skin, shirt, pants, BOOTS[rng.randi() % BOOTS.size()], hair)
@@ -475,7 +477,7 @@ func die() -> void:
 	velocity = Vector3.ZERO
 	if sol and model and model.visible and air == 0:
 		dying_t = 2.2
-		sol.play("Dead", 0.08, 1.7 if sol.has_anim("Sprint") else 1.0)
+		sol.play("Dead", 0.08, 2.0 if sol.has_anim("RifleIdle") else (1.7 if sol.has_anim("Sprint") else 1.0))
 		_set_gun_model("fist", [])
 	elif model:
 		model.visible = false
@@ -878,21 +880,33 @@ func _animate(delta: float, sim: bool) -> void:
 	var hands := []
 	aim.rotation.x = 0.0
 	if air == 1:
-		model.rotation.x = lerpf(model.rotation.x, -1.2, k)
-		model.position.y = 0.6
-		sol.play("Air")
-		hands = [model.global_transform * Vector3(-0.8, 1.45, 0.15), model.global_transform * Vector3(0.8, 1.45, 0.15)]
+		# queda livre: a animação já é deitada (braços abertos); só endireita o corpo
+		var mix := sol.has_anim("Fall")
+		model.rotation.x = lerpf(model.rotation.x, 0.0 if mix else -1.2, k)
+		model.position.y = 0.2 if mix else 0.6
+		sol.play("Fall" if mix else "Air", 0.25)
+		if not mix:
+			hands = [model.global_transform * Vector3(-0.8, 1.45, 0.15), model.global_transform * Vector3(0.8, 1.45, 0.15)]
 		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
 	# pulando a janela: corpo inclina pra frente e as pernas encolhem (passa por cima do batente)
+	# com a animação de salto do Mixamo o corpo não precisa inclinar por código
+	var vault_anim := sol.has_anim("Vault")
 	var vk := sin(clampf(vault_t / VAULT_TIME, 0.0, 1.0) * PI) if vault_t >= 0.0 else 0.0
+	if vault_anim:
+		vk = 0.0
 	model.rotation.x = lerpf(model.rotation.x, -0.55 * vk, minf(1.0, 20.0 * delta))
 	if air == 2:
-		model.position.y = 0.0
-		sol.play("Air", 0.3, 0.2)
-		hands = [model.global_transform * Vector3(-0.3, 1.95, -0.05), model.global_transform * Vector3(0.3, 1.95, -0.05)]
+		# paraquedas: pendurado com os braços pra cima segurando as cordas
+		model.position.y = -0.15 if sol.has_anim("Chute") else 0.0
+		if sol.has_anim("Chute"):
+			sol.play("Chute", 0.3)
+		else:
+			sol.play("Air", 0.3, 0.2)
+			hands = [model.global_transform * Vector3(-0.3, 1.95, -0.05), model.global_transform * Vector3(0.3, 1.95, -0.05)]
 		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
+	model.position.y = 0.0
 	# arma encostada na parede: abaixa o cano (não atravessa a parede)
 	_wall_chk -= delta
 	if _wall_chk <= 0.0 and armed and gun and not far:
@@ -911,33 +925,78 @@ func _animate(delta: float, sim: bool) -> void:
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
 	if stun_t > 0.0 and not airborne:
 		# caiu de alto: aterrissa agachado com a mão no chão
+		if sol.has_anim("Land"):
+			if sol.cur != "Land":
+				sol.play("Land", 0.08, 1.6)
+			if gun:
+				gun.visible = false
+			sol.tick(delta, far, 0.0, 0.0, [])
+			return
 		sol.play("Idle", 0.08)
 		var gp2 := model.global_transform
 		sol.tick(delta, far, 0.0, 1.0, [gp2 * Vector3(-0.22, 0.75, -0.25), gp2 * Vector3(0.18, 0.05, -0.45)])
 		return
-	# animações da Universal Animation Library: parado, andar, corrida leve, corrida forte, agachado
+	# venceu: comemora (sem arma na mão)
+	if game.winner == pid and game.winner != 0 and sol.has_anim("Victory"):
+		sol.play("Victory", 0.25)
+		if gun:
+			gun.visible = false
+		sol.tick(delta, far, 0.0, 0.0, [])
+		return
+	# animações do Mixamo: parado (com e sem arma), andar, correr, correr rápido, pular, saltar janela.
+	# O ritmo acompanha a velocidade do jogo (o pé quase não desliza), com limite pra não ficar frenético.
 	var ual := sol.has_anim("Sprint")
-	if airborne and sp > 2.5 and vault_t < 0.0:
+	var mix := sol.has_anim("RifleIdle")
+	var crouch_anim := sol.has_anim("CrouchIdle")
+	if hp < _last_hp - 0.5:
+		_hit_t = 0.35
+	_last_hp = hp
+	_hit_t = maxf(_hit_t - delta, 0.0)
+	if vault_t >= 0.0 and vault_anim:
+		# salto da janela: a animação inteira cabe no tempo do pulo
+		if sol.cur != "Vault":
+			sol.play("Vault", 0.06, sol.ap.get_animation("Vault").length / (VAULT_TIME * 1.6))
+	elif airborne and mix and sol.has_anim("Jump") and (not sim or velocity.y > 1.5 or _air_time > 0.2):
+		# pulo: começa na decolagem e segura o meio do pulo enquanto estiver no ar
+		if sol.cur != "Jump" and sol.cur != "Air":
+			sol.play("Jump", 0.08, 1.5)
+		elif sol.cur == "Jump" and sol.ap.current_animation_position > sol.ap.current_animation_length * 0.2:
+			sol.play("Air", 0.2)
+	elif airborne and sp > 2.5 and vault_t < 0.0:
 		# pulando correndo: as pernas continuam no passo
 		sol.play("Running", 0.15, 0.8)
 	elif vault_t >= 0.0 or airborne:
 		sol.play("Air", 0.12)
-	elif crouch and ual:
+	elif crouch and crouch_anim:
 		if sp < 0.35:
 			sol.play("CrouchIdle", 0.25)
 		else:
 			sol.play("CrouchWalk", 0.2, clampf(sp / 1.7, 0.45, 1.4))
 	elif sp < 0.35:
-		sol.play("Idle", 0.25)
-	elif sp < 2.9 or crouch:
-		# agachado o passo é bem mais curto e lento
-		sol.play("Walking", 0.2, clampf(sp / 1.15, 0.55, 2.3) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
+		var firing: bool = armed and (ready_t > 0.0 or (is_local and game.hud != null and game.hud.fire_held))
+		if mix and _hit_t > 0.0 and not crouch:
+			sol.play("Hit", 0.06, 1.2)
+		elif mix and firing and not crouch:
+			sol.play("Fire", 0.12)
+		elif mix and armed:
+			sol.play("RifleIdle", 0.25)
+		else:
+			sol.play("Idle", 0.25)
+	elif sp < (1.9 if mix else 2.9) or crouch:
+		# andando (mirando, atirando, agachado): com arma anda com o rifle, sem arma com os braços soltos
+		var wn := "Walking" if armed or not sol.has_anim("WalkFree") else "WalkFree"
+		if mix:
+			sol.play(wn, 0.2, clampf(sp / 0.95, 0.6, 2.0) if not crouch else clampf(sp / 1.6, 0.4, 1.2))
+		else:
+			sol.play("Walking", 0.2, clampf(sp / 1.15, 0.55, 2.3) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
 	elif sp < 5.8 or not ual:
-		# passada curta e mais rápida (o pé não vai tão lá na frente)
-		sol.play("Running", 0.2, clampf(sp / 3.2, 0.8, 1.7) if ual else clampf(sp / 5.4, 0.62, 1.5))
+		if mix:
+			sol.play("Running", 0.15, clampf(sp / 2.7, 0.85, 1.75))
+		else:
+			sol.play("Running", 0.2, clampf(sp / 3.2, 0.8, 1.7) if ual else clampf(sp / 5.4, 0.62, 1.5))
 	else:
-		sol.play("Sprint", 0.2, clampf(sp / 5.0, 0.9, 1.6))
-	if ual and crouch:
+		sol.play("Sprint", 0.15, clampf(sp / 3.6, 0.95, 1.8) if mix else clampf(sp / 5.0, 0.9, 1.6))
+	if crouch_anim and crouch:
 		cr = -1.0     # a própria animação agacha (sem dobrar as pernas por código)
 	if heal_t > 0.0:
 		# curando: braço esquerdo na frente e a mão direita dá voltas nele (enrolando a faixa)
@@ -981,7 +1040,7 @@ func _animate(delta: float, sim: bool) -> void:
 		else:
 			aim.rotation.z = lerpf(aim.rotation.z, 0.0, minf(1.0, 10.0 * delta))
 		hands = [fore, grip]
-	elif sol.cur == "Idle" and vault_t < 0.0 and not ual:
+	elif sol.cur == "Idle" and vault_t < 0.0 and not ual and not mix:
 		# parado de mãos livres: braços soltos do lado do corpo, respirando
 		_breath += delta
 		var br := sin(_breath * 1.8) * 0.008

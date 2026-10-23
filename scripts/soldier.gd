@@ -1,8 +1,8 @@
 class_name Soldier
 extends Node3D
 
-# Boneco do jogador (models/soldier.scn, preparado por tools/prepare_man.gd a partir do modelo do Meshy, com textura).
-# Animações do arquivo (parado, andar, correr, no ar, morrer) + ajustes por código:
+# Boneco do jogador (models/soldier.scn, preparado por tools/prepare_mixamo.gd: skin e animações do Mixamo).
+# Animações do arquivo (parado, andar, correr, pular, cair, paraquedas, morrer...) + ajustes por código:
 # braços alcançam a arma (cinemática inversa), agachar dobra as pernas, o tronco acompanha a mira.
 
 const SCENE := "res://models/soldier.scn"
@@ -12,7 +12,6 @@ var body: Node3D
 var sk: Skeleton3D
 var ap: AnimationPlayer
 var meshes: Array = []
-var mat: ShaderMaterial
 var cur := ""
 var _acc := 0.0
 var b := {}            # nome curto -> índice do osso
@@ -32,17 +31,9 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	sk = body.find_child("Skeleton3D", true, false)
 	ap = body.get_node("Anim")
 	ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	mat = (body.find_child("Body0", true, false).mesh.surface_get_material(0) as ShaderMaterial).duplicate()
-	mat.set_shader_parameter("c_skin", skin)
-	mat.set_shader_parameter("c_shirt", shirt)
-	mat.set_shader_parameter("c_pants", pants)
-	mat.set_shader_parameter("c_boots", boots)
-	mat.set_shader_parameter("c_hair", hair)
-	# quem tira a camisa verde-oliva fica com a jaqueta e o jeans originais da textura
-	mat.set_shader_parameter("tint", 0.0 if shirt.is_equal_approx(Color(0.32, 0.36, 0.24)) else 1.0)
+	# skin fixa (textura do Mixamo): todo mundo igual, as cores recebidas não mudam nada
 	for k in 2:
 		var mi: MeshInstance3D = body.find_child("Body%d" % k, true, false)
-		mi.material_override = mat
 		meshes.append(mi)
 	meshes[0].visibility_range_end = 22.0
 	meshes[0].visibility_range_end_margin = 2.0

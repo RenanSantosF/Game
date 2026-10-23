@@ -16,7 +16,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Conteúdo
 
-- Personagem com textura (modelo feito no Meshy, reduzido pra celular por tools/prepare_man.gd): jaqueta e calça mudam de cor por jogador; animações da Universal Animation Library (Quaternius, CC0): parado, andar, corrida leve, corrida forte, agachado, pulo, morte e dirigindo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
+- Personagem com rig e animações do Mixamo (preparado por tools/prepare_mixamo.gd a partir de models_src/mixamo): skin padrão fixa pra todos (camiseta, bermuda cargo e tênis); parado, parado com rifle, andar com rifle, corrida, corrida rápida, pulo correndo, salto de janela, queda livre, paraquedas (pendurado), aterrissagem, tiro, reação a tiro, morte, dirigindo e comemoração na vitória; o ritmo dos passos acompanha a velocidade do jogo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
 - Árvores (folhas do Poly Haven, CC0): tronco reto e grosso (dá pra se proteger atrás) e copa falhada de cartões de folhas, leves pro celular; três tipos + moita
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
