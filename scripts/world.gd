@@ -220,6 +220,59 @@ func _base(x: float, z: float) -> float:
 
 
 # relevo com as áreas planas das localidades
+const TERRAIN_LO := 260.0
+
+
+# Um bloco do terreno com passo "step" na grade (1 = completo, 2 = metade da resolução).
+# Com uma "saia" de 3 m pra baixo nas bordas: onde um bloco completo encosta num simplificado
+# não abre fresta (os dois têm saia, então qualquer degrau entre eles fica tampado).
+static func _terrain_block(verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, n: int, i0: int, j0: int, per: int, step: int) -> ArrayMesh:
+	var cv := PackedVector3Array()
+	var cn := PackedVector3Array()
+	var cc := PackedColorArray()
+	var cx := PackedInt32Array()
+	var q := per / step
+	var w := q + 1
+	for jj in w:
+		for ii in w:
+			var k := (j0 + jj * step) * n + i0 + ii * step
+			cv.append(verts[k])
+			cn.append(norms[k])
+			cc.append(cols[k])
+	for j in q:
+		for i in q:
+			var a := j * w + i
+			cx.append_array(PackedInt32Array([a, a + 1, a + w, a + 1, a + w + 1, a + w]))
+	# saia: cada borda ganha uma faixa vertical descendo 3 m
+	var edges := [[], [], [], []]
+	for t in w:
+		edges[0].append(t)                   # j = 0
+		edges[1].append((w - 1) * w + t)     # j = fim
+		edges[2].append(t * w)               # i = 0
+		edges[3].append(t * w + w - 1)       # i = fim
+	for e in edges:
+		var base := cv.size()
+		for vi: int in e:
+			cv.append(cv[vi] - Vector3(0, 3.0, 0))
+			cn.append(cn[vi])
+			cc.append(cc[vi])
+		for t in w - 1:
+			var a: int = e[t]
+			var b: int = e[t + 1]
+			# os dois lados (a saia não tem frente definida)
+			cx.append_array(PackedInt32Array([a, b, base + t, b, base + t + 1, base + t]))
+			cx.append_array(PackedInt32Array([a, base + t, b, b, base + t, base + t + 1]))
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = cv
+	arr[Mesh.ARRAY_NORMAL] = cn
+	arr[Mesh.ARRAY_COLOR] = cc
+	arr[Mesh.ARRAY_INDEX] = cx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return mesh
+
+
 func _pre(x: float, z: float) -> float:
 	var h := _base(x, z)
 	# áreas planas das localidades; onde duas rampas se cruzam, a cidade mais perto manda
@@ -754,34 +807,18 @@ func _build_terrain() -> PackedColorArray:
 		var per := RES / CH
 		for cj in CH:
 			for ci in CH:
-				var cv := PackedVector3Array()
-				var cn := PackedVector3Array()
-				var cc := PackedColorArray()
-				var cx := PackedInt32Array()
-				var w := per + 1
-				for j in range(cj * per, cj * per + per + 1):
-					for i in range(ci * per, ci * per + per + 1):
-						var k := j * n + i
-						cv.append(verts[k])
-						cn.append(norms[k])
-						cc.append(cols[k])
-				for j in per:
-					for i in per:
-						var a := j * w + i
-						cx.append_array(PackedInt32Array([a, a + 1, a + w, a + 1, a + w + 1, a + w]))
-				var arr := []
-				arr.resize(Mesh.ARRAY_MAX)
-				arr[Mesh.ARRAY_VERTEX] = cv
-				arr[Mesh.ARRAY_NORMAL] = cn
-				arr[Mesh.ARRAY_COLOR] = cc
-				arr[Mesh.ARRAY_INDEX] = cx
-				var mesh := ArrayMesh.new()
-				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-				var mi := MeshInstance3D.new()
-				mi.mesh = mesh
-				mi.material_override = U.tmat()
-				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				add_child(mi)
+				# perto a malha completa; longe (centro do bloco a mais de TERRAIN_LO m) metade da
+				# resolução: 1/4 dos triângulos, que de longe não fazem diferença
+				for step in [1, 2]:
+					var mi := MeshInstance3D.new()
+					mi.mesh = _terrain_block(verts, norms, cols, n, ci * per, cj * per, per, step)
+					mi.material_override = U.tmat()
+					mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					if step == 1:
+						mi.visibility_range_end = TERRAIN_LO
+					else:
+						mi.visibility_range_begin = TERRAIN_LO
+					add_child(mi)
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for k in idx.size():

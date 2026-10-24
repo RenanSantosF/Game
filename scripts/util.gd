@@ -73,6 +73,58 @@ static func atlas() -> Texture:
 	return _atlas
 
 
+# Corta uma malha grande (espalhada pelo mapa) em pedaços de "cell" metros pelo centro de cada
+# triângulo: cada pedaço some sozinho pela distância e pelo campo de visão (antes a malha do
+# tamanho do mapa era desenhada inteira de qualquer lugar perto do meio).
+static func split_mesh(m: ArrayMesh, cell: float) -> Array:
+	var out := []
+	if m == null:
+		return out
+	for si in m.get_surface_count():
+		var arr := m.surface_get_arrays(si)
+		var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(vs.size()))
+		var buckets := {}
+		for t in range(0, idx.size(), 3):
+			var cpos := (vs[idx[t]] + vs[idx[t + 1]] + vs[idx[t + 2]]) / 3.0
+			var key := Vector2i(floori(cpos.x / cell), floori(cpos.z / cell))
+			if not buckets.has(key):
+				buckets[key] = PackedInt32Array()
+			var b: PackedInt32Array = buckets[key]
+			b.append(idx[t])
+			b.append(idx[t + 1])
+			b.append(idx[t + 2])
+			buckets[key] = b
+		for key in buckets:
+			var tri: PackedInt32Array = buckets[key]
+			var remap := {}
+			var na := []
+			na.resize(Mesh.ARRAY_MAX)
+			var order := PackedInt32Array()
+			var nidx := PackedInt32Array()
+			nidx.resize(tri.size())
+			for k in tri.size():
+				var o: int = tri[k]
+				if not remap.has(o):
+					remap[o] = order.size()
+					order.append(o)
+				nidx[k] = remap[o]
+			for a in Mesh.ARRAY_MAX:
+				if a == Mesh.ARRAY_INDEX or arr[a] == null or arr[a].size() != vs.size():
+					continue
+				var src = arr[a]
+				var dst = src.duplicate()
+				dst.resize(order.size())
+				for k in order.size():
+					dst[k] = src[order[k]]
+				na[a] = dst
+			na[Mesh.ARRAY_INDEX] = nidx
+			var nm := ArrayMesh.new()
+			nm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, na)
+			out.append(nm)
+	return out
+
+
 # Material único usado por quase tudo: textura do atlas + cor do vértice.
 static func wmat() -> ShaderMaterial:
 	if _wmat:

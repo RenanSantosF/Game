@@ -10,6 +10,9 @@ var count := 0
 var uvs := 0.35
 var layer := 15
 var sway := 0.0
+# peças pequenas ou finas (molduras, parapeitos, entulho, tábuas, canos) vão pra esta outra malha,
+# que some antes de longe (de longe elas ocupam 1 ou 2 pixels e custam muito triângulo)
+var small: MB = null
 
 
 func _init() -> void:
@@ -78,7 +81,25 @@ func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Color, hint: Vect
 
 
 # Caixa. A textura segue os eixos da própria caixa (telha acompanha o telhado).
+# tamanho real da peça (com a escala da transformação): pequena ou fina?
+static func is_small(xf: Transform3D, size: Vector3) -> bool:
+	var d := [absf(size.x) * xf.basis.x.length(), absf(size.y) * xf.basis.y.length(), absf(size.z) * xf.basis.z.length()]
+	d.sort()
+	# sacos de areia, caixotes e barris (cobertura) continuam: só sai o que é fino ou bem pequeno
+	return d[2] < 0.35 or (d[0] < 0.12 and d[1] < 0.45)
+
+
+func _to_small() -> MB:
+	small.layer = layer
+	small.uvs = uvs
+	small.sway = sway
+	return small
+
+
 func box(xf: Transform3D, size: Vector3, col: Color, shade := true) -> void:
+	if small != null and is_small(xf, size):
+		_to_small().box(xf, size, col, shade)
+		return
 	var h := size / 2.0
 	var dirs := [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD]
 	for nrm: Vector3 in dirs:
@@ -111,6 +132,9 @@ func boxp(pos: Vector3, size: Vector3, col: Color, rot_y := 0.0) -> void:
 
 # Cilindro (ou cone, se rt = 0) em pé, com a base na origem do xf.
 func cyl(xf: Transform3D, rb: float, rt: float, h: float, seg: int, col: Color, caps := true, smooth := true, top_col = null, jag := 0.0, rng: RandomNumberGenerator = null) -> void:
+	if small != null and is_small(xf, Vector3(maxf(rb, rt) * 2.0, h, maxf(rb, rt) * 2.0)):
+		_to_small().cyl(xf, rb, rt, h, seg, col, caps, smooth, top_col, jag, rng)
+		return
 	var tc: Color = col if top_col == null else top_col
 	var circ := TAU * (rb + rt) * 0.5
 	var rings := []
@@ -158,6 +182,9 @@ func cyl(xf: Transform3D, rb: float, rt: float, h: float, seg: int, col: Color, 
 
 # Esfera achatada/esticada, opcionalmente deformada (pedras, copas, moitas).
 func blob(xf: Transform3D, seg: int, rings: int, col: Color, rng: RandomNumberGenerator = null, distort := 0.0, smooth := true, bottom_dark := 0.0) -> void:
+	if small != null and is_small(xf, Vector3(2, 2, 2)):
+		_to_small().blob(xf, seg, rings, col, rng, distort, smooth, bottom_dark)
+		return
 	var pts := []
 	for r in rings + 1:
 		var row := []

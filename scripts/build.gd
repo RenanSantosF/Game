@@ -33,22 +33,41 @@ var _h0 := 0
 func begin(seed_v: int) -> void:
 	_h0 = w.houses.size()
 	mb = MB.new()
+	if not headless:
+		mb.small = MB.new()
 	rng.seed = seed_v
 	vrng.seed = seed_v + 7
 
 
+const SMALL_VIS := 130.0     # até onde aparecem as peças pequenas (molduras, entulho...)
+
+
 func finish(vis := 700.0) -> void:
-	if headless or mb.count == 0:
+	if headless:
 		return
-	var mi := MeshInstance3D.new()
-	mi.mesh = mb.commit()
-	mi.material_override = U.wmat()
-	mi.visibility_range_end = vis
-	w.add_child(mi)
+	if mb.small != null and mb.small.count > 0:
+		var sm := MeshInstance3D.new()
+		sm.mesh = mb.small.commit()
+		sm.material_override = U.wmat()
+		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sm.visibility_range_end = minf(vis, SMALL_VIS)
+		w.add_child(sm)
+	mb.small = null
+	if mb.count == 0:
+		return
+	var mesh := mb.commit()
 	# casas deste grupo: o cenário de longe delas vira um bloco só que troca com este detalhe
 	for i in range(_h0, w.houses.size()):
 		w.houses[i]["grp"] = w.detail_meshes.size()
-	w.detail_meshes.append([mi, vis])
+	# grupo espalhado pelo mapa (postes e placas da rodovia...): em pedaços de 100 m
+	var parts := [mesh] if mesh.get_aabb().size.length() < 300.0 else U.split_mesh(mesh, 100.0)
+	for pm in parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = pm
+		mi.material_override = U.wmat()
+		mi.visibility_range_end = vis
+		w.add_child(mi)
+		w.detail_meshes.append([mi, vis])
 
 
 func body(pos: Vector3, yaw: float) -> StaticBody3D:

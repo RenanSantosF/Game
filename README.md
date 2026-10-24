@@ -81,6 +81,15 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Tudo fica salvo no aparelho e já vale no treino (o minimapa acompanha as casas). **COPIAR** copia as alterações em texto: cole no chat do Claude pra elas irem pro jogo de todo mundo (`data/map_edits.json`). **LIMPAR** (toque duas vezes) apaga as alterações do aparelho
 - Partida em rede usa só as alterações que vão no jogo, pra todo mundo ver o mesmo mapa
 
+## Novidades da 0.24.2 (otimização)
+
+- Jipe (carro e carcaças) com versão simplificada de longe: 14,5 mil → 4,2 mil triângulos a partir de 45 m (tools/prepare_car_lod.gd)
+- Boneco com versão simplificada a partir de 20 m: 10,3 mil → 5,7 mil triângulos, sem buraco na roupa (tools/prepare_soldier_lod.gd)
+- Postes, fios e placas da rodovia eram uma malha do tamanho do mapa desenhada inteira: agora em pedaços de 100 m
+- Molduras, parapeitos, tábuas e pedacinhos de entulho somem a partir de 130 m (sacos de areia, caixotes e barris continuam)
+- Terreno com metade da resolução nos blocos longe (com "saia" nas bordas, sem fresta)
+- Resultado: 40% a 57% menos triângulos que a 0.24.0 nos mesmos pontos do mapa e o quadro ~15% mais rápido no teste
+
 ## Novidades da 0.24.1 (otimização)
 
 - Celular com limite de 30 FPS: a física roda 30 vezes por segundo (antes eram 2 passos de física por quadro mostrado)

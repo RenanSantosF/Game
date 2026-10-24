@@ -7,6 +7,9 @@ extends Node3D
 
 const SCENE := "res://models/soldier.scn"
 static var _packed: PackedScene
+const LO_MESH := "res://models/soldier_lo.res"
+const LO_DIST := 20.0
+static var _lo_mesh: Mesh
 
 var body: Node3D
 var sk: Skeleton3D
@@ -35,9 +38,22 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	for k in 2:
 		var mi: MeshInstance3D = body.find_child("Body%d" % k, true, false)
 		meshes.append(mi)
-	# inimigo aparece igual em qualquer distância (sem trocar de modelo nem sumir de longe);
-	# a malha já tem níveis de detalhe automáticos, então a cópia de longe não é usada
-	meshes[1].visible = false
+	# de perto a malha completa (10 mil triângulos); a partir de 20 m a simplificada (~4 mil, mesmo
+	# esqueleto e textura; tools/prepare_soldier_lod.gd). O modo de vídeo do celular não troca
+	# sozinho pelos níveis de detalhe, então a troca é pela distância
+	if _lo_mesh == null and ResourceLoader.exists(LO_MESH):
+		_lo_mesh = load(LO_MESH)
+	if _lo_mesh:
+		meshes[1].mesh = _lo_mesh
+		meshes[1].material_override = meshes[0].material_override
+		for i in meshes[0].get_surface_override_material_count():
+			if meshes[0].get_surface_override_material(i):
+				meshes[1].set_surface_override_material(i, meshes[0].get_surface_override_material(i))
+		meshes[0].visibility_range_end = LO_DIST
+		meshes[1].visibility_range_begin = LO_DIST
+		meshes[1].visible = true
+	else:
+		meshes[1].visible = false
 	for n in ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm",
 			"RightForeArm", "RightHand", "LeftHandMiddle1", "RightHandMiddle1", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"]:
 		b[n] = sk.find_bone("mixamorig_" + n)

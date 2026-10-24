@@ -156,6 +156,17 @@ static func body_node(k: int, mat: Material) -> MeshInstance3D:
 	mi.mesh = load("res://models/car%d.res" % k)
 	mi.material_override = mat
 	mi.visibility_range_end = 450.0
+	# de longe a versão simplificada (o jipe tem 14 mil triângulos; de longe ~3 mil)
+	var lo_path := "res://models/car%d_lo.res" % k
+	if ResourceLoader.exists(lo_path):
+		mi.visibility_range_end = 45.0
+		var lo := MeshInstance3D.new()
+		lo.mesh = load(lo_path)
+		lo.material_override = mat
+		lo.visibility_range_begin = 45.0
+		lo.visibility_range_end = 450.0
+		lo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.add_child(lo)
 	# piso e bancos por dentro: o carro tem fundo e dá pra ver quem está sentado
 	var inn := MeshInstance3D.new()
 	inn.mesh = interior(k)
