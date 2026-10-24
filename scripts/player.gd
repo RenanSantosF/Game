@@ -61,6 +61,7 @@ var punch_t := 0.0
 var gren_hold := false      # segurando a granada sem pino (braço pra trás, pronto pra jogar)
 var _gren_k := 0.0
 var _vel_mul := 1.0
+var _anim_acc := 0.0
 var _chute_age := -1.0      # tempo desde que o paraquedas abriu (tranco da abertura)
 var _gren_mi: MeshInstance3D
 static var _handle_cache := {}
@@ -723,18 +724,21 @@ func _physics_process(delta: float) -> void:
 			game.heal_done(self, heal_kind)
 	if sim:
 		if alive:
-			if is_bot and not (b_far and Engine.get_physics_frames() % 3 != pid % 3):
-				_bot(delta * (3.0 if b_far else 1.0))
+			# cérebro do bot: longe de todos 1 vez a cada 3 quadros; longe da câmera 1 a cada 2
+			var bstep := 3 if b_far else (2 if not game.near_cam(position, 70.0) else 1)
+			if is_bot and Engine.get_physics_frames() % bstep == pid % bstep:
+				_bot(delta * float(bstep))
 			_vel_mul = 1.0
 			if car >= 0:
 				velocity = Vector3.ZERO
 			elif vault_t >= 0.0:
 				_vault_step(delta)
-			elif is_bot and b_far and air == 0 and not game.near_cam(position, 120.0):
-				# longe de todos e da câmera: anda só 1 quadro a cada 3
-				if Engine.get_physics_frames() % 3 == pid % 3:
-					_vel_mul = 3.0
-					_move(delta * 3.0)
+			elif is_bot and air == 0 and not game.near_cam(position, 70.0):
+				# longe da câmera: anda 1 quadro a cada 2 (longe de todo mundo, 1 a cada 3) com o passo maior
+				var stp := 3 if (b_far and not game.near_cam(position, 120.0)) else 2
+				if Engine.get_physics_frames() % stp == pid % stp:
+					_vel_mul = float(stp)
+					_move(delta * float(stp))
 			else:
 				_move(delta)
 	else:
@@ -753,8 +757,24 @@ func _physics_process(delta: float) -> void:
 			chute.visible = false
 	if visual:
 		_steps(delta, sim)
-		if game.near_cam(position, 140.0):
-			_animate(delta, sim)
+		# animação custa CPU (esqueleto + braços): perto e na tela anima todo quadro; longe ou fora
+		# da tela anima menos vezes (o lobby com 50 bonecos juntos pesava no começo da partida)
+		_anim_acc += delta
+		var cd2: float = game.cam_dist2(position) if not is_local else 0.0
+		if cd2 < 140.0 * 140.0:
+			var every := 1
+			if not is_local:
+				if not game.in_view(position):
+					every = 8
+				elif cd2 > 35.0 * 35.0:
+					every = 3
+				elif cd2 > 15.0 * 15.0:
+					every = 2
+			if every == 1 or (Engine.get_physics_frames() + pid) % every == 0:
+				_animate(_anim_acc, sim)
+				_anim_acc = 0.0
+		else:
+			_anim_acc = 0.0
 
 
 func _move(delta: float) -> void:

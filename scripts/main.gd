@@ -157,6 +157,7 @@ var _seen_gear := [0, 0, 0, 0.0]
 func _ready() -> void:
 	rng.randomize()
 	Cfg.load_cfg()
+	Cfg.first_run_tier()
 	players_root = Node3D.new()
 	players_root.name = "Players"
 	add_child(players_root)
@@ -1969,15 +1970,13 @@ void fragment() {
 
 func _apply_quality() -> void:
 	var vp := get_viewport()
-	_dyn_scale = -1.0
-	_low_mode = false
 	var sun: DirectionalLight3D = world.get_node_or_null("Sun")
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	var far := 300.0     # mais curto que antes: o jogo fica mais leve (a névoa esconde o fim)
 	match int(Cfg.get_v("quality")):
 		0:
-			vp.scaling_3d_scale = 0.55
+			vp.scaling_3d_scale = 0.5
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			if sun:
 				sun.shadow_enabled = false
@@ -2111,6 +2110,19 @@ func view_yaw() -> float:
 	return t.yaw if t else 0.0
 
 
+func cam_dist2(p: Vector3) -> float:
+	if cam == null:
+		return 0.0
+	return cam.global_position.distance_squared_to(p)
+
+
+# está na frente da câmera (dentro do campo de visão, com folga)?
+func in_view(p: Vector3) -> bool:
+	if cam == null:
+		return true
+	return cam.is_position_in_frustum(p + Vector3(0, 1.0, 0)) or cam.global_position.distance_squared_to(p) < 9.0
+
+
 func near_cam(p: Vector3, d: float) -> bool:
 	if cam == null:
 		return true
@@ -2222,44 +2234,33 @@ func _process(delta: float) -> void:
 		lp.hp = 200.0
 	_local_update(lp, delta)
 	_update_world_fx(delta)
-	_auto_perf(delta)
+	_calib_tick(delta)
 
 
-# Desempenho automático: mede o FPS de verdade a cada 2 s. Se está abaixo do alvo, baixa a resolução
-# interna do 3D (a tela/botões continuam nítidos); muito fraco: tira a grama e simplifica as árvores.
-# Sobrando folga, sobe de volta até a resolução da qualidade escolhida.
-var _perf_t := 0.0
-var _perf_n := 0
-var _dyn_scale := -1.0
-var _low_mode := false
+# Conferência única: na primeira partida depois de instalar mede o FPS no lobby por alguns segundos;
+# se o aparelho não aguenta a qualidade do palpite, desce um nível e salva. Depois disso nunca mais mexe.
+var _calib_t := 0.0
+var _calib_n := 0
 
 
-func _auto_perf(delta: float) -> void:
-	if dedicated or Engine.time_scale != 1.0:
+func _calib_tick(delta: float) -> void:
+	if dedicated or int(Cfg.get_v("calib")) != 1 or phase != LOBBY or Engine.time_scale != 1.0:
 		return
-	_perf_t += delta
-	_perf_n += 1
-	if _perf_t < 2.0:
+	_calib_t += delta
+	if _calib_t < 6.0:
+		return     # espera assentar (carregamento, compilar shaders)
+	_calib_n += 1
+	if _calib_t < 14.0:
 		return
-	var fps := float(_perf_n) / _perf_t
-	_perf_t = 0.0
-	_perf_n = 0
-	var vp := get_viewport()
-	var q := clampi(int(Cfg.get_v("quality")), 0, 2)
-	var base: float = [0.55, 0.72, 1.0][q]
-	if _dyn_scale < 0.0:
-		_dyn_scale = vp.scaling_3d_scale
+	var fps := float(_calib_n) / (_calib_t - 6.0)
 	var target := minf(float(Cfg.get_v("fps")), 60.0)
-	if fps < target * 0.75:
-		_dyn_scale = maxf(_dyn_scale - (0.1 if fps < target * 0.5 else 0.05), 0.4)
-	elif fps > target * 0.93 and _dyn_scale < base:
-		_dyn_scale = minf(_dyn_scale + 0.03, base)
-	vp.scaling_3d_scale = _dyn_scale
-	if not _low_mode and fps < target * 0.45 and _dyn_scale <= 0.41:
-		_low_mode = true
-		world.show_grass(false)
-		world.tree_lod = 25.0
-		world.set_view(170.0)
+	var q := int(Cfg.get_v("quality"))
+	if fps < target * 0.7 and q > 0:
+		Cfg.apply_tier(q - 1)
+		_apply_quality()
+		hud.center("Gráficos ajustados pro seu celular: " + Cfg.QUALITY_NAMES[int(Cfg.get_v("quality"))], 3.0)
+	Cfg.v["calib"] = 2
+	Cfg.save()
 
 
 # clima de guerra: vento seco sempre, e de vez em quando artilharia, rajada, sirene ou jato ao longe

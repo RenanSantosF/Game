@@ -92,9 +92,10 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 ## Desempenho em celular fraco
 
 - Casas de cada localidade e cada tipo de vegetação viram poucas malhas (poucas chamadas de desenho); árvores longe usam um modelo simples e a vegetação distante some em blocos
-- Na BAIXA: resolução 60%, sem sombra e sem grama
+- Na BAIXA: resolução 50% e sem grama
 - Ilha cercada de mar até o horizonte (praia descendo pra água); quem entra no mar fundo se afoga
-- **Desempenho automático**: o jogo mede o FPS a cada 2 s; se está baixo, diminui a resolução do 3D (os botões continuam nítidos) e, em aparelho bem fraco, tira a grama e simplifica as árvores; sobrando folga, volta a subir
+- **Ajuste pro aparelho (só na primeira vez)**: ao abrir pela primeira vez o jogo vê a placa de vídeo e a memória do celular e escolhe a qualidade (fraco: BAIXA, 30 FPS, sem grama, visão curta; médio: MÉDIA; forte: ALTA). Na primeira partida confere o FPS no lobby uma vez e, se não aguentar, desce um nível. Depois disso não mexe mais sozinho (você muda nas configurações)
+- Céu em degradê leve, sem mapa de reflexo; árvores com material simples (sem brilho); bonecos longe ou fora da tela animam menos vezes; bots longe da câmera calculam movimento e decisões em quadros alternados; minimapa redesenhado 20x por segundo
 - Itens no chão só existem perto de você (carregam aos poucos em blocos de 40 m), então dá pra ter muito mais loot sem pesar
 - Câmera com faixa de profundidade ajustada e sem sobreposição de cenário perto/longe: nada de casas e avião piscando
 - Botões da tela desenhados uma vez e guardados como imagem (a tela desenha bem menos por quadro)

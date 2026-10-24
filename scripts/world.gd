@@ -2205,9 +2205,9 @@ func _tree_meshes() -> Dictionary:
 	for k in ["oak", "pine", "tall", "bush"]:
 		var path := "res://models/trees/%s.res" % k
 		if ResourceLoader.exists(path):
-			out[k] = load(path)
+			out[k] = _cheap_tree(load(path))
 			if ResourceLoader.exists("res://models/trees/%s_lo.res" % k):
-				out[k + "_lo"] = load("res://models/trees/%s_lo.res" % k)
+				out[k + "_lo"] = _cheap_tree(load("res://models/trees/%s_lo.res" % k))
 	# pedra
 	var m4 := MB.new()
 	m4.tex(U.ROCK, 0.8)
@@ -2558,6 +2558,26 @@ func show_grass(on: bool) -> void:
 
 
 # Distância de visão da vegetação (depende da qualidade gráfica)
+# material das árvores mais barato pro celular: sem brilho especular nem sombra recebida
+static var _cheap_mats := {}
+
+
+static func _cheap_tree(m: Mesh) -> Mesh:
+	for i in m.get_surface_count():
+		var mt = m.surface_get_material(i)
+		if mt is BaseMaterial3D:
+			if not _cheap_mats.has(mt):
+				var c: BaseMaterial3D = (mt as BaseMaterial3D).duplicate()
+				c.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+				c.disable_receive_shadows = true
+				c.roughness = 1.0
+				c.metallic_specular = 0.0
+				c.disable_ambient_light = false
+				_cheap_mats[mt] = c
+			m.surface_set_material(i, _cheap_mats[mt])
+	return m
+
+
 func set_view(dist: float) -> void:
 	# árvore detalhada (folhas recortadas, pesadas no celular) só perto; depois a versão simples
 	var lod := tree_lod
@@ -2894,19 +2914,21 @@ func _build_smoke() -> void:
 func _build_env() -> void:
 	var env := Environment.new()
 	var sky := Sky.new()
-	var sm := ProceduralSkyMaterial.new()
-	# dia de guerra, mas com cor: céu azul com bruma de poeira, sol firme
-	sm.sky_top_color = Color(0.3, 0.45, 0.66)
-	sm.sky_horizon_color = Color(0.72, 0.78, 0.84)
-	sm.ground_horizon_color = Color(0.7, 0.76, 0.82)   # mesma cor da bruma (nada de faixa marrom no horizonte)
-	sm.ground_bottom_color = sm.ground_horizon_color   # embaixo do horizonte = mar sumindo na bruma
-	sm.sky_curve = 0.18
-	sm.sun_angle_max = 40.0
-	sm.sun_curve = 0.6
+	# céu em degradê com shader próprio (o céu procedural custava ~15% do quadro no celular)
+	var sm := ShaderMaterial.new()
+	sm.shader = load("res://shaders/sky.gdshader")
+	sm.set_shader_parameter("top", Color(0.3, 0.45, 0.66))
+	sm.set_shader_parameter("horizon", Color(0.72, 0.78, 0.84))
+	sm.set_shader_parameter("ground", Color(0.7, 0.76, 0.82))
+	sm.set_shader_parameter("curve", 0.18)
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	# sem reflexo do céu (quase nada usa brilho especular; o mapa de reflexo pesava no celular)
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	sky.radiance_size = Sky.RADIANCE_SIZE_32
+	sky.process_mode = Sky.PROCESS_MODE_QUALITY
 	env.ambient_light_color = Color(0.68, 0.74, 0.82)
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC

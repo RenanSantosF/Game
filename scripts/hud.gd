@@ -1181,7 +1181,8 @@ func _process(delta: float) -> void:
 	bigmap.visible = big_map
 	mini.visible = not big_map and mode != "end" and not edit_mode
 	pad.queue_redraw()
-	if mini.visible:
+	# minimapa 20 vezes por segundo basta (desenhar todo quadro gastava CPU à toa)
+	if mini.visible and Engine.get_process_frames() % 3 == 0:
 		mini.queue_redraw()
 	if big_map:
 		bigmap.queue_redraw()
