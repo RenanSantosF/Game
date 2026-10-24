@@ -55,9 +55,11 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 	# só a parte de baixo bloqueia tiro: quem está dirigindo dá pra acertar pelo vidro
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(float(CarInfo.INFO[k]["wid"]) * 0.92, 0.8, LEN[k] * 0.95)
+	# a caixa começa a 0,5 m do chão: meio-fio, pedra baixa e laje passam por baixo (as rodas sobem
+	# por cima delas); parede, caixote, árvore e casa continuam batendo
+	bs.size = Vector3(float(CarInfo.INFO[k]["wid"]) * 0.92, 0.62, LEN[k] * 0.95)
 	cs.shape = bs
-	cs.position = Vector3(0, 0.72, 0)
+	cs.position = Vector3(0, 0.81, 0)
 	add_child(cs)
 	if visual:
 		mesh = Node3D.new()

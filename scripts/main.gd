@@ -871,7 +871,7 @@ func _on_setting(key: String) -> void:
 			sfxn.volume = float(Cfg.get_v("volume"))
 		"fps":
 			Engine.max_fps = int(Cfg.get_v("fps"))
-		"quality", "shadows", "grass", "view":
+		"quality", "shadows", "grass":
 			if in_game and not dedicated:
 				_apply_quality()
 		"show_fps":
@@ -1247,6 +1247,9 @@ func on_car(i: int, id: int) -> void:
 	var v: Vehicle = vehicles[i]
 	var old := v.driver
 	v.driver = id
+	# saiu do carro: desliga o motor na hora
+	if id == 0 and v.engine and v.engine.playing:
+		v.engine.stop()
 	if id != 0:
 		var p: Player = players.get(id)
 		if p:
@@ -1976,37 +1979,23 @@ func _apply_quality() -> void:
 	# malhas com níveis de detalhe (boneco, armas, carros) trocam pro simples um pouco antes:
 	# de longe não dá pra ver a diferença e são bem menos triângulos
 	vp.mesh_lod_threshold = [4.0, 2.5, 1.5][clampi(int(Cfg.get_v("quality")), 0, 2)]
-	var far := 300.0     # mais curto que antes: o jogo fica mais leve (a névoa esconde o fim)
+	# distância de visão igual em todas as qualidades (sem opção): a "média" de antes, um pouco mais curta
+	var far := 270.0
 	match int(Cfg.get_v("quality")):
 		0:
 			vp.scaling_3d_scale = 0.5
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			if sun:
-				sun.shadow_enabled = false
-			far = 250.0
-			world.set_view(200.0)
 		1:
 			vp.scaling_3d_scale = 0.72
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			if sun:
-				sun.shadow_enabled = true
-				sun.directional_shadow_max_distance = 30.0
-			world.set_view(290.0)
 		2:
 			vp.scaling_3d_scale = 1.0
 			vp.msaa_3d = Viewport.MSAA_2X
-			if sun:
-				sun.shadow_enabled = true
-				sun.directional_shadow_max_distance = 55.0
-			far = 380.0
-			world.set_view(300.0)
 	# sem sombras em nenhuma qualidade (mais leve e o visual fica melhor)
 	if sun:
 		sun.shadow_enabled = false
 	world.show_grass(bool(Cfg.get_v("grass")))
 	world.tree_lod = [35.0, 55.0, 90.0][clampi(int(Cfg.get_v("quality")), 0, 2)]
-	var vk: float = [0.75, 1.0, 1.25][clampi(int(Cfg.get_v("view")), 0, 2)]
-	far *= vk
 	world.set_view(far * 0.8)
 	# a câmera enxerga o mapa todo: depois da distância de visão entra o cenário simples (blocos),
 	# então longe não fica só cinza; a névoa é mais leve (bruma de guerra, mas dá pra ver o horizonte)
@@ -2126,6 +2115,25 @@ func in_view(p: Vector3) -> bool:
 	return cam.is_position_in_frustum(p + Vector3(0, 1.0, 0)) or cam.global_position.distance_squared_to(p) < 9.0
 
 
+# quantos bonecos estão perto da câmera (atualizado de tempos em tempos): com muita gente junta
+# (cidade lotada, lobby) a animação de quem não está colado na câmera fica mais espaçada
+var crowd := 0
+var _crowd_f := 0
+
+
+func _update_crowd() -> void:
+	_crowd_f += 1
+	if _crowd_f % 15 != 0 or cam == null:
+		return
+	var c := 0
+	var cp := cam.global_position
+	for id in players:
+		var pl: Player = players[id]
+		if pl.alive and pl.air != 3 and cp.distance_squared_to(pl.position) < 900.0:
+			c += 1
+	crowd = c
+
+
 func near_cam(p: Vector3, d: float) -> bool:
 	if cam == null:
 		return true
@@ -2174,6 +2182,7 @@ func _make_loops() -> void:
 # ---------------- loop ----------------
 
 func _process(delta: float) -> void:
+	_update_crowd()
 	_delta_ui = delta
 	_menu_tick(delta)
 	run_t += delta / maxf(Engine.time_scale, 0.001)
@@ -2433,7 +2442,9 @@ func _local_update(lp: Player, delta: float) -> void:
 			_press_t += delta
 			lp.aim_t = maxf(lp.aim_t, 0.3)
 			var facing := absf(angle_difference(lp.yaw, cam_yaw_v)) < 0.2 or lp.cur_wid() == "fist"
-			if (facing and _press_t >= 0.05) or _press_t > 0.2:
+			# fuzis automáticos: o primeiro tiro sai um tiquinho depois do toque (menos "instantâneo")
+			var first_d := 0.1 if str(w.get("type", "")) in ["rifle", "scar", "ak"] else 0.05
+			if (facing and _press_t >= first_d) or _press_t > 0.22:
 				var before := lp.cool
 				_local_fire(lp)
 				if lp.cool > before or not firing:
@@ -2480,7 +2491,8 @@ func _local_update(lp: Player, delta: float) -> void:
 		target_len = 5.0
 		fp = false
 	if lp.model:
-		lp.model.visible = not fp
+		# dentro do avião (air 3) ou morto o boneco fica escondido; a câmera só esconde o próprio boneco na primeira pessoa
+		lp.model.visible = not fp and lp.air != 3 and not lp.spect and (lp.alive or lp.dying_t > 0.0)
 	cam_yaw.position = base + Vector3(0, 0.75 if (t and t.prone) else ((1.62 if fp else 1.55) if not (t and t.crouch) else (1.15 if fp else 1.1)), 0)
 	cam_yaw.rotation.y = cy if t == lp else lerp_angle(cam_yaw.rotation.y, cy, minf(1.0, 6.0 * delta))
 	cam_pitch.rotation.x = cp
@@ -2517,7 +2529,21 @@ func _local_update(lp: Player, delta: float) -> void:
 		ui_t = 0.0
 		_ui_slow(lp, playing)
 	hud.hp = lp.hp
+	# carros com alguém dirigindo a até 130 m: aparecem no minimapa
+	var cn := []
+	for vc: Vehicle in vehicles:
+		if vc.driver != 0 and vc.driver != local_id and not vc.dead and vc.global_position.distance_to(lp.global_position) < 130.0:
+			cn.append([Vector2(vc.global_position.x, vc.global_position.z), vc.yaw])
+	hud.cars_near = cn
+	# no chão as árvores de longe somem (mais leve); no avião/queda aparecem pra escolher onde cair
+	var on_g: bool = lp.air == 0
+	if on_g != world._on_ground:
+		world.set_ground(on_g)
+		# no ar a câmera fica longe do boneco: plano de perto maior dá muito mais precisão de
+		# profundidade lá embaixo (a margem do lago e o chão "brigavam" e piscavam na queda)
+		cam.near = 0.12 if on_g else 1.0
 	hud.armor = lp.armor
+	hud.gear_lv = [lp.vest_lv, lp.helmet]
 	hud.heals = [lp.count("bandage") + lp.count("drink"), lp.count("med")]
 	hud.grenades = lp.count("grenade")
 	hud.gren_left = (GREN_FUSE - gren_t) if gren_t >= 0.0 else -1.0
@@ -2673,6 +2699,9 @@ func _is_better(lp: Player, kind: String, extra = null) -> bool:
 			for a in g["att"]:
 				if str(a).rstrip("0123456789") == kind.rstrip("0123456789") and Weapons.level_of(str(a)) >= lv:
 					return false
+		return true
+	# granada nunca é demais: sempre recomendada
+	if kind == "grenade":
 		return true
 	if Weapons.ITEMS.has(kind) and Weapons.ITEMS[kind]["kind"] == "ammo":
 		# munição só brilha se for de uma arma equipada (pistola não conta) e estiver faltando
@@ -2870,6 +2899,10 @@ func _select(lp: Player, s: int) -> void:
 		return
 	if s == lp.sel:
 		return
+	# trocar de arma no meio da cura cancela a cura
+	if lp.heal_t > 0.0:
+		lp.heal_t = 0.0
+		hud.center("Cura cancelada", 1.0, "warn")
 	lp.sel = s
 	lp.reload_t = 0.0
 	# trocar ou guardar a arma desfaz a mira na hora
@@ -2976,7 +3009,8 @@ func _start_reload(lp: Player) -> void:
 
 
 func _local_fire(lp: Player) -> void:
-	if lp.cool > 0.0 or lp.reload_t > 0.0 or lp.heal_t > 0.0 or lp.vault_t >= 0.0:
+	# pulando janela (inclusive caindo do outro lado) ou se curando: não atira
+	if lp.cool > 0.0 or lp.reload_t > 0.0 or lp.heal_t > 0.0 or lp.vault_t >= 0.0 or lp._vault_drop or lp.stun_t > 0.0:
 		return
 	var wid := lp.cur_wid()
 	var w := lp.cur_stat()
@@ -3065,6 +3099,10 @@ func _play_shot(wid: String, att: Array, pos: Vector3, local: bool) -> void:
 		sfxn.play_at(n, pos + Vector3(0, 1.5, 0), 0.0, 45.0 if sil else 280.0, 1.0, 14.0 if not sil else 5.0)
 
 
+var _fx_frame := -1
+var _fx_n := 0
+
+
 func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> void:
 	if dedicated:
 		return
@@ -3085,10 +3123,23 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 		var auto_k := 0.82 if str(wd["type"]) in ["pistol", "smg"] else 1.0
 		_shake = maxf(_shake, (0.12 + 0.3 * pk) * auto_k)
 		cam.fov += (1.2 + 2.5 * pk) * auto_k
+	# limite de efeitos por quadro: com muita gente atirando junto (cidade lotada) não cria dezenas
+	# de furos/poeira/clarões no mesmo quadro (o seu tiro sempre aparece)
+	var fr := Engine.get_process_frames()
+	if fr != _fx_frame:
+		_fx_frame = fr
+		_fx_n = 0
+	if not local and _fx_n >= 8:
+		far = true
 	if not far:
 		# sem traçante colorido: só a poeira no impacto e um clarão rápido de luz no cano
+		var ni := 0
 		for e in ends:
+			if not local and ni >= 3:
+				break
 			_impact(from, e)
+			ni += 1
+		_fx_n += ni + 1
 		if not ("silencer" in att) and cam and cam.global_position.distance_to(from) < 60.0:
 			# clarão no cano sem luz de verdade (luz dinâmica no celular pesa e trava na hora do tiro)
 			_flash(from, 0.38, 0.05)
@@ -4309,6 +4360,8 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 	if v and v.car >= 0 and v.car < vehicles.size():
 		vehicles[v.car].driver = 0
 		vehicles[v.car].speed = 0.0
+		if vehicles[v.car].engine:
+			vehicles[v.car].engine.stop()
 		v.car = -1
 	if v:
 		v.die()

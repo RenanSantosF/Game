@@ -147,6 +147,9 @@ var island := false        # borda vira praia/mar (ligado depois de posicionar a
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
 var detail_meshes := []   # [malha de cidade/objetos, alcance original]: some longe, entra a versão simples
 var far_lod := []         # versão bem simples (blocos de casas e árvores) que aparece de longe
+var far_trees := []       # parte das árvores do far_lod (escondida com o jogador no chão)
+var _on_ground := false
+var _view := 240.0
 var _map_task := -1
 
 
@@ -2202,7 +2205,8 @@ func _tree_meshes() -> Dictionary:
 		m3.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d)), Vector3(0, 0.05, 0)), 0.02, 0.005, 0.9, 3, bark, false)
 	out["bush"] = m3.commit()
 	# árvores e moita de verdade (Poly Haven, CC0; tools/prepare_trees.gd): troca o desenho simples
-	var have_tripo := ResourceLoader.exists("res://models/trees/tripo.res")
+	# a árvore do Tripo ficou com o tronco bugado de perto (textura esticada): voltou a antiga
+	var have_tripo := false
 	for k in ["oak", "pine", "tall", "bush"]:
 		if have_tripo and k in ["oak", "tall"]:
 			continue    # trocadas pela árvore nova logo abaixo
@@ -2599,7 +2603,17 @@ static func _cheap_tree(m: Mesh) -> Mesh:
 	return m
 
 
+# jogador no chão: árvores de longe somem (só aparecem do avião / da queda, pra escolher onde cair)
+func set_ground(g: bool) -> void:
+	_on_ground = g
+	for mi in far_trees:
+		if is_instance_valid(mi):
+			(mi as MeshInstance3D).visible = not g
+	set_view(_view)
+
+
 func set_view(dist: float) -> void:
+	_view = dist
 	# árvore detalhada (folhas recortadas, pesadas no celular) só perto; depois a versão simples
 	var lod := tree_lod
 	# cidades e objetos com detalhe até a distância de visão; dali pra frente só os blocos simples
@@ -2624,7 +2638,8 @@ func set_view(dist: float) -> void:
 			_:
 				if kind.ends_with("_lo"):
 					mmi.visibility_range_begin = lod
-					mmi.visibility_range_end = dist + 60.0
+					# no chão não precisa ver árvore lá longe (é o que mais pesa): só até ~180 m
+					mmi.visibility_range_end = (minf(dist, 140.0) if _on_ground else dist) + 40.0
 				elif has_lo:
 					mmi.visibility_range_begin = 0.0
 					mmi.visibility_range_end = lod
@@ -2699,6 +2714,19 @@ func _build_bounds() -> void:
 # Mapa visto de cima (minimapa e mapa grande): 1024 px, com estradas, rodovias, trilho,
 # casas e lagoa desenhados nítidos por cima do relevo
 const MAP_PX := 2048
+const SEA_MAP := Color(0.18, 0.38, 0.5)   # cor do mar no mapa e no minimapa
+
+
+# altura do grid (_hs) com interpolação bilinear; g em células
+func _hs_at(g: Vector2) -> float:
+	var n := RES + 1
+	var i := clampi(int(g.x), 0, n - 2)
+	var j := clampi(int(g.y), 0, n - 2)
+	var fx := clampf(g.x - i, 0.0, 1.0)
+	var fz := clampf(g.y - j, 0.0, 1.0)
+	var a := lerpf(_hs[j * n + i], _hs[j * n + i + 1], fx)
+	var b := lerpf(_hs[(j + 1) * n + i], _hs[(j + 1) * n + i + 1], fx)
+	return lerpf(a, b, fz)
 
 
 func _build_map(wts: PackedColorArray) -> void:
@@ -2726,6 +2754,10 @@ func _build_map(wts: PackedColorArray) -> void:
 			var sh := clampf(nr.dot(light) / light.y, 0.55, 1.25)
 			col = Color(col.r * sh, col.g * sh, col.b * sh)
 			col = col.lightened(clampf(_hs[j * n + i] / 160.0, -0.1, 0.14))
+			# ilha: fora da costa é mar (azul, mais escuro no fundo), com faixa de areia na beira
+			var hh := _hs[j * n + i]
+			if island and hh < SEA_Y + 1.2:
+				col = cs if hh > SEA_Y else SEA_MAP.lerp(SEA_MAP.darkened(0.3), clampf((SEA_Y - hh) / 7.0, 0.0, 1.0))
 			img.set_pixel(i, j, col)
 	img.resize(MAP_PX, MAP_PX, Image.INTERPOLATE_CUBIC)
 	var px := MAP_PX / SIZE
@@ -2749,15 +2781,24 @@ func _build_map(wts: PackedColorArray) -> void:
 				if absf(lx) <= fw / 2.0 and absf(lz) <= fd / 2.0:
 					var row := int((lx + fw / 2.0) / 1.3) % 2 == 0
 					img.set_pixel(x, y, col.darkened(0.18) if row else col.lightened(0.05))
-	# lagoa com borda nítida
+	# lagoa: desenhada pelo chão de verdade (onde o terreno fica abaixo da água dentro do disco da
+	# água), não um círculo perfeito; borda de areia onde o chão sai da água
 	var lc := (LAKE_C + off) * px
 	var lr := (LAKE_R + 1.0) * px
-	for y in range(int(lc.y - lr), int(lc.y + lr) + 1):
-		for x in range(int(lc.x - lr), int(lc.x + lr) + 1):
+	for y in range(int(lc.y - lr) - 2, int(lc.y + lr) + 3):
+		for x in range(int(lc.x - lr) - 2, int(lc.x + lr) + 3):
+			if x < 0 or y < 0 or x >= MAP_PX or y >= MAP_PX:
+				continue
 			var d := Vector2(x, y).distance_to(lc)
-			if d < lr and x >= 0 and y >= 0 and x < MAP_PX and y < MAP_PX:
-				var wc := Color(0.2, 0.44, 0.58).lerp(Color(0.14, 0.33, 0.48), clampf(1.0 - d / lr, 0.0, 1.0))
-				img.set_pixel(x, y, wc if d < lr - 3.0 else Color(0.86, 0.82, 0.64))
+			if d > lr + 2.0:
+				continue
+			var g := Vector2(x, y) / px / cell
+			var h := _hs_at(g)
+			if d < lr and h < WATER_Y - 0.05:
+				var wc := Color(0.2, 0.44, 0.58).lerp(Color(0.14, 0.33, 0.48), clampf((WATER_Y - h) / 0.6, 0.0, 1.0))
+				img.set_pixel(x, y, wc)
+			elif h < WATER_Y + 0.25:
+				img.set_pixel(x, y, Color(0.86, 0.82, 0.64))
 	# pedras, moitas e árvores: pontinhos com sombra (copa verde-escura)
 	for mk in map_marks:
 		var q: Vector2 = (Vector2(mk[1]) + off) * px
@@ -2887,11 +2928,10 @@ func _build_smoke() -> void:
 	var spots := smoke_spots.duplicate()
 	for k in 5:
 		spots.append(Vector2(rng.randf_range(-PLAY, PLAY), rng.randf_range(-PLAY, PLAY)))
-	# e umas bem longe, fora do mapa (o horizonte também está em guerra)
-	for k in 4:
-		var a := rng.randf() * TAU
-		spots.append(Vector2(cos(a), sin(a)) * rng.randf_range(520.0, 700.0))
+	# fumaça só em terra (antes tinha umas no horizonte, que agora é mar: não fazia sentido)
 	for sp: Vector2 in spots:
+		if height(sp.x, sp.y) < WATER_Y + 0.5:
+			continue
 		var big := sp.length() > 450.0
 		var ps := CPUParticles3D.new()
 		ps.amount = 18 if big else 14
@@ -3090,6 +3130,14 @@ func in_water(p: Vector3) -> bool:
 func _build_far_lod() -> void:
 	const CELL := 100.0
 	var cells := {}
+	var tcells := {}     # árvores de longe ficam em blocos à parte: no chão elas somem (só do alto)
+	var get_mt := func(p: Vector2) -> MB:
+		var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
+		if not tcells.has(key):
+			var m := MB.new()
+			m.tex(U.PLAIN, 1.0)
+			tcells[key] = m
+		return tcells[key]
 	var get_mb := func(p: Vector2) -> MB:
 		var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
 		if not cells.has(key):
@@ -3123,7 +3171,7 @@ func _build_far_lod() -> void:
 		var p: Vector2 = mk[1]
 		var sc: float = mk[2]
 		var y := height(p.x, p.y)
-		var m: MB = get_mb.call(p)
+		var m: MB = get_mt.call(p)
 		if kind == "bush":
 			m.box(Transform3D(Basis(Vector3.UP, sc), Vector3(p.x, y + 0.5 * sc, p.y)), Vector3(1.6, 1.0, 1.6) * sc, Color(0.3, 0.42, 0.18))
 			continue
@@ -3131,14 +3179,18 @@ func _build_far_lod() -> void:
 		m.box(Transform3D(Basis(), Vector3(p.x, y + th / 2.0, p.y)), Vector3(0.5, th, 0.5) * maxf(sc, 0.8), Color(0.36, 0.28, 0.2))
 		var cr := 2.4 * sc
 		m.box(Transform3D(Basis(Vector3.UP, p.x), Vector3(p.x, y + th + cr * 0.45, p.y)), Vector3(cr * 1.6, cr * 1.2, cr * 1.6), Color(0.24, 0.38, 0.16))
-	for key in cells:
-		var m: MB = cells[key]
-		if m.count == 0:
-			continue
-		var mi := MeshInstance3D.new()
-		mi.mesh = m.commit()
-		mi.material_override = U.wmat()
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mi.visibility_range_begin = 250.0
-		add_child(mi)
-		far_lod.append(mi)
+	for d in [cells, tcells]:
+		for key in d:
+			var m: MB = d[key]
+			if m.count == 0:
+				continue
+			var mi := MeshInstance3D.new()
+			mi.mesh = m.commit()
+			mi.material_override = U.wmat()
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.visibility_range_begin = 250.0
+			add_child(mi)
+			far_lod.append(mi)
+			if d == tcells:
+				far_trees.append(mi)
+	set_ground(_on_ground)

@@ -52,6 +52,7 @@ var pick_scroll: ScrollContainer
 var bag_panel: PanelContainer
 var bag_back: Control
 var bag_left: VBoxContainer
+var _ghost_src: Control
 var bag_grid: GridContainer
 var bag_title: Label
 var bag_cap: Label
@@ -73,6 +74,7 @@ var grenades := 0
 var car_near := false
 var driving := false
 var armor := 0.0
+var gear_lv := [0, 0]      # nível do colete e do capacete (só pros ícones)
 var gren_path := PackedVector2Array()   # começo do arco da granada (na tela)
 var _gren_origin := Vector2.ZERO
 # ícone que acompanha o dedo ao arrastar na mochila
@@ -101,6 +103,7 @@ var sel := -1
 var reloading := false
 var dmg_nums := []         # [pos3d, texto, cor, t]
 var steps := []            # [Vector2 mundo, t]
+var cars_near := []        # carros com alguém dirigindo por perto: [Vector2 mundo, yaw]
 var icons := {}
 var layout := {}
 var edit_mode := false
@@ -600,7 +603,7 @@ func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := fals
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		t.add_child(l)
 	t.set_drag_forwarding(func(_p):
-		_start_ghost(tr.texture, Vector2(sz, sz) * 1.25)
+		_start_ghost(tr.texture, Vector2(sz, sz) * 1.25, t)
 		t.set_drag_preview(Control.new())
 		return data, Callable(), Callable())
 	t.gui_input.connect(func(ev: InputEvent):
@@ -652,13 +655,12 @@ func refresh_bag(p: Player) -> void:
 		var card := PanelContainer.new()
 		var active := i == p.sel
 		card.add_theme_stylebox_override("panel", _tile_style(Color(1, 1, 1, 0.1 if active else 0.05), Color(1, 0.85, 0.35, 0.9) if active else Color(1, 1, 1, 0.15)))
-		card.custom_minimum_size = Vector2(0, 104)
 		var slot := i
 		card.set_drag_forwarding(
 			func(_p):
 				if id == "":
 					return null
-				_start_ghost(icons.get("w_" + id), Vector2(200, 96))
+				_start_ghost(icons.get("w_" + id), Vector2(200, 96), card)
 				card.set_drag_preview(Control.new())
 				return {"t": "gun", "kind": id, "slot": slot},
 			func(_p, d): return d is Dictionary and d.get("t") == "item" and Weapons.is_att(d["kind"]) and Weapons.fits(d["kind"], id),
@@ -668,47 +670,40 @@ func refresh_bag(p: Player) -> void:
 				var d := {"t": "gun", "kind": id, "slot": slot}
 				bag_sel = {} if bag_sel == d else d
 				_bag_sig = "")
-		var hb := HBoxContainer.new()
-		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_theme_constant_override("separation", 6)
-		card.add_child(hb)
+		# arma grande no meio e cada acessório onde ele fica nela: mira em cima, bico (silenciador)
+		# na frente, coronha atrás e pente embaixo (o desenho da arma aponta pra direita)
+		var stage := Control.new()
+		stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stage.custom_minimum_size = Vector2(0, 136 if id != "" else 40)
+		card.add_child(stage)
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(190, 92)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr.texture = icons.get("w_" + id) if id != "" else null
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(tr)
-		var col := VBoxContainer.new()
-		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.add_theme_constant_override("separation", 2)
-		hb.add_child(col)
+		stage.add_child(tr)
 		var nm := Label.new()
 		nm.text = Weapons.item_name(id).to_upper() if id != "" else ("PISTOLA" if i == 2 else "ARMA %d" % (i + 1))
-		nm.add_theme_font_size_override("font_size", 17)
+		nm.add_theme_font_size_override("font_size", 15)
 		nm.add_theme_color_override("font_color", Color.WHITE if id != "" else Color(1, 1, 1, 0.35))
+		nm.position = Vector2(4, 0)
 		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		col.add_child(nm)
-		var ar := HBoxContainer.new()
-		ar.add_theme_constant_override("separation", 3)
-		col.add_child(ar)
+		stage.add_child(nm)
+		var slots := {}
 		if id != "":
 			# uma vaga por tipo de acessório que a arma aceita (ícone próprio de cada tipo)
 			var allowed: Array = Weapons.FITS.get(Weapons.get_w(id)["type"], [])
-			var cats := []
 			for c in ["sight", "muzzle", "mag", "stock"]:
-				if c in allowed or (c == "sight" and (allowed.has("holo") or allowed.has("scope8"))):
-					cats.append(c)
-			for c in cats:
+				if not (c in allowed or (c == "sight" and allowed.any(func(a): return Weapons.att_cat(a) == "sight"))):
+					continue
 				var have := ""
 				for a in g["att"]:
 					if Weapons.att_cat(a) == c:
 						have = a
-				if have != "":
-					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 62.0))
-				else:
-					ar.add_child(_empty_slot(c, 62.0))
+				var sl: Control = _item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, ATT_SZ) if have != "" else _empty_slot(c, ATT_SZ)
+				stage.add_child(sl)
+				slots[c] = sl
+		stage.resized.connect(func(): _layout_gun(stage, tr, slots))
 		bag_left.add_child(card)
 	# equipamento vestido
 	var gear := HBoxContainer.new()
@@ -717,9 +712,9 @@ func refresh_bag(p: Player) -> void:
 	for gk in ["vest", "helmet", "bag"]:
 		var lv: int = {"vest": p.vest_lv if p.armor > 0.0 else 0, "helmet": p.helmet, "bag": p.bag}[gk]
 		if lv > 0:
-			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 112.0))
+			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 96.0))
 		else:
-			gear.add_child(_empty_slot(gk, 112.0))
+			gear.add_child(_empty_slot(gk, 96.0))
 	# itens soltos
 	for k in p.inv:
 		var kind: String = k
@@ -897,7 +892,36 @@ func _in_gui(p: Vector2) -> bool:
 	return false
 
 
-func _start_ghost(tex: Texture2D, sz: Vector2) -> void:
+const ATT_SZ := 50.0
+
+
+# posiciona a arma e as vagas de acessório em volta dela (chamado quando o cartão muda de tamanho)
+func _layout_gun(stage: Control, tr: TextureRect, slots: Dictionary) -> void:
+	var W := stage.size.x
+	var H := stage.size.y
+	var gw := minf(W - (ATT_SZ + 8.0) * 2.0, 300.0)
+	tr.position = Vector2((W - gw) / 2.0, 14.0)
+	tr.size = Vector2(gw, H - 28.0)
+	var cy := tr.position.y + tr.size.y / 2.0
+	var pos := {
+		"sight": Vector2(W / 2.0 - ATT_SZ / 2.0 + gw * 0.06, 0.0),
+		"muzzle": Vector2(W - ATT_SZ, cy - ATT_SZ / 2.0 - 6.0),
+		"stock": Vector2(0.0, cy - ATT_SZ / 2.0),
+		"mag": Vector2(W / 2.0 - ATT_SZ / 2.0 - gw * 0.04, H - ATT_SZ),
+	}
+	for c in slots:
+		var sl: Control = slots[c]
+		sl.position = pos[c]
+		sl.size = Vector2(ATT_SZ, ATT_SZ)
+
+
+func _start_ghost(tex: Texture2D, sz: Vector2, src: Control = null) -> void:
+	# o item sai do lugar logo que começa a arrastar (volta se o arraste for cancelado)
+	if is_instance_valid(_ghost_src):
+		_ghost_src.modulate.a = 1.0
+	_ghost_src = src
+	if src:
+		src.modulate.a = 0.0
 	_ghost_tex = tex
 	_ghost_size = sz
 	if _ghost == null:
@@ -923,6 +947,9 @@ func _update_ghost() -> void:
 		_ghost.position = _touch_pos - Vector2(_ghost_size.x * 0.5, _ghost_size.y * 0.85)
 	else:
 		_ghost_tex = null
+		if is_instance_valid(_ghost_src):
+			_ghost_src.modulate.a = 1.0
+		_ghost_src = null
 
 
 func _input(e: InputEvent) -> void:
@@ -1705,6 +1732,12 @@ func _slot_cell(font: Font, r: Rect2, i: int, active: bool) -> void:
 			pad.draw_texture_rect(tex, ir, false, Color(1, 1, 1, 0.8))
 		var nw := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		pad.draw_string(font, Vector2(r.get_center().x - minf(nw, r.size.x - 4) / 2.0, r.end.y - 4), name, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 4, 11, Color(1, 1, 1, 0.8))
+		# munição mesmo sem a arma na mão: pente / total na mochila
+		if id != "fist":
+			var am := "%d/%d" % [int(e["ammo"]), int(e.get("res", 0))]
+			var amw := font.get_string_size(am, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			pad.draw_string_outline(font, Vector2(r.end.x - amw - 4, r.position.y + 13), am, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 3, Color(0, 0, 0, 0.75))
+			pad.draw_string(font, Vector2(r.end.x - amw - 4, r.position.y + 13), am, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.9))
 
 
 # bússola no topo: gira junto com a câmera
@@ -1865,9 +1898,16 @@ func _draw_pad() -> void:
 		pad.draw_rect(Rect2(bx, by, bw * f, 2.0), hc.lightened(0.35))
 		pad.draw_string_outline(font, Vector2(bx + bw + 8, by + 8), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color(0, 0, 0, 0.6))
 		pad.draw_string(font, Vector2(bx + bw + 8, by + 8), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.95))
-		if armor > 0.0:
-			pad.draw_rect(Rect2(bx, by - 6, bw, 3), Color(0, 0, 0, 0.22))
-			pad.draw_rect(Rect2(bx, by - 6, bw * clampf(armor / 100.0, 0.0, 1.0), 3), Color(0.72, 0.8, 0.88))
+		# colete e capacete não somam vida (só diminuem o dano): ícones pequenos ao lado da barra,
+		# o do colete com o desgaste embaixo
+		var gx := bx - 30.0
+		if armor > 0.0 and gear_lv[0] > 0:
+			glyph(pad, "slot_vest", Vector2(gx, by + 3), 8.0, Color(1, 1, 1, 0.85))
+			pad.draw_rect(Rect2(gx - 9, by + 14, 18, 2), Color(0, 0, 0, 0.3))
+			pad.draw_rect(Rect2(gx - 9, by + 14, 18 * clampf(armor / 100.0, 0.0, 1.0), 2), Color(0.72, 0.8, 0.88))
+			gx -= 24.0
+		if gear_lv[1] > 0:
+			glyph(pad, "slot_helmet", Vector2(gx, by + 3), 8.0, Color(1, 1, 1, 0.85))
 
 
 var _map_rot := 0.0     # giro do minimapa enquanto ele é desenhado
@@ -1891,9 +1931,14 @@ func _draw_mini() -> void:
 	var o := mini.size / 2.0
 	var R := mini.size.x * 0.72
 	var src := Rect2((mp + Vector2(World.SIZE, World.SIZE) / 2.0) * tpm - Vector2(R, R) / sc * tpm, Vector2(R, R) * 2.0 / sc * tpm)
-	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), Color(0.1, 0.12, 0.1))
+	# fora do mapa (lobby, avião chegando) é mar: fundo azul e só o pedaço do mapa que existe
+	# (sem esticar a borda da imagem)
+	mini.draw_rect(Rect2(Vector2.ZERO, mini.size), World.SEA_MAP)
 	mini.draw_set_transform(o, cy, Vector2.ONE)
-	mini.draw_texture_rect_region(tex, Rect2(-Vector2(R, R), Vector2(R, R) * 2.0), src, Color(1, 1, 1, 0.95))
+	var sc_c := src.intersection(Rect2(Vector2.ZERO, tex.get_size()))
+	if sc_c.size.x > 0.5 and sc_c.size.y > 0.5:
+		var k := R * 2.0 / src.size.x
+		mini.draw_texture_rect_region(tex, Rect2(-Vector2(R, R) + (sc_c.position - src.position) * k, sc_c.size * k), sc_c, Color(1, 1, 1, 0.95))
 	mini.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_zone(mini, mp, sc, o)
 	# nomes das cidades que aparecem no minimapa (o texto fica sempre em pé)
@@ -1912,6 +1957,16 @@ func _draw_mini() -> void:
 		var al := clampf(float(st[1]), 0.0, 1.0)
 		mini.draw_circle(q, 3.0, Color(1, 0.3, 0.2, al))
 		mini.draw_circle(q + Vector2(3, -4), 2.2, Color(1, 0.3, 0.2, al * 0.8))
+	# carro andando por perto: carrinho discreto (laranja) no minimapa
+	for cn in cars_near:
+		var q: Vector2 = _w2map(cn[0], mp, sc, o)
+		if q.x < 0 or q.y < 0 or q.x > mini.size.x or q.y > mini.size.y:
+			continue
+		var ca := Color(1, 0.62, 0.2, 0.9)
+		mini.draw_rect(Rect2(q - Vector2(5, 3), Vector2(10, 6)), ca)
+		mini.draw_rect(Rect2(q - Vector2(2.5, 5.5), Vector2(5, 3)), ca)
+		mini.draw_circle(q + Vector2(-3, 3.5), 1.6, Color(0.1, 0.1, 0.1, 0.9))
+		mini.draw_circle(q + Vector2(3, 3.5), 1.6, Color(0.1, 0.1, 0.1, 0.9))
 	# você: seta sempre pra cima, com o cone de visão
 	var fwd := Vector2(0, -1)
 	var rt := Vector2(1, 0)

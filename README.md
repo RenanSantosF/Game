@@ -17,7 +17,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 ## Conteúdo
 
 - Personagem com rig e animações do Mixamo (preparado por tools/prepare_mixamo.gd a partir de models_src/mixamo): skin padrão fixa pra todos (camiseta, bermuda cargo e tênis); parado, parado com rifle, andar com rifle, corrida, corrida rápida, pulo (o pulo correndo com as pernas menos abertas), salto de janela (nunca em escada), queda livre, paraquedas (pendurado), aterrissagem, tiro, reação a tiro, morte, dirigindo e comemoração na vitória; o ritmo dos passos acompanha a velocidade do jogo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
-- Árvores: modelo novo (feito no Tripo, enviado pelo dono do jogo) com tronco reto e grosso — engrossado pra ter o mesmo diâmetro das árvores antigas (~1 m, colisão de 0,5 m de raio): continua protegendo o personagem do tiro — e copa em tufos sólidos; o original de 50 mil triângulos e 18 texturas virou 1 malha de ~1.800 triângulos (perto) e ~380 (longe) com 1 textura só, mais leve que as árvores antigas; dois formatos (baixa e larga, alta); moita do Poly Haven (CC0)
+- Árvores com tronco reto e grosso (~1 m, colisão de 0,5 m de raio: protege o personagem do tiro) e copa com folhas; moita do Poly Haven (CC0). (A árvore do Tripo foi testada, mas o tronco ficava com a textura esticada de perto e saiu)
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
 - Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta; segurando, o braço vai pra trás com a granada na mão, o mesmo dedo anda como o analógico e aparece o começo do arco em pontinhos discretos. Um só tipo de cura: kit médico (ocupa 15 de espaço na mochila)
@@ -81,13 +81,26 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Tudo fica salvo no aparelho e já vale no treino (o minimapa acompanha as casas). **COPIAR** copia as alterações em texto: cole no chat do Claude pra elas irem pro jogo de todo mundo (`data/map_edits.json`). **LIMPAR** (toque duas vezes) apaga as alterações do aparelho
 - Partida em rede usa só as alterações que vão no jogo, pra todo mundo ver o mesmo mapa
 
+## Novidades da 0.24.0
+
+- Corrigido o boneco "pendurado" embaixo do avião (era o seu próprio boneco, que a câmera deixava visível)
+- Não dá pra atirar pulando janela; com o kit médico não dá pra atirar, e trocar de arma cancela a cura
+- Munição total da arma aparece mesmo com ela guardada; colete e capacete só diminuem o dano (sem barra extra de vida)
+- Carro desliga o motor quando você sai; carro andando perto aparece no minimapa com um carrinho laranja discreto; carro passa por cima de coisas baixas sem "agarrar"
+- Pular da altura de uma casa já dá a queda com a mão no chão; granada sempre recomendada
+- Tela de equipar: arma grande no meio e os acessórios em volta, no lugar de cada um (mira em cima, silenciador na frente, coronha atrás, pente embaixo); o item some da mochila assim que você começa a arrastar
+- Recarga com som mais grave e encorpado; M4 e SCAR um pouco mais lentas e com o primeiro tiro levemente atrasado
+- Mapa e minimapa: mar azul fora da ilha (no lobby também), lago com a forma de verdade; sem fumaça no mar; menos serrilhado/piscando na queda
+- Janelas das casas não ficam mais na frente da escada nem da parede interna
+- Árvore antiga de volta (a nova bugava o tronco de perto)
+
 ## Configurações
 
 - **Mira assistida**: CONTROLE TOTAL (sem ajuda), GRUDA SEM MIRA (puxa só no tiro sem mirar) ou GRUDA SEMPRE (padrão). Arrastar pra cima enquanto atira sobe a mira pra cabeça (capa)
 - Sensibilidade geral e mirando, inverter vertical
 - **Editar posição dos botões**: arraste cada botão e mude o tamanho
 - Botões com ícone da pose do boneco (de pé, agachado, deitado, pulando, correndo) e **transparência dos botões** ajustável
-- Gráficos BAIXA/MÉDIA/ALTA (sem sombras em nenhuma), grama, distância de visão, limite de FPS (30/45/60), mostrar FPS, mostrar sangue, volume
+- Gráficos BAIXA/MÉDIA/ALTA (sem sombras em nenhuma; a distância de visão é a mesma em todas, sem opção), grama, limite de FPS (30/45/60), mostrar FPS, mostrar sangue, volume
 
 ## Desempenho em celular fraco
 
@@ -103,6 +116,8 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Clarão de tiro e explosão sem luz dinâmica (luz extra redesenha tudo em volta no celular); efeitos pré-carregados no começo pra não travar no primeiro tiro
 - Terreno em blocos (só desenha o que está na frente), sombreamento do chão e das casas mais simples, bots longe de todo mundo calculam o movimento 1 vez a cada 3 quadros
 - Todas as texturas ficam numa só imagem (atlas 2D com borda, comprimida)
+- No chão as árvores de longe somem (só aparecem até ~180 m; do avião e na queda dá pra ver a ilha toda pra escolher onde cair)
+- Muita gente junta (cidade lotada, lobby): quem não está colado na câmera anima menos vezes e os efeitos de tiro dos outros têm limite por quadro
 
 ## Como baixar o APK
 

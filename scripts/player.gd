@@ -764,11 +764,15 @@ func _physics_process(delta: float) -> void:
 		if cd2 < 140.0 * 140.0:
 			var every := 1
 			if not is_local:
+				# muita gente perto (cidade lotada / lobby): espaça mais quem não está colado
+				var busy: bool = game.crowd > 10
 				if not game.in_view(position):
 					every = 8
 				elif cd2 > 35.0 * 35.0:
-					every = 3
+					every = 4 if busy else 3
 				elif cd2 > 15.0 * 15.0:
+					every = 3 if busy else 2
+				elif busy and cd2 > 6.0 * 6.0:
 					every = 2
 			if every == 1 or (Engine.get_physics_frames() + pid) % every == 0:
 				_animate(_anim_acc, sim)
@@ -892,8 +896,9 @@ func _move(delta: float) -> void:
 		game.sfx_at("land", global_position, is_local)
 		# queda alta: dano e um tempinho sem conseguir andar (pular da janela de cima = ~1 s)
 		# só trava em queda de altura considerável (mais de ~4 m); descer ladeira pulando não trava
-		if _fall_v > 13.5:
-			stun_t = clampf(0.5 + (_fall_v - 13.5) * 0.12, 0.5, 1.4)
+		# pular do telhado de uma casa (~3 m) já dá o tranco (agacha com a mão no chão)
+		if _fall_v > 10.0:
+			stun_t = clampf(0.55 + (_fall_v - 10.0) * 0.1, 0.55, 1.4)
 		if _vault_drop and _fall_v > 10.5:
 			stun_t = maxf(stun_t, 1.0)
 		if _fall_v > 16.0:

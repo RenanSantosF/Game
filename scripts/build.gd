@@ -428,6 +428,14 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var balcony: bool = spec.get("balcony", false) and floors > 1
 	var bal_c := rng.randf_range(-wd * 0.15, wd * 0.15)
 	var stair_x := wd / 2.0 - 0.7
+	# janela da frente/fundo não pode cair na frente da escada nem da parede interna (ficava
+	# "tapada": olhando de fora via só a parede ou os degraus colados no vidro)
+	var keep := func(c: float, f: int) -> float:
+		if floors > 1 and absf(c - stair_x) < 1.45:
+			c = stair_x - 1.45
+		if rooms > 1 and f == 0 and absf(c + wd * 0.1) < 1.0:
+			c = -wd * 0.1 + (1.0 if c > -wd * 0.1 else -1.0)
+		return clampf(c, -wd / 2.0 + 0.9, wd / 2.0 - 0.9)
 	for f in floors:
 		var y0 := f * fh
 		var front := []
@@ -436,16 +444,20 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 			front.append([door_c, door_w, 0.0, minf(2.3 if door_w < 2.5 else fh - 0.6, fh - 0.3)])
 			if wd > 8.5:
 				var wc := door_c + (2.6 if door_c < 0.0 else -2.6)
-				front.append(_win(wc))
+				wc = keep.call(wc, f)
+				if absf(wc - door_c) > door_w / 2.0 + 0.9:
+					front.append(_win(wc))
 		else:
 			if balcony:
 				front.append(_door(bal_c, 1.2))
 			else:
-				front.append(_win(-wd * 0.25))
-				front.append(_win(wd * 0.25))
-		back.append(_win(rng.randf_range(-wd * 0.25, wd * 0.25)))
+				front.append(_win(keep.call(-wd * 0.25, f)))
+				front.append(_win(keep.call(wd * 0.25, f)))
+		back.append(_win(keep.call(rng.randf_range(-wd * 0.25, wd * 0.25), f)))
 		if wd > 9.5:
-			back.append(_win(-wd * 0.32 if back[0][0] > 0.0 else wd * 0.32))
+			var c2: float = keep.call(-wd * 0.32 if back[0][0] > 0.0 else wd * 0.32, f)
+			if absf(c2 - float(back[0][0])) > 1.6:
+				back.append(_win(c2))
 		var lh := fh if f < floors - 1 or roof != "flat" else fh + 0.9
 		if roof == "burnt":
 			lh = fh - rng.randf_range(0.0, 0.5)
@@ -458,7 +470,11 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 		else:
 			wall(root, false, -wd / 2.0, dp, lh, y0, side, col, lay, uvs)
 		# do lado da escada não tem janela no térreo
+		# em cima, a janela desse lado fica antes do buraco da escada (senão dava no vão/guarda-corpo)
 		var rh := [] if (floors > 1 and f == 0) else [_win(-dp * 0.2)]
+		if floors > 1 and f > 0:
+			var zs := dp / 2.0 - 6.0
+			rh = [_win((-dp / 2.0 + zs) / 2.0)] if zs + dp / 2.0 > 2.4 else []
 		if spec.get("ext_stairs", false) and f == floors - 1 and roof == "flat":
 			rh.append([-dp / 2.0 + 0.95, 1.1, fh - 0.02, lh + 0.1])
 		wall(root, false, wd / 2.0, dp, lh, y0, rh, col, lay, uvs)
