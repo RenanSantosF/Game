@@ -27,7 +27,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Carros (muscle car da T Allen Studios, CC-BY 4.0, e jipe GAZ-67 da Artie31, CC0, repintados com poeira): esportivo (rápido) e jipe aberto (mais lento, mas sobe morro e anda fora da estrada), cada um com o seu ronco, sem vidro (dá pra ver e acertar quem dirige), rodas com suspensão que acompanham o terreno, barulho de batida (batida não tira vida, só tiro e granada); explodem; botão do carro pra entrar e sair; dá pra atropelar
 - Cada cidade com a sua cara (cor das paredes, telhado e um marco no meio: monumento, moinho, ônibus ou caixa d'água) e mais casas
 - Casas nunca ficam tortas: o chão fica plano embaixo delas e de todos os objetos; cercas acompanham o terreno
-- Armas detalhadas (Ultimate Gun Pack da Quaternius, CC0) com mira 2x, luneta 4x e silenciador encaixados (só essas duas miras; Kar98 e AWM têm luneta 4x própria); dano cai com a distância (SMG e 12 fortes de perto e fracas de longe)
+- Armas detalhadas (Ultimate Gun Pack da Quaternius, CC0) com mira 2x, luneta 4x e silenciador encaixados (retículo com tracinhos, sem tela preta em volta) (só essas duas miras; Kar98 e AWM têm luneta 4x própria); dano cai com a distância (SMG e 12 fortes de perto e fracas de longe)
 - Colete, capacete e mochila redesenhados, com cor por nível (cores de guerra): 1 verde-oliva, 2 verde-acinzentado, 3 cinza; mochila militar arredondada (lona estufada, tampa, bolsos e fitas)
 - Bots se escondem atrás de caixote, muro, carro ou árvore na troca de tiro (abaixam pra recarregar/curar e levantam pra atirar) e erram um pouco mais
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
@@ -35,7 +35,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Recarga com som do começo ao fim (tira o pente, pente novo entra, puxa o ferrolho); silenciador abafado e grave
 - Colete justo no corpo com bordas e listras brilhantes na cor do nível (1, 2 ou 3 listras); armas menores nas costas
 - Rodovias gastas (rachaduras, remendos, buracos, faixas apagadas, terra na beirada); casas de madeira com tábuas bem marcadas
-- Muito loot (2 a 4 itens a mais em volta de cada ponto, espalhados e sem amontoar, arma sempre com munição do lado: 30 balas pra fuzil e SMG, 12 pra pistola, 10 de sniper, 12 cartuchos de 12); munição só brilha na lista se for de arma equipada e estiver faltando (fuzil/SMG abaixo de 170, sniper abaixo de 20, 12 abaixo de 30; pistola nunca); tocar num colete/capacete/mochila de nível menor troca pelo que você está usando
+- Muito loot (do lado de fora 2 a 4 itens a mais espalhados em volta de cada ponto; dentro de casa no máximo 1, pra não lotar o cômodo; arma sempre com munição do lado: 30 balas pra fuzil e SMG, 12 pra pistola, 10 de sniper, 12 cartuchos de 12); armas só brilham se a vaga delas estiver vazia (qual arma é melhor quem decide é você); os recomendados aparecem primeiro na lista; munição só brilha na lista se for de arma equipada e estiver faltando (fuzil/SMG abaixo de 170, sniper abaixo de 20, 12 abaixo de 30; pistola nunca); tocar num colete/capacete/mochila de nível menor troca pelo que você está usando
 - Abate: caveira animada no meio da tela (dourada no tiro na cabeça) com estrondo grave
 - Escopetas 12 mais lentas e com mais impacto; agachado o tiro fica um pouco mais preciso; pular janela termina com o som do pé no chão
 - Paraquedas tipo asa, largo e de pano grosso, abre num tranco bruto (estoura, sacode o corpo e a câmera), de nylon brilhante com células estufadas tremendo no vento e cordas finas em cascata; corpo balança com o vento na queda e no paraquedas
@@ -87,13 +87,14 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Sensibilidade geral e mirando, inverter vertical
 - **Editar posição dos botões**: arraste cada botão e mude o tamanho
 - Botões com ícone da pose do boneco (de pé, agachado, deitado, pulando, correndo) e **transparência dos botões** ajustável
-- Gráficos BAIXA/MÉDIA/ALTA, sombras (desligadas por padrão), grama, distância de visão, limite de FPS (30/45/60), mostrar FPS, mostrar sangue, volume
+- Gráficos BAIXA/MÉDIA/ALTA (sem sombras em nenhuma), grama, distância de visão, limite de FPS (30/45/60), mostrar FPS, mostrar sangue, volume
 
 ## Desempenho em celular fraco
 
 - Casas de cada localidade e cada tipo de vegetação viram poucas malhas (poucas chamadas de desenho); árvores longe usam um modelo simples e a vegetação distante some em blocos
 - Na BAIXA: resolução 60%, sem sombra e sem grama
 - Ilha cercada de mar até o horizonte (praia descendo pra água); quem entra no mar fundo se afoga
+- **Desempenho automático**: o jogo mede o FPS a cada 2 s; se está baixo, diminui a resolução do 3D (os botões continuam nítidos) e, em aparelho bem fraco, tira a grama e simplifica as árvores; sobrando folga, volta a subir
 - Itens no chão só existem perto de você (carregam aos poucos em blocos de 40 m), então dá pra ter muito mais loot sem pesar
 - Câmera com faixa de profundidade ajustada e sem sobreposição de cenário perto/longe: nada de casas e avião piscando
 - Botões da tela desenhados uma vez e guardados como imagem (a tela desenha bem menos por quadro)

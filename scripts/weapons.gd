@@ -664,10 +664,11 @@ static func item_mesh(kind: String) -> Mesh:
 				m.cyl(Transform3D(Basis(), Vector3(-0.09 + i * 0.06, 0.16, 0.06)), 0.012, 0.006, 0.05, 5, Color(0.8, 0.65, 0.3))
 		"box":
 			m.tex(U.METAL, 1.5)
-			m.boxp(Vector3(0, 0.25, 0), Vector3(0.9, 0.5, 0.6), olive)
-			m.boxp(Vector3(0, 0.52, 0), Vector3(0.94, 0.06, 0.64), olive.darkened(0.2))
+			# caixa de quem morreu: pequena (não tampa o chão nem atrapalha)
+			m.boxp(Vector3(0, 0.15, 0), Vector3(0.54, 0.3, 0.36), olive)
+			m.boxp(Vector3(0, 0.315, 0), Vector3(0.57, 0.04, 0.39), olive.darkened(0.2))
 			m.tex(U.PLAIN, 4.0)
-			m.boxp(Vector3(0, 0.3, -0.31), Vector3(0.3, 0.12, 0.02), Color(0.9, 0.75, 0.2))
+			m.boxp(Vector3(0, 0.18, -0.19), Vector3(0.18, 0.07, 0.02), Color(0.9, 0.75, 0.2))
 		_:
 			# acessórios: a peça de verdade, com a cor do nível
 			var lvc: Color = RARITY[clampi(level_of(kind), 1, 3)]
@@ -757,13 +758,13 @@ static func build_item(kind: String, glow := true) -> Node3D:
 		root.add_child(g)
 		for c in g.get_children():
 			if c is MeshInstance3D:
-				c.visibility_range_end = 60.0
+				c.visibility_range_end = 50.0
 				c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if glow:
 			_apply_glow(root, glow_mat(kind))
 		return root
 	var mi := U.mesh(root, item_mesh(kind))
-	mi.visibility_range_end = 100.0 if kind == "box" else 60.0
+	mi.visibility_range_end = 80.0 if kind == "box" else 40.0
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if glow and kind != "box":
 		_apply_glow(root, glow_mat(kind))

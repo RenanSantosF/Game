@@ -142,6 +142,7 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 	]
 
 
+var tree_lod := 60.0       # até onde as árvores usam o modelo com folhas (depende da qualidade)
 var island := false        # borda vira praia/mar (ligado depois de posicionar as coisas)
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
 var detail_meshes := []   # [malha de cidade/objetos, alcance original]: some longe, entra a versão simples
@@ -838,17 +839,23 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 	# (sorteio próprio pela posição: não mexe na sequência do mapa)
 	var xr := RandomNumberGenerator.new()
 	xr.seed = hash(Vector3i(int(pos.x * 10.0), int(pos.y * 10.0), int(pos.z * 10.0)))
-	# muito loot: todo ponto ganha 2 a 4 itens a mais, espalhados em volta (arma vem com munição do lado)
-	var extra := 2
-	if xr.randf() < 0.6:
-		extra += 1
-	if xr.randf() < 0.3:
-		extra += 1
+	# loot extra espalhado: dentro de casa/andar de cima no máximo 1 (não lota o cômodo);
+	# do lado de fora 2 a 4, mais longe um do outro (arma vem com munição do lado)
+	var inside: bool = din != null or up
+	var extra := 0
+	if inside:
+		extra = 1 if xr.randf() < 0.5 else 0
+	else:
+		extra = 2
+		if xr.randf() < 0.6:
+			extra += 1
+		if xr.randf() < 0.3:
+			extra += 1
 	for k in extra:
 		var ek: String = Weapons.LOOT[xr.randi() % Weapons.LOOT.size()] if xr.randf() < 0.72 else Weapons.LOOT_GUNS[xr.randi() % Weapons.LOOT_GUNS.size()]
 		var ang := TAU * (k + xr.randf() * 0.5) / extra
 		# espalhado em volta (perto, mas não amontoado no mesmo lugar)
-		var eo := Vector3(cos(ang), 0, sin(ang)) * (xr.randf_range(0.9, 1.5) if up else xr.randf_range(1.6, 3.4))
+		var eo := Vector3(cos(ang), 0, sin(ang)) * (xr.randf_range(1.0, 1.8) if inside else xr.randf_range(2.5, 6.0))
 		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up, "anc": pos})
 		if Weapons.is_gun(ek):
 			var am2 := Weapons.ammo_of(ek)
@@ -2552,7 +2559,8 @@ func show_grass(on: bool) -> void:
 
 # Distância de visão da vegetação (depende da qualidade gráfica)
 func set_view(dist: float) -> void:
-	var lod := clampf(dist * 0.35, 75.0, 140.0)
+	# árvore detalhada (folhas recortadas, pesadas no celular) só perto; depois a versão simples
+	var lod := tree_lod
 	# cidades e objetos com detalhe até a distância de visão; dali pra frente só os blocos simples
 	for e in detail_meshes:
 		if is_instance_valid(e[0]):
@@ -2900,7 +2908,7 @@ func _build_env() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.68, 0.74, 0.82)
-	env.ambient_light_energy = 0.56
+	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
@@ -2911,7 +2919,7 @@ func _build_env() -> void:
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.94
 	env.adjustment_contrast = 1.12
-	env.adjustment_brightness = 1.03
+	env.adjustment_brightness = 1.07
 	# mar em volta da ilha até o horizonte (a névoa apaga a borda): um quadrado só, opaco e barato
 	var sea := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
@@ -2957,7 +2965,7 @@ func _build_env() -> void:
 	sun.rotation_degrees = Vector3(-38, 48, 0)
 	sun.light_color = Color(0.96, 0.97, 1.0)
 	sun.light_energy = 1.14
-	sun.shadow_enabled = true
+	sun.shadow_enabled = false
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL

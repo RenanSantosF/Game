@@ -1817,7 +1817,7 @@ func _make_item_node(i: int) -> void:
 	if it["kind"] == "box":
 		var l := Label3D.new()
 		l.text = str(it.get("name", ""))
-		l.position = Vector3(0, 1.0, 0)
+		l.position = Vector3(0, 0.7, 0)
 		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		l.pixel_size = 0.003
 		l.font_size = 36
@@ -1969,6 +1969,8 @@ void fragment() {
 
 func _apply_quality() -> void:
 	var vp := get_viewport()
+	_dyn_scale = -1.0
+	_low_mode = false
 	var sun: DirectionalLight3D = world.get_node_or_null("Sun")
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
@@ -1996,10 +1998,11 @@ func _apply_quality() -> void:
 				sun.directional_shadow_max_distance = 55.0
 			far = 380.0
 			world.set_view(300.0)
-	# ajustes finos das configurações
-	if sun and not bool(Cfg.get_v("shadows")):
+	# sem sombras em nenhuma qualidade (mais leve e o visual fica melhor)
+	if sun:
 		sun.shadow_enabled = false
 	world.show_grass(bool(Cfg.get_v("grass")))
+	world.tree_lod = [35.0, 55.0, 90.0][clampi(int(Cfg.get_v("quality")), 0, 2)]
 	var vk: float = [0.75, 1.0, 1.25][clampi(int(Cfg.get_v("view")), 0, 2)]
 	far *= vk
 	world.set_view(far * 0.8)
@@ -2219,6 +2222,44 @@ func _process(delta: float) -> void:
 		lp.hp = 200.0
 	_local_update(lp, delta)
 	_update_world_fx(delta)
+	_auto_perf(delta)
+
+
+# Desempenho automático: mede o FPS de verdade a cada 2 s. Se está abaixo do alvo, baixa a resolução
+# interna do 3D (a tela/botões continuam nítidos); muito fraco: tira a grama e simplifica as árvores.
+# Sobrando folga, sobe de volta até a resolução da qualidade escolhida.
+var _perf_t := 0.0
+var _perf_n := 0
+var _dyn_scale := -1.0
+var _low_mode := false
+
+
+func _auto_perf(delta: float) -> void:
+	if dedicated or Engine.time_scale != 1.0:
+		return
+	_perf_t += delta
+	_perf_n += 1
+	if _perf_t < 2.0:
+		return
+	var fps := float(_perf_n) / _perf_t
+	_perf_t = 0.0
+	_perf_n = 0
+	var vp := get_viewport()
+	var q := clampi(int(Cfg.get_v("quality")), 0, 2)
+	var base: float = [0.55, 0.72, 1.0][q]
+	if _dyn_scale < 0.0:
+		_dyn_scale = vp.scaling_3d_scale
+	var target := minf(float(Cfg.get_v("fps")), 60.0)
+	if fps < target * 0.75:
+		_dyn_scale = maxf(_dyn_scale - (0.1 if fps < target * 0.5 else 0.05), 0.4)
+	elif fps > target * 0.93 and _dyn_scale < base:
+		_dyn_scale = minf(_dyn_scale + 0.03, base)
+	vp.scaling_3d_scale = _dyn_scale
+	if not _low_mode and fps < target * 0.45 and _dyn_scale <= 0.41:
+		_low_mode = true
+		world.show_grass(false)
+		world.tree_lod = 25.0
+		world.set_view(170.0)
 
 
 # clima de guerra: vento seco sempre, e de vez em quando artilharia, rajada, sirene ou jato ao longe
@@ -2519,14 +2560,15 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float, only_far := false) -> 
 			var tp := o.position + Vector3(0, o.head_y() - 0.45, 0)
 			var d := tp - from
 			var dist := d.length()
-			if dist > minf(float(w["range"]), 150.0 if lp.scoped else 120.0) or dist < 1.0:
+			if dist > minf(float(w["range"]), 170.0 if lp.scoped else 140.0) or dist < 1.0:
 				continue
 			# só mirando parado (sem atirar): puxa só quem está longe
 			if only_far and dist < 35.0:
 				continue
 			var ang := fwd.angle_to(d / dist)
 			# cone em graus "de tamanho de gente": quanto mais longe, mais fino (de longe um pouco mais largo)
-			var lim := clampf(atan2(4.4, dist), 0.06 if dist > 50.0 else 0.04, 0.5)
+			# de longe a pessoa é pequena na tela: cone mínimo maior (puxa sem precisar estar em cima)
+			var lim := clampf(atan2(4.4, dist), 0.1 if dist > 60.0 else (0.08 if dist > 30.0 else 0.05), 0.5)
 			if ang > lim:
 				continue
 			var score := ang + lp.position.distance_to(o.position) * 0.0025
@@ -2612,16 +2654,12 @@ func _is_better(lp: Player, kind: String, extra = null) -> bool:
 	if Weapons.is_bag(kind):
 		return int(kind.substr(3)) > lp.bag
 	if Weapons.is_gun(kind):
-		if lp.wants(kind):
-			return true
-		# arma mais forte que a mais fraca que você carrega no mesmo lugar
+		# arma só brilha se a vaga dela está vazia (qual é "melhor" quem decide é o jogador)
 		var w := Weapons.get_w(kind)
-		var worst := 1e9
 		for i in ([2] if int(w["slot"]) == 1 else [0, 1]):
-			var g: String = lp.guns[i]["id"]
-			if g != "" and g != kind:
-				worst = minf(worst, _gun_power(g))
-		return worst < 1e8 and _gun_power(kind) > worst * 1.15
+			if lp.guns[i]["id"] == "":
+				return true
+		return false
 	if Weapons.is_att(kind):
 		if not lp.wants(kind):
 			return false
@@ -2655,8 +2693,14 @@ func _ui_slow(lp: Player, playing: bool) -> void:
 	var list := []
 	if playing and lp.air == 0 and phase != LOBBY:
 		var now := Time.get_ticks_msec()
-		for i in world.items.size():
-			if not items_avail[i]:
+		# só os itens da grade em volta (o mapa tem milhares: varrer todos pesava)
+		var near_ids := []
+		var c0 := Vector2i(floori(lp.position.x / ITEM_CELL), floori(lp.position.z / ITEM_CELL))
+		for gx in range(-1, 2):
+			for gz in range(-1, 2):
+				near_ids.append_array(_item_grid.get(c0 + Vector2i(gx, gz), []))
+		for i in near_ids:
+			if i >= items_avail.size() or not items_avail[i]:
 				continue
 			var it: Dictionary = world.items[i]
 			var dd := lp.position.distance_to(it["pos"])
@@ -2675,6 +2719,10 @@ func _ui_slow(lp: Player, playing: bool) -> void:
 				_to_server("req_pickup", [i, -1])
 				continue
 			list.append({"key": [i, -1], "kind": kind, "n": it.get("n", 1), "label": Weapons.item_name(kind), "best": _is_better(lp, kind, it.get("extra"))})
+	# recomendados primeiro no carrossel (o resto na ordem de antes)
+	var best_l := list.filter(func(e): return e["best"])
+	if not best_l.is_empty():
+		list = best_l + list.filter(func(e): return not e["best"])
 	hud.set_pickups(list)
 	var me = info.get(local_id)
 	hud.alive_n = _alive_count()
@@ -2963,7 +3011,8 @@ func _local_fire(lp: Player) -> void:
 		spread *= 2.0
 	# segurando o dedo o tiro vai abrindo (cada arma do seu jeito); soltando volta a ficar preciso
 	spread *= 1.0 + lp.bloom
-	lp.bloom = minf(lp.bloom + float(w.get("bloom", 0.2)), float(w.get("bloom_max", 3.0)))
+	# abre mais devagar que antes (30% a menos por tiro, com ou sem mira)
+	lp.bloom = minf(lp.bloom + float(w.get("bloom", 0.2)) * 0.7, float(w.get("bloom_max", 3.0)))
 	var s := tan(deg_to_rad(spread))
 	var space := get_world_3d().direct_space_state
 	var ends := PackedVector3Array()
@@ -4154,6 +4203,22 @@ func phase_set(ph: int, t: float) -> void:
 			hud.big_map = false
 			hud.set_bag(false)
 			hud.center("No avião! Escolha onde saltar.\nToque no mapa (canto) pra ver a rota.", 4.0)
+		END:
+			# fim de partida: sai da mira, solta o tiro e fecha telas (ficava preso na luneta)
+			var lp: Player = players.get(local_id)
+			if lp:
+				lp.scoped = false
+				lp.gren_hold = false
+			gren_t = -1.0
+			hud.fire_held = false
+			hud.held.clear()
+			hud.touches.clear()
+			hud.joy_active = false
+			hud.move_vec = Vector2.ZERO
+			hud.big_map = false
+			hud.set_bag(false)
+			if view_gun:
+				view_gun.visible = false
 
 
 @rpc("authority", "call_remote", "reliable")

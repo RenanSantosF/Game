@@ -792,7 +792,11 @@ func _move(delta: float) -> void:
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
 	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
-	var spd := lerpf(3.15, 4.05, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
+	# toque leve perto do centro: só vira / anda devagarinho (girar o analógico no meio não desliza)
+	var dl := dir.length()
+	var spd := 0.0
+	if dl > 0.15:
+		spd = lerpf(0.0, 3.15, smoothstep(0.15, 0.45, dl)) if dl < 0.45 else lerpf(3.15, 4.05, clampf((dl - 0.45) / 0.4, 0.0, 1.0))
 	if sprint:
 		spd = 5.6 if (sel < 0 or cur_wid() == "fist") else 5.3
 	# atirando ou dando soco anda bem mais devagar
@@ -817,6 +821,10 @@ func _move(delta: float) -> void:
 	if stun_t > 0.0:
 		spd = 0.0
 	var on_floor := is_on_floor()
+	# mudou muito de direção: primeiro vira o corpo, depois anda (não sai de lado deslizando)
+	if not is_bot and dl > 0.15 and aim_t <= 0.0 and not scoped and not sprint:
+		var tdiff := absf(angle_difference(yaw, atan2(-dir.x, -dir.z)))
+		spd *= clampf(1.25 - tdiff / 1.6, 0.12, 1.0)
 	# no ar não dá pra mudar a direção
 	if on_floor:
 		velocity.x = dir.x * spd

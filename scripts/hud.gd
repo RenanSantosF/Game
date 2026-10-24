@@ -1227,6 +1227,31 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 		pad.draw_string(font, pos + Vector2(r * 0.68 - sw / 2.0, -r * 0.68 + 5), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 
 
+# retículo de luneta: anel com borda grossa, cruz com tracinhos de distância e ponto vermelho no meio
+func _draw_reticle(c: Vector2, R: float, big: bool) -> void:
+	var dk := Color(0.02, 0.02, 0.02, 0.9)
+	var lw := 3.0 if big else 2.5
+	# anel: faixa escura grossa com contorno fino claro por dentro (dá leitura em fundo escuro)
+	pad.draw_arc(c, R, 0, TAU, 96, dk, 7.0 if big else 5.0, true)
+	pad.draw_arc(c, R - (4.5 if big else 3.5), 0, TAU, 96, Color(1, 1, 1, 0.18), 1.5, true)
+	var gap := 9.0 if big else 6.0
+	# cruz: grossa na borda, fina perto do centro
+	for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		pad.draw_line(c + d * R * 0.55, c + d * R, dk, lw * 2.2)
+		pad.draw_line(c + d * gap, c + d * R * 0.55, dk, lw * 0.7)
+	# tracinhos (mil-dots): pequenos em cada passo e maiores a cada dois
+	var step := R * (0.09 if big else 0.13)
+	var nt := int(R * 0.55 / step)
+	for k in range(1, nt + 1):
+		var h := (7.0 if k % 2 == 0 else 4.0) * (1.0 if big else 0.75)
+		for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+			var p: Vector2 = c + d * step * k
+			var perp: Vector2 = Vector2(-d.y, d.x)
+			pad.draw_line(p - perp * h, p + perp * h, dk, 1.6)
+	pad.draw_circle(c, 2.6 if big else 2.2, Color(0, 0, 0, 0.7))
+	pad.draw_circle(c, 1.7 if big else 1.5, Color(1, 0.18, 0.12))
+
+
 # fundo com degradê (mais escuro no centro), anel fino, brilho em cima e o ícone
 func _paint_btn(ci: CanvasItem, pos: Vector2, r: float, icon: String, state: String, al: float) -> void:
 	var bg := Color(0.04, 0.05, 0.06, 0.38)
@@ -1752,26 +1777,15 @@ func _draw_pad() -> void:
 	# mira
 	if mode == "ground" or mode == "lobby":
 		if overlay:
-			pad.draw_line(Vector2(0, c.y), Vector2(s.x, c.y), Color(0, 0, 0, 0.8), 2.0)
-			pad.draw_line(Vector2(c.x, 0), Vector2(c.x, s.y), Color(0, 0, 0, 0.8), 2.0)
-			pad.draw_arc(c, s.y * 0.46, 0, TAU, 64, Color(0, 0, 0, 0.9), 10.0)
-			pad.draw_rect(Rect2(0, 0, c.x - s.y * 0.46, s.y), Color(0, 0, 0, 0.92))
-			pad.draw_rect(Rect2(c.x + s.y * 0.46, 0, s.x, s.y), Color(0, 0, 0, 0.92))
+			# luneta 4x: sem tela preta em volta; anel grosso e retículo com tracinhos (estilo sniper)
+			_draw_reticle(c, s.y * 0.44, true)
 		elif iron:
 			# mira de ferro: a arma 3D aparece embaixo; aqui só o ponto de mira fino
 			pad.draw_circle(c, 2.2, Color(0, 0, 0, 0.6))
 			pad.draw_circle(c, 1.4, Color(1, 0.95, 0.85))
 		elif red_dot:
-			# mira holográfica: armação preta em volta do vidro (levemente azulado), anel e ponto vermelhos
-			var hw := s.y * 0.2
-			var hh := s.y * 0.15
-			var fr := Rect2(c.x - hw, c.y - hh, hw * 2.0, hh * 2.0)
-			pad.draw_rect(fr, Color(0.55, 0.75, 0.85, 0.07))
-			pad.draw_rect(fr.grow(10), Color(0.06, 0.06, 0.07, 0.96), false, 20.0)
-			pad.draw_rect(Rect2(fr.position.x - 20, fr.end.y + 10, fr.size.x + 40, s.y - fr.end.y), Color(0.06, 0.06, 0.07, 0.96))
-			pad.draw_rect(Rect2(fr.position.x + 4, fr.position.y - 26, 30, 8), Color(0.15, 0.15, 0.16, 0.96))
-			pad.draw_arc(c, 14.0, 0, TAU, 40, Color(1, 0.15, 0.1, 0.9), 1.8)
-			pad.draw_circle(c, 2.0, Color(1, 0.15, 0.1))
+			# mira 2x: anel e retículo menores, sem armação preta
+			_draw_reticle(c, s.y * 0.2, false)
 		else:
 			# a mira abre junto com o tiro (segurando o dedo)
 			var g := 7.0 + cross_bloom * 9.0
