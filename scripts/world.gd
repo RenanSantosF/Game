@@ -2216,7 +2216,7 @@ func _tree_meshes() -> Dictionary:
 	if have_tripo:
 		var hi: Mesh = load("res://models/trees/tripo.res")
 		var lo: Mesh = load("res://models/trees/tripo_lo.res")
-		for e in [["oak", Vector3(1.75, 1.0, 1.75)], ["tall", Vector3(1.55, 1.15, 1.55)]]:
+		for e in [["oak", Vector3(1.75, 1.0, 1.75)], ["tall", Vector3(1.65, 1.15, 1.65)]]:
 			out[e[0]] = _scaled(hi, e[1])
 			out[e[0] + "_lo"] = _scaled(lo, e[1])
 	# pedra
@@ -2314,8 +2314,8 @@ func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
 		"oak", "pine", "tall":
 			var cs := CollisionShape3D.new()
 			var cyl := CylinderShape3D.new()
-			# tronco da árvore nova: ~0,42 m de raio (com a escala do tipo)
-			cyl.radius = 0.42 * sc.x
+			# mesmo raio de antes (o tronco da árvore nova foi engrossado pra bater com ele)
+			cyl.radius = 0.5 * sc.x
 			cyl.height = 6.0 * sc.x
 			cs.shape = cyl
 			cs.position = xf.origin + Vector3(0, 3.0 * sc.x, 0)

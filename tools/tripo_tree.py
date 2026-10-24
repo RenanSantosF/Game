@@ -67,8 +67,15 @@ from scipy.spatial import cKDTree
 TARGET = (1800, 320)   # triângulos perto / longe (no total)
 total = len(F)
 outs = [([], [], []) for _ in TARGET]
+TRUNK = 1.5   # tronco mais grosso (igual às árvores antigas: dá pra se proteger atrás)
 for (vs, ts, fs) in PARTS:
     vs = np.array(vs, dtype=np.float64)
+    if vs[:, 1].min() < 0.3:
+        # é o tronco (única parte que encosta no chão): engrossa em volta do eixo, sem mexer na altura
+        base = vs[vs[:, 1] < 1.0]
+        cx, cz = base[:, 0].mean(), base[:, 2].mean()
+        vs[:, 0] = cx + (vs[:, 0] - cx) * TRUNK
+        vs[:, 2] = cz + (vs[:, 2] - cz) * TRUNK
     ts = np.array(ts, dtype=np.float64)
     fs = np.array(fs, dtype=np.int32)
     tree = cKDTree(vs)
