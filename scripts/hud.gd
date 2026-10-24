@@ -73,6 +73,13 @@ var grenades := 0
 var car_near := false
 var driving := false
 var armor := 0.0
+var gren_path := PackedVector2Array()   # começo do arco da granada (na tela)
+var _gren_origin := Vector2.ZERO
+# ícone que acompanha o dedo ao arrastar na mochila
+var _ghost: TextureRect
+var _ghost_tex: Texture2D
+var _ghost_size := Vector2(96, 96)
+var _touch_pos := Vector2.ZERO
 var heals := [0, 0]        # bandagens, kits
 var overlay := false       # luneta (tela preta em volta)
 var red_dot := false
@@ -265,7 +272,7 @@ func _build_bag_panel() -> void:
 	vb.add_child(hb)
 	bag_left = VBoxContainer.new()
 	bag_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bag_left.size_flags_stretch_ratio = 1.15
+	bag_left.size_flags_stretch_ratio = 1.4
 	bag_left.add_theme_constant_override("separation", 6)
 	hb.add_child(bag_left)
 	var sc := ScrollContainer.new()
@@ -278,7 +285,7 @@ func _build_bag_panel() -> void:
 	sc.set_drag_forwarding(Callable(), func(_p, d): return d is Dictionary and d.get("t") == "att",
 		func(_p, d): inv_action.emit("unequip", d["kind"], int(d["slot"])); bag_sel = {})
 	bag_grid = GridContainer.new()
-	bag_grid.columns = 4
+	bag_grid.columns = 3
 	bag_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bag_grid.add_theme_constant_override("h_separation", 6)
 	bag_grid.add_theme_constant_override("v_separation", 6)
@@ -585,7 +592,7 @@ func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := fals
 	if n > 1:
 		var l := Label.new()
 		l.text = str(n)
-		l.add_theme_font_size_override("font_size", 13)
+		l.add_theme_font_size_override("font_size", 16)
 		l.add_theme_constant_override("outline_size", 4)
 		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 		l.size_flags_horizontal = Control.SIZE_SHRINK_END
@@ -593,16 +600,8 @@ func _item_tile(kind: String, n: int, data: Dictionary, sz: float, white := fals
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		t.add_child(l)
 	t.set_drag_forwarding(func(_p):
-		var pv := TextureRect.new()
-		pv.texture = tr.texture
-		pv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pv.size = Vector2(sz, sz) * 1.2
-		pv.modulate = Color(1, 1, 1, 0.85)
-		var wrap := Control.new()
-		wrap.add_child(pv)
-		pv.position = -pv.size / 2.0
-		t.set_drag_preview(wrap)
+		_start_ghost(tr.texture, Vector2(sz, sz) * 1.25)
+		t.set_drag_preview(Control.new())
 		return data, Callable(), Callable())
 	t.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and not t.get_viewport().gui_is_dragging():
@@ -653,10 +652,15 @@ func refresh_bag(p: Player) -> void:
 		var card := PanelContainer.new()
 		var active := i == p.sel
 		card.add_theme_stylebox_override("panel", _tile_style(Color(1, 1, 1, 0.1 if active else 0.05), Color(1, 0.85, 0.35, 0.9) if active else Color(1, 1, 1, 0.15)))
-		card.custom_minimum_size = Vector2(0, 84)
+		card.custom_minimum_size = Vector2(0, 104)
 		var slot := i
 		card.set_drag_forwarding(
-			func(_p): return {"t": "gun", "kind": id, "slot": slot} if id != "" else null,
+			func(_p):
+				if id == "":
+					return null
+				_start_ghost(icons.get("w_" + id), Vector2(200, 96))
+				card.set_drag_preview(Control.new())
+				return {"t": "gun", "kind": id, "slot": slot},
 			func(_p, d): return d is Dictionary and d.get("t") == "item" and Weapons.is_att(d["kind"]) and Weapons.fits(d["kind"], id),
 			func(_p, d): inv_action.emit("equip", d["kind"], slot); bag_sel = {})
 		card.gui_input.connect(func(ev: InputEvent):
@@ -669,7 +673,7 @@ func refresh_bag(p: Player) -> void:
 		hb.add_theme_constant_override("separation", 6)
 		card.add_child(hb)
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(150, 74)
+		tr.custom_minimum_size = Vector2(190, 92)
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr.texture = icons.get("w_" + id) if id != "" else null
@@ -682,7 +686,7 @@ func refresh_bag(p: Player) -> void:
 		hb.add_child(col)
 		var nm := Label.new()
 		nm.text = Weapons.item_name(id).to_upper() if id != "" else ("PISTOLA" if i == 2 else "ARMA %d" % (i + 1))
-		nm.add_theme_font_size_override("font_size", 15)
+		nm.add_theme_font_size_override("font_size", 17)
 		nm.add_theme_color_override("font_color", Color.WHITE if id != "" else Color(1, 1, 1, 0.35))
 		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(nm)
@@ -702,9 +706,9 @@ func refresh_bag(p: Player) -> void:
 					if Weapons.att_cat(a) == c:
 						have = a
 				if have != "":
-					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 40.0))
+					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 52.0))
 				else:
-					ar.add_child(_empty_slot(c, 40.0))
+					ar.add_child(_empty_slot(c, 52.0))
 		bag_left.add_child(card)
 	# equipamento vestido
 	var gear := HBoxContainer.new()
@@ -713,19 +717,19 @@ func refresh_bag(p: Player) -> void:
 	for gk in ["vest", "helmet", "bag"]:
 		var lv: int = {"vest": p.vest_lv if p.armor > 0.0 else 0, "helmet": p.helmet, "bag": p.bag}[gk]
 		if lv > 0:
-			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 76.0))
+			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 96.0))
 		else:
-			gear.add_child(_empty_slot(gk, 76.0))
+			gear.add_child(_empty_slot(gk, 96.0))
 	# itens soltos
 	for k in p.inv:
 		var kind: String = k
 		var n: int = p.inv[k]
 		if n <= 0:
 			continue
-		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 72.0))
-	for i in maxi(0, p.capacity() - used):
+		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 98.0))
+	for i in clampi(p.capacity() - used, 0, 3):   # só algumas vagas vazias (não centenas)
 		var empty := Panel.new()
-		empty.custom_minimum_size = Vector2(72, 72)
+		empty.custom_minimum_size = Vector2(98, 98)
 		empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.22), Color(1, 1, 1, 0.06)))
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bag_grid.add_child(empty)
@@ -840,8 +844,6 @@ func _btn_icon(k: String) -> String:
 			return "close"
 		"fire", "fire2":
 			return "fire" if (sel >= 1 and _slot_has(sel)) else "punch"
-		"crouch":
-			return "stand" if crouched else "crouch"
 	return k
 
 
@@ -896,7 +898,37 @@ func _in_gui(p: Vector2) -> bool:
 	return false
 
 
+func _start_ghost(tex: Texture2D, sz: Vector2) -> void:
+	_ghost_tex = tex
+	_ghost_size = sz
+	if _ghost == null:
+		_ghost = TextureRect.new()
+		_ghost.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_ghost.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ghost.modulate = Color(1, 1, 1, 0.9)
+		_ghost.z_index = 100
+		add_child(_ghost)
+	_ghost.texture = tex
+	_ghost.size = sz
+	_ghost.visible = false
+
+
+func _update_ghost() -> void:
+	if _ghost == null:
+		return
+	var on := _ghost_tex != null and get_viewport().gui_is_dragging()
+	_ghost.visible = on
+	if on:
+		# um pouco acima do dedo pra dar pra ver o ícone
+		_ghost.position = _touch_pos - Vector2(_ghost_size.x * 0.5, _ghost_size.y * 0.85)
+	else:
+		_ghost_tex = null
+
+
 func _input(e: InputEvent) -> void:
+	if e is InputEventScreenTouch or e is InputEventScreenDrag or e is InputEventMouse:
+		_touch_pos = e.position
 	if e is InputEventScreenTouch:
 		if e.pressed:
 			_down(e.index, e.position)
@@ -973,6 +1005,7 @@ func _down(i: int, p: Vector2) -> void:
 	if b == "grenade":
 		# segura pra tirar o pino; solta pra jogar
 		touches[i] = "gren"
+		_gren_origin = p
 		action.emit("grenade_hold")
 		return
 	if b != "":
@@ -1013,6 +1046,8 @@ func _up(i: int) -> void:
 		joy_active = false
 		move_vec = Vector2.ZERO
 	if r == "gren":
+		if not joy_active:
+			move_vec = Vector2.ZERO
 		action.emit("grenade_throw")
 	if r.begins_with("hold:"):
 		held.erase(r.substr(5))
@@ -1030,6 +1065,12 @@ func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 	elif r == "pick" and _pick_touch.has(i):
 		_pick_touch[i][1] = float(_pick_touch[i][1]) + rel.length()
 		pick_scroll.scroll_horizontal -= int(rel.x)
+	elif r == "gren" and not joy_active:
+		# segurando a granada o mesmo dedo anda como o analógico
+		var gv := (p - _gren_origin) / JOY_R
+		if gv.length() > 1.0:
+			gv = gv.normalized()
+		move_vec = gv if gv.length() > 0.2 else Vector2.ZERO
 	elif r == "look":
 		_look += rel
 	elif r == "fire":
@@ -1068,6 +1109,7 @@ func _edit_cmd(b: String) -> void:
 
 
 func _process(delta: float) -> void:
+	_update_ghost()
 	center_t -= delta
 	if center_t <= 0.0:
 		lbl_center.text = ""
@@ -1141,20 +1183,28 @@ func _process(delta: float) -> void:
 
 func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> void:
 	var hd: bool = ((k == "fire" or k == "fire2") and fire_held) or held.has(k)
-	var bg := Color(0, 0, 0, 0.32)
-	var ring := Color(1, 1, 1, 0.55)
+	# transparência escolhida nas configurações (o editor de botões mostra sempre bem visível)
+	var al := 1.0 if edit_mode else clampf(float(Cfg.get_v("btn_alpha")), 0.25, 1.0)
+	var bg := Color(0.04, 0.05, 0.06, 0.38)
+	var ring := Color(1, 1, 1, 0.42)
+	var on := (k == "sprint" and sprinting) or (k == "crouch" and crouched) or (k == "prone" and proned)
 	if hd:
-		bg = Color(1, 0.4, 0.2, 0.5)
+		bg = Color(0.95, 0.42, 0.18, 0.55)
 	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
 		bg = Color(0.85, 0.55, 0.1, 0.6)
-	elif (k == "sprint" and sprinting) or (k == "crouch" and crouched) or (k == "prone" and proned):
-		bg = Color(1, 0.75, 0.2, 0.45)
-		ring = Color(1, 0.85, 0.35, 0.95)
+	elif on:
+		bg = Color(0.95, 0.72, 0.2, 0.5)
+		ring = Color(1, 0.86, 0.38, 0.95)
 	if edit_mode and k == edit_sel:
 		bg = Color(0.2, 0.6, 1.0, 0.5)
+	bg.a *= al
+	ring.a *= al
+	# fundo com degradê (mais escuro no centro), anel fino e um brilho em cima
 	pad.draw_circle(pos, r, bg)
-	pad.draw_arc(pos, r, 0, TAU, 40, ring, 2.5)
-	glyph(pad, icon, pos, r * 0.48, Color(1, 1, 1, 0.95))
+	pad.draw_circle(pos, r * 0.78, Color(0, 0, 0, 0.12 * al))
+	pad.draw_arc(pos, r - 1.0, 0, TAU, 48, ring, 2.0, true)
+	pad.draw_arc(pos, r - 4.0, PI * 1.15, PI * 1.85, 20, Color(1, 1, 1, 0.16 * al), 2.0, true)
+	glyph(pad, icon, pos, r * 0.5, Color(1, 1, 1, minf(1.0, 0.95 * al + 0.1)))
 	if k == "bag" and bag_fill > 0.0:
 		# borda que enche com o espaço usado: branca, amarela quase cheia, vermelha cheia
 		var bf := clampf(bag_fill, 0.0, 1.0)
@@ -1170,6 +1220,55 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.15, 0.6, 0.25))
 		var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 		pad.draw_string(font, pos + Vector2(r * 0.68 - sw / 2.0, -r * 0.68 + 5), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+
+# retângulo de cantos redondos preenchido
+static func _rrect(ci: CanvasItem, rc: Rect2, rad: float, col: Color) -> void:
+	rad = minf(rad, minf(rc.size.x, rc.size.y) * 0.5)
+	ci.draw_rect(Rect2(rc.position + Vector2(rad, 0), Vector2(rc.size.x - rad * 2.0, rc.size.y)), col)
+	ci.draw_rect(Rect2(rc.position + Vector2(0, rad), Vector2(rc.size.x, rc.size.y - rad * 2.0)), col)
+	for cp in [rc.position + Vector2(rad, rad), rc.position + Vector2(rc.size.x - rad, rad), rc.position + Vector2(rad, rc.size.y - rad), rc.end - Vector2(rad, rad)]:
+		ci.draw_circle(cp, rad, col)
+
+
+# osso do bonequinho com ponta redonda
+static func _limb(ci: CanvasItem, a: Vector2, b: Vector2, w: float, col: Color) -> void:
+	ci.draw_line(a, b, col, w)
+	ci.draw_circle(a, w * 0.5, col)
+	ci.draw_circle(b, w * 0.5, col)
+
+
+# bonequinho na pose do botão (em pé, agachado, deitado, pulando, correndo)
+static func _figure(ci: CanvasItem, c: Vector2, r: float, pose: String, col: Color, w: float) -> void:
+	var P := {
+		"stand": {"head": Vector2(0, -0.72), "neck": Vector2(0, -0.48), "hip": Vector2(0, 0.1), "k1": Vector2(-0.13, 0.45), "f1": Vector2(-0.17, 0.84), "k2": Vector2(0.13, 0.45), "f2": Vector2(0.17, 0.84), "e1": Vector2(-0.24, -0.18), "h1": Vector2(-0.28, 0.12), "e2": Vector2(0.24, -0.18), "h2": Vector2(0.28, 0.12)},
+		"crouch": {"head": Vector2(0.12, -0.42), "neck": Vector2(0.04, -0.2), "hip": Vector2(-0.2, 0.28), "k1": Vector2(0.24, 0.3), "f1": Vector2(0.22, 0.78), "k2": Vector2(-0.08, 0.78), "f2": Vector2(-0.55, 0.8), "e1": Vector2(0.3, 0.02), "h1": Vector2(0.62, -0.1), "e2": Vector2(0.18, 0.1), "h2": Vector2(0.5, -0.02)},
+		"prone": {"head": Vector2(-0.72, 0.28), "neck": Vector2(-0.5, 0.36), "hip": Vector2(0.28, 0.44), "k1": Vector2(0.6, 0.5), "f1": Vector2(0.94, 0.52), "k2": Vector2(0.58, 0.56), "f2": Vector2(0.9, 0.6), "e1": Vector2(-0.62, 0.56), "h1": Vector2(-0.98, 0.46), "e2": Vector2(-0.56, 0.58), "h2": Vector2(-0.92, 0.52)},
+		"jump": {"head": Vector2(0, -0.78), "neck": Vector2(0, -0.55), "hip": Vector2(0, -0.02), "k1": Vector2(-0.3, 0.2), "f1": Vector2(-0.14, 0.5), "k2": Vector2(0.3, 0.14), "f2": Vector2(0.4, 0.48), "e1": Vector2(-0.32, -0.62), "h1": Vector2(-0.38, -0.95), "e2": Vector2(0.32, -0.62), "h2": Vector2(0.38, -0.95)},
+		"sprint": {"head": Vector2(0.3, -0.72), "neck": Vector2(0.18, -0.48), "hip": Vector2(-0.06, 0.1), "k1": Vector2(0.34, 0.3), "f1": Vector2(0.24, 0.76), "k2": Vector2(-0.28, 0.44), "f2": Vector2(-0.66, 0.56), "e1": Vector2(0.46, -0.26), "h1": Vector2(0.66, -0.46), "e2": Vector2(-0.24, -0.2), "h2": Vector2(-0.5, 0.0)},
+	}
+	if pose == "stand" or not P.has(pose):
+		pose = "stand" if not P.has(pose) else pose
+	var j: Dictionary = P[pose]
+	var q := func(n: String) -> Vector2:
+		return c + (j[n] as Vector2) * r
+	var lw := w * 1.15
+	_limb(ci, q.call("neck"), q.call("hip"), w * 1.7, col)
+	_limb(ci, q.call("hip"), q.call("k1"), lw, col)
+	_limb(ci, q.call("k1"), q.call("f1"), lw, col)
+	_limb(ci, q.call("hip"), q.call("k2"), lw, col)
+	_limb(ci, q.call("k2"), q.call("f2"), lw, col)
+	_limb(ci, q.call("neck"), q.call("e1"), w, col)
+	_limb(ci, q.call("e1"), q.call("h1"), w, col)
+	_limb(ci, q.call("neck"), q.call("e2"), w, col)
+	_limb(ci, q.call("e2"), q.call("h2"), w, col)
+	ci.draw_circle(q.call("head"), r * 0.17, col)
+	if pose == "prone" or pose == "crouch":
+		ci.draw_line(c + Vector2(-r * 0.95, r * 0.9 if pose == "crouch" else r * 0.72), c + Vector2(r * 0.95, r * 0.9 if pose == "crouch" else r * 0.72), Color(col.r, col.g, col.b, col.a * 0.5), w * 0.6)
+	if pose == "jump":
+		# setinha pra cima
+		ci.draw_colored_polygon(PackedVector2Array([c + Vector2(r * 0.72, -r * 0.2), c + Vector2(r * 0.95, r * 0.12), c + Vector2(r * 0.49, r * 0.12)]), Color(col.r, col.g, col.b, col.a * 0.7))
+
 
 
 # Ícones vetoriais simples (brancos), usados nos botões e na mochila.
@@ -1200,19 +1299,8 @@ static func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -
 			ci.draw_rect(Rect2(c + Vector2(-r * 0.62, -r * 0.35), Vector2(r * 1.24, r * 0.75)), col)
 			ci.draw_rect(Rect2(c + Vector2(-r * 0.4, r * 0.38), Vector2(r * 0.85, r * 0.45)), col)
 			ci.draw_line(c + Vector2(-r * 0.6, 0.0), c + Vector2(r * 0.1, 0.0), Color(0, 0, 0, 0.45), w * 0.8)
-		"jump":
-			for o in [0.0, 0.45]:
-				ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.6, r * (0.15 + o)), c + Vector2(0, r * (-0.45 + o)), c + Vector2(r * 0.6, r * (0.15 + o))]), col, w * 1.2)
-		"prone":
-			# bonequinho deitado: cabeça, corpo na horizontal e braços pra frente, no chão
-			ci.draw_circle(c + Vector2(-r * 0.55, r * 0.05), r * 0.17, col)
-			ci.draw_line(c + Vector2(-r * 0.35, r * 0.15), c + Vector2(r * 0.6, r * 0.2), col, w * 1.4)
-			ci.draw_line(c + Vector2(-r * 0.3, r * 0.15), c + Vector2(-r * 0.75, r * 0.32), col, w)
-			ci.draw_line(c + Vector2(-r * 0.8, r * 0.55), c + Vector2(r * 0.8, r * 0.55), col, w)
-		"crouch", "stand":
-			var sg := 1.0 if k == "crouch" else -1.0
-			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.55, -r * 0.35 * sg), c + Vector2(0, r * 0.2 * sg), c + Vector2(r * 0.55, -r * 0.35 * sg)]), col, w * 1.2)
-			ci.draw_line(c + Vector2(-r * 0.7, r * 0.62), c + Vector2(r * 0.7, r * 0.62), col, w)
+		"jump", "prone", "crouch", "stand":
+			_figure(ci, c, r, k, col, w)
 		"reload", "reset":
 			ci.draw_arc(c, r * 0.65, -PI * 0.35, PI * 1.45, 28, col, w)
 			var tip := c + Vector2(cos(-PI * 0.35), sin(-PI * 0.35)) * r * 0.65
@@ -1225,24 +1313,20 @@ static func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -
 			ci.draw_line(c + Vector2(0, r), c + Vector2(0, r * 0.25), col, w)
 			ci.draw_circle(c, w * 0.7, Color(1, 0.3, 0.2))
 		"heal":
-			ci.draw_rect(Rect2(c - Vector2(r * 0.8, r * 0.6), Vector2(r * 1.6, r * 1.2)), col, false, w)
-			ci.draw_rect(Rect2(c - Vector2(r * 0.12, r * 0.42), Vector2(r * 0.24, r * 0.84)), Color(1, 0.3, 0.25))
-			ci.draw_rect(Rect2(c - Vector2(r * 0.42, r * 0.12), Vector2(r * 0.84, r * 0.24)), Color(1, 0.3, 0.25))
+			# maleta de primeiros socorros: alça, caixa de cantos redondos e cruz
+			ci.draw_arc(c + Vector2(0, -r * 0.52), r * 0.24, PI, TAU, 12, col, w)
+			_rrect(ci, Rect2(c - Vector2(r * 0.78, r * 0.5), Vector2(r * 1.56, r * 1.12)), r * 0.18, col)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.11, -r * 0.3), Vector2(r * 0.22, r * 0.72)), Color(0.85, 0.15, 0.12))
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.36, -r * 0.05), Vector2(r * 0.72, r * 0.22)), Color(0.85, 0.15, 0.12))
 		"bag":
-			ci.draw_arc(c + Vector2(0, -r * 0.55), r * 0.28, PI, TAU, 12, col, w)
-			ci.draw_rect(Rect2(c + Vector2(-r * 0.6, -r * 0.55), Vector2(r * 1.2, r * 1.35)), col, false, w)
-			ci.draw_rect(Rect2(c + Vector2(-r * 0.38, r * 0.15), Vector2(r * 0.76, r * 0.45)), col, false, w * 0.8)
-			ci.draw_line(c + Vector2(-r * 0.6, -r * 0.15), c + Vector2(r * 0.6, -r * 0.15), col, w * 0.8)
+			# mochila: alças em cima, corpo arredondado e bolso
+			ci.draw_arc(c + Vector2(0, -r * 0.58), r * 0.26, PI, TAU, 12, col, w)
+			_rrect(ci, Rect2(c + Vector2(-r * 0.6, -r * 0.6), Vector2(r * 1.2, r * 1.42)), r * 0.3, col)
+			var dk := Color(0, 0, 0, 0.42)
+			_rrect(ci, Rect2(c + Vector2(-r * 0.38, r * 0.12), Vector2(r * 0.76, r * 0.5)), r * 0.12, dk)
+			ci.draw_line(c + Vector2(-r * 0.46, -r * 0.18), c + Vector2(r * 0.46, -r * 0.18), dk, w * 0.7)
 		"sprint":
-			# bonequinho correndo
-			ci.draw_circle(c + Vector2(r * 0.28, -r * 0.72), r * 0.18, col)
-			var hip := c + Vector2(-r * 0.05, r * 0.15)
-			var neck := c + Vector2(r * 0.18, -r * 0.45)
-			ci.draw_line(neck, hip, col, w * 1.2)
-			ci.draw_polyline(PackedVector2Array([neck + Vector2(0, r * 0.1), c + Vector2(-r * 0.3, -r * 0.2), c + Vector2(-r * 0.55, r * 0.05)]), col, w)
-			ci.draw_polyline(PackedVector2Array([neck + Vector2(0, r * 0.1), c + Vector2(r * 0.45, -r * 0.05), c + Vector2(r * 0.7, -r * 0.35)]), col, w)
-			ci.draw_polyline(PackedVector2Array([hip, c + Vector2(r * 0.35, r * 0.45), c + Vector2(r * 0.25, r * 0.9)]), col, w)
-			ci.draw_polyline(PackedVector2Array([hip, c + Vector2(-r * 0.3, r * 0.55), c + Vector2(-r * 0.75, r * 0.6)]), col, w)
+			_figure(ci, c, r, "sprint", col, w)
 		"gear":
 			for i in 8:
 				var d := Vector2.RIGHT.rotated(i * TAU / 8.0)
@@ -1551,6 +1635,10 @@ func _draw_pad() -> void:
 	var font := ThemeDB.fallback_font
 	var c := s / 2.0
 	var white := Color(1, 1, 1, 0.9)
+	# granada sem pino: começo do arco em pontinhos que somem (discreto)
+	for gi in gren_path.size():
+		var gk := 1.0 - float(gi) / float(maxi(gren_path.size(), 1))
+		pad.draw_circle(gren_path[gi] - pad.global_position, 2.0 + 1.6 * gk, Color(1, 1, 1, 0.42 * gk))
 	if edit_mode:
 		pad.draw_rect(Rect2(Vector2.ZERO, s), Color(0, 0, 0, 0.72))
 		var msg := ("CARRO — " if edit_car else "A PÉ — ") + "arraste os botões; toque num botão e use o − / + do lado dele pra mudar o tamanho."

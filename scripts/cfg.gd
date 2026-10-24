@@ -19,13 +19,14 @@ static var v := {
 	"layout": {},        # botão -> [x (fração da tela), y (fração), escala]
 	"invert": false,
 	"blood": true,       # respingo de sangue no acerto
-	"shadows": true,     # sombras
-	"tex_detail": true,  # textura do chão com mais detalhe
+	"shadows": false,    # sombras (desligadas: mais leve, sem serrilhado e sem chão "estourado")
+	"tex_detail": false, # textura do chão com mais detalhe
+	"btn_alpha": 0.85,   # transparência dos botões (0.3 bem transparente .. 1 opaco)
 	"view": 1,           # distância de visão: 0 perto, 1 média, 2 longe
 	"grass": true,       # tufos de grama
 	"music": true,       # música do lobby
 	"music_vol": 0.7,    # volume da música (0 a 1)
-	"ver": 2,            # versão das configurações (migra padrões novos)
+	"ver": 3,            # versão das configurações (migra padrões novos)
 }
 static var _loaded := false
 
@@ -45,6 +46,12 @@ static func load_cfg() -> void:
 		v["aim_assist"] = 2
 		v["layout"] = {}
 		v["ver"] = 2
+		save()
+	# versão 3: sem sombra e sem textura detalhada por padrão (mais leve e o clima fica melhor)
+	if int(v.get("ver", 2)) < 3:
+		v["shadows"] = false
+		v["tex_detail"] = false
+		v["ver"] = 3
 		save()
 
 

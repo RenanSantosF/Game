@@ -804,13 +804,13 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 	if Weapons.is_gun(kind):
 		var am := Weapons.ammo_of(kind)
 		var off := Vector3(0.45, 0, 0.3)
-		items.append({"pos": pos + off, "kind": am, "n": Weapons.default_count(am), "door_out": dout, "door_in": din, "up": up})
+		items.append({"pos": pos + off, "kind": am, "n": Weapons.ammo_pack(kind), "door_out": dout, "door_in": din, "up": up})
 	# mais itens pelo mapa: cada ponto de saque ganha às vezes um ou dois itens a mais do lado
 	# (sorteio próprio pela posição: não mexe na sequência do mapa)
 	var xr := RandomNumberGenerator.new()
 	xr.seed = hash(Vector3i(int(pos.x * 10.0), int(pos.y * 10.0), int(pos.z * 10.0)))
-	# muito loot: todo ponto ganha 2 a 4 itens a mais (arma vem com munição do lado)
-	var extra := 2
+	# muito loot: todo ponto ganha 3 a 5 itens a mais (arma vem com munição do lado)
+	var extra := 3
 	if xr.randf() < 0.6:
 		extra += 1
 	if xr.randf() < 0.3:
@@ -822,7 +822,7 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up})
 		if Weapons.is_gun(ek):
 			var am2 := Weapons.ammo_of(ek)
-			items.append({"pos": pos + eo + Vector3(0.3, 0, 0.2), "kind": am2, "n": Weapons.default_count(am2), "door_out": dout, "door_in": din, "up": up})
+			items.append({"pos": pos + eo + Vector3(0.3, 0, 0.2), "kind": am2, "n": Weapons.ammo_pack(ek), "door_out": dout, "door_in": din, "up": up})
 
 
 func loot_kind(rng: RandomNumberGenerator, gun: bool) -> String:
@@ -2529,7 +2529,8 @@ func set_view(dist: float) -> void:
 			(e[0] as MeshInstance3D).visibility_range_end = minf(float(e[1]), dist + 70.0)
 	for mi in far_lod:
 		if is_instance_valid(mi):
-			(mi as MeshInstance3D).visibility_range_begin = dist + 50.0
+			# começa exatamente onde o detalhe some (os dois juntos "brigavam" e piscavam)
+			(mi as MeshInstance3D).visibility_range_begin = dist + 70.0
 	for e in _scatter_nodes:
 		var mmi: MultiMeshInstance3D = e[0]
 		var kind: String = e[1]
@@ -2880,12 +2881,12 @@ func _build_env() -> void:
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.94
 	env.adjustment_contrast = 1.12
-	env.adjustment_brightness = 1.05
+	env.adjustment_brightness = 0.99
 	# chão em volta do mapa até o horizonte (só visual)
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
 	var h := SIZE / 2.0
-	var far := 1000.0
+	var far := 760.0
 	var y := 40.0
 	var oc := Color(0.5, 0.56, 0.4)
 	var rects := [[-far, -far, far, -h], [-far, h, far, far], [-far, -h, -h, h], [h, -h, far, h]]
@@ -2894,7 +2895,7 @@ func _build_env() -> void:
 	# serra ao longe em volta de tudo (a névoa apaga): o horizonte não fica com borda reta
 	var segs := 72
 	var mtn := func(a: float, k: float) -> Vector3:
-		var r := lerpf(880.0, 1380.0, k)
+		var r := lerpf(720.0, 1020.0, k)
 		var ht := 30.0 + k * (90.0 + 70.0 * (0.5 + 0.5 * sin(a * 5.0 + 1.3)) + 40.0 * sin(a * 13.0)) * (1.0 - 0.35 * k * k)
 		return Vector3(cos(a) * r, ht, sin(a) * r)
 	for i in segs:

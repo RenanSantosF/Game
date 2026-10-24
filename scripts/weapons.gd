@@ -13,9 +13,9 @@ const DATA := {
 	"m4a1": {"name": "M4A1", "dmg": 46.0, "rate": 7.5, "mag": 30, "reload": 2.4, "spread": 0.9, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.6, "recoil": 0.012, "len": 0.85, "type": "rifle", "slot": 0, "ammo": "a556", "bloom": 0.15, "bloom_max": 2.2},
 	"scar": {"name": "SCAR-L", "dmg": 50.0, "rate": 7.0, "mag": 30, "reload": 2.5, "spread": 0.9, "range": 170.0, "pellets": 1, "head": 2.2, "zoom": 1.8, "recoil": 0.015, "len": 0.88, "type": "scar", "slot": 0, "ammo": "a556", "bloom": 0.2, "bloom_max": 2.6},
 	"ak47": {"name": "AK-47", "dmg": 60.0, "rate": 6.5, "mag": 30, "reload": 2.6, "spread": 1.1, "range": 160.0, "pellets": 1, "head": 2.2, "zoom": 1.5, "recoil": 0.024, "len": 0.88, "type": "ak", "slot": 0, "ammo": "a556", "bloom": 0.5, "bloom_max": 4.5},
-	"r870": {"name": "Remington 870", "dmg": 30.0, "rate": 0.75, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.09, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
-	"m1014": {"name": "M1014", "dmg": 24.0, "rate": 1.4, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.075, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
-	"kar98": {"name": "Kar98k", "dmg": 130.0, "rate": 0.65, "mag": 5, "reload": 3.2, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 3.0, "zoom": 3.0, "recoil": 0.06, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
+	"r870": {"name": "Remington 870", "dmg": 37.0, "rate": 0.6, "mag": 5, "reload": 3.2, "spread": 5.0, "range": 32.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.12, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"m1014": {"name": "M1014", "dmg": 29.0, "rate": 1.05, "mag": 6, "reload": 3.4, "spread": 6.0, "range": 28.0, "pellets": 8, "head": 1.6, "zoom": 1.0, "recoil": 0.1, "len": 1.0, "type": "shotgun", "slot": 0, "ammo": "a12"},
+	"kar98": {"name": "Kar98k", "dmg": 130.0, "rate": 0.65, "mag": 5, "reload": 3.2, "spread": 3.5, "range": 350.0, "pellets": 1, "head": 3.0, "zoom": 4.0, "recoil": 0.06, "len": 1.1, "type": "bolt", "slot": 0, "ammo": "a762"},
 	"awm": {"name": "AWM", "dmg": 170.0, "rate": 0.5, "mag": 5, "reload": 4.2, "spread": 4.0, "range": 400.0, "pellets": 1, "head": 2.6, "zoom": 4.0, "recoil": 0.08, "len": 1.2, "type": "sniper", "slot": 0, "ammo": "a762"},
 }
 
@@ -43,7 +43,7 @@ const ITEMS := {
 	"a762": {"name": "Munição de sniper", "w": 1.0, "count": 10, "kind": "ammo"},
 	"a12": {"name": "Cartucho 12", "w": 0.8, "count": 12, "kind": "ammo"},
 	"bandage": {"name": "Bandagem", "w": 2.0, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
-	"med": {"name": "Kit médico", "w": 8.0, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
+	"med": {"name": "Kit médico", "w": 22.0, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
 	"drink": {"name": "Energético", "w": 4.0, "count": 2, "kind": "heal", "heal": 50.0, "time": 2.5},
 	"grenade": {"name": "Granada", "w": 6.0, "count": 1, "kind": "throw"},
 	"vest1": {"name": "Colete nível 1", "kind": "gear", "level": 1},
@@ -67,17 +67,17 @@ const ITEMS := {
 	"scope8": {"name": "Luneta 8x", "stack": 1, "count": 1, "kind": "att", "cat": "sight", "level": 3},
 	"silencer": {"name": "Silenciador", "stack": 1, "count": 1, "kind": "att", "cat": "muzzle", "level": 2},
 }
-const ATTS := ["stock1", "stock2", "stock3", "mag1", "mag2", "mag3", "holo", "scope2", "scope4", "scope8", "silencer"]
+const ATTS := ["stock1", "stock2", "stock3", "mag1", "mag2", "mag3", "scope2", "scope4", "silencer"]
 # o que cada tipo de arma aceita (escopeta não tem mira nem silenciador)
 const FITS := {
-	"pistol": ["mag", "holo", "muzzle"],
-	"smg": ["stock", "mag", "holo", "scope2", "muzzle"],
-	"rifle": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
-	"scar": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
-	"ak": ["stock", "mag", "holo", "scope2", "scope4", "muzzle"],
+	"pistol": ["mag", "scope2", "muzzle"],
+	"smg": ["stock", "mag", "scope2", "scope4", "muzzle"],
+	"rifle": ["stock", "mag", "scope2", "scope4", "muzzle"],
+	"scar": ["stock", "mag", "scope2", "scope4", "muzzle"],
+	"ak": ["stock", "mag", "scope2", "scope4", "muzzle"],
 	"shotgun": ["stock", "mag"],
-	"bolt": ["mag", "scope8", "muzzle"],
-	"sniper": ["mag", "scope8", "muzzle"],
+	"bolt": ["mag", "muzzle"],     # luneta 4x própria
+	"sniper": ["mag", "muzzle"],
 }
 const AMMO := ["a9", "a556", "a762", "a12"]
 const BAGS := [80, 160, 240, 320]   # espaço sem mochila e com mochila nível 1, 2 e 3
@@ -89,14 +89,13 @@ const RARITY := [Color(0.9, 0.9, 0.9), Color(0.88, 0.8, 0.58), Color(0.45, 0.8, 
 # Loot espalhado pelo mapa (repetido = mais comum)
 const LOOT := [
 	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
-	"bandage", "bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med", "med", "med",
-	"bandage", "bandage", "med", "grenade", "grenade",
+	"med", "med", "med", "med", "med", "med", "med", "grenade", "grenade",
 	"a9", "a9", "a9", "a556", "a556", "a556", "a556", "a762", "a762", "a12", "a12",
 	"vest1", "vest1", "vest2", "vest3", "helmet1", "helmet1", "helmet2", "helmet3", "bag1", "bag1", "bag2", "bag3",
-	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "holo", "holo", "scope2", "scope4", "scope8", "silencer",
+	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "scope2", "scope2", "scope2", "scope4", "scope4", "silencer",
 ]
 const LOOT_GUNS := ["mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "mp5", "m4a1", "ak47", "ump45", "glock"]
-const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest2", "vest3", "helmet2", "helmet3", "scope4", "scope8", "mag3", "stock3", "med", "bag2", "bag3", "a556", "a762"]
+const LOOT_MILITARY := ["m4a1", "scar", "ak47", "kar98", "awm", "vest2", "vest3", "helmet2", "helmet3", "scope4", "scope4", "mag3", "stock3", "med", "bag2", "bag3", "a556", "a762"]
 
 const SCOPES := ["kar98", "awm"]   # armas com luneta própria (mira preta na tela inteira)
 
@@ -186,6 +185,13 @@ static func item_name(kind: String) -> String:
 	if kind == "box":
 		return "Caixa de loot"
 	return kind
+
+
+# munição que vem do lado de uma arma no chão: pistola 12 balas, o resto o pente padrão (30 fuzil/SMG)
+static func ammo_pack(gun: String) -> int:
+	if is_gun(gun) and get_w(gun)["type"] == "pistol":
+		return 12
+	return default_count(ammo_of(gun))
 
 
 static func default_count(kind: String) -> int:

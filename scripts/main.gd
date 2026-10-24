@@ -1059,7 +1059,7 @@ func _sandbox_kit(p: Player) -> void:
 		_give(p, k, 1, 100.0 if k == "vest3" else null)
 	for k in [["a9", 120], ["a556", 150], ["a762", 30], ["a12", 40]]:
 		_give(p, k[0], k[1], null)
-	for k in [["med", 6], ["bandage", 12], ["grenade", 6]]:
+	for k in [["med", 6], ["grenade", 6]]:
 		_give(p, k[0], k[1], null)
 
 
@@ -1178,10 +1178,11 @@ func _build_world() -> void:
 		return
 	n_static = world.items.size()
 	items_avail = []
+	_item_grid.clear()
 	for i in world.items.size():
 		items_avail.append(true)
 		if not dedicated:
-			_make_item_node(i)
+			_grid_add(i)
 	_spawn_vehicles()
 
 
@@ -1468,12 +1469,16 @@ func _grenade_hold(lp: Player) -> void:
 
 
 func _grenade_tick(lp: Player, delta: float) -> void:
+	lp.gren_hold = gren_t >= 0.0
 	if gren_t < 0.0:
+		if not hud.gren_path.is_empty():
+			hud.gren_path = PackedVector2Array()
 		return
 	if not lp.alive or lp.count("grenade") <= 0:
 		gren_t = -1.0
 		return
 	gren_t += delta
+	hud.gren_path = _gren_preview(lp)
 	_gren_beep -= delta
 	if _gren_beep <= 0.0:
 		_gren_beep = 1.0 if gren_t < GREN_FUSE - 1.2 else 0.3
@@ -1484,14 +1489,41 @@ func _grenade_tick(lp: Player, delta: float) -> void:
 		_to_server("req_grenade", [lp.global_position + Vector3(0, 1.0, 0), Vector3.ZERO, 0.02])
 
 
+func _gren_launch(lp: Player) -> Array:
+	var fwd := -cam.global_transform.basis.z
+	var from := lp.global_position + Vector3(0, 1.6, 0) + Vector3(fwd.x, 0, fwd.z).normalized() * 0.5
+	return [from, (fwd + Vector3(0, 0.35, 0)).normalized() * 17.0]
+
+
+# pedaço do começo do arco da granada (pontinhos discretos na tela)
+func _gren_preview(lp: Player) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var l := _gren_launch(lp)
+	var p: Vector3 = l[0]
+	var v: Vector3 = l[1]
+	var space := get_world_3d().direct_space_state
+	var dt := 0.06
+	for i in 14:
+		var p1 := p + v * dt
+		v.y -= 18.0 * dt
+		var r := space.intersect_ray(PhysicsRayQueryParameters3D.create(p, p1, 1))
+		if not r.is_empty():
+			break
+		p = p1
+		if i >= 2 and not cam.is_position_behind(p):
+			out.append(cam.unproject_position(p))
+	return out
+
+
 func _throw_grenade(lp: Player) -> void:
 	if gren_t < 0.0:
 		return
 	var fuse := maxf(GREN_FUSE - gren_t, 0.05)
 	gren_t = -1.0
-	var fwd := -cam.global_transform.basis.z
-	var from := lp.global_position + Vector3(0, 1.6, 0) + Vector3(fwd.x, 0, fwd.z).normalized() * 0.5
-	var vel := (fwd + Vector3(0, 0.35, 0)).normalized() * 17.0
+	lp.gren_hold = false
+	var l := _gren_launch(lp)
+	var from: Vector3 = l[0]
+	var vel: Vector3 = l[1]
 	lp.punch_t = 0.3
 	sfx("punch_swing", -4.0)
 	_to_server("req_grenade", [from, vel, fuse])
@@ -1641,6 +1673,66 @@ func _snap_items() -> void:
 		var r := space.intersect_ray(q)
 		if not r.is_empty():
 			n.position.y = r["position"].y + 0.01
+			# guarda a altura certa (quando o item for montado de novo não precisa procurar)
+			var ip: Vector3 = world.items[i]["pos"]
+			world.items[i]["pos"] = Vector3(ip.x, n.position.y, ip.z)
+			world.items[i]["snapped"] = true
+
+
+# Itens no chão aparecem só perto da câmera: o mapa tem milhares e montar todos pesa no celular.
+# Ficam numa grade de 40 m; a cada 0,3 s cria os de perto (aos poucos) e apaga os de longe.
+const ITEM_CELL := 40.0
+const ITEM_IN := 105.0
+const ITEM_OUT := 140.0
+var _item_grid := {}
+var _item_live := {}       # célula -> true (itens dela montados)
+var _item_build_q: Array = []
+var _item_t := 0.0
+
+
+func _grid_add(i: int) -> void:
+	var p: Vector3 = world.items[i]["pos"]
+	var c := Vector2i(floori(p.x / ITEM_CELL), floori(p.z / ITEM_CELL))
+	if not _item_grid.has(c):
+		_item_grid[c] = []
+	_item_grid[c].append(i)
+
+
+func _stream_items(delta: float) -> void:
+	if dedicated or cam == null:
+		return
+	# monta poucos por quadro (sem engasgo)
+	var built := 0
+	while not _item_build_q.is_empty() and built < 60:
+		var i: int = _item_build_q.pop_back()
+		if i < items_avail.size() and items_avail[i] and (i >= item_nodes.size() or item_nodes[i] == null):
+			_make_item_node(i)
+			built += 1
+	_item_t -= delta
+	if _item_t > 0.0:
+		return
+	_item_t = 0.3
+	var cp := cam.global_position
+	var c0 := Vector2i(floori(cp.x / ITEM_CELL), floori(cp.z / ITEM_CELL))
+	var rc := int(ceil(ITEM_OUT / ITEM_CELL)) + 1
+	for dx in range(-rc, rc + 1):
+		for dz in range(-rc, rc + 1):
+			var c := c0 + Vector2i(dx, dz)
+			if not _item_grid.has(c):
+				continue
+			var cc := Vector2((c.x + 0.5) * ITEM_CELL, (c.y + 0.5) * ITEM_CELL)
+			var d := cc.distance_to(Vector2(cp.x, cp.z))
+			if d < ITEM_IN and not _item_live.has(c):
+				_item_live[c] = true
+				_item_build_q.append_array(_item_grid[c])
+	for c in _item_live.keys():
+		var cc := Vector2((c.x + 0.5) * ITEM_CELL, (c.y + 0.5) * ITEM_CELL)
+		if cc.distance_to(Vector2(cp.x, cp.z)) > ITEM_OUT:
+			_item_live.erase(c)
+			for i in _item_grid[c]:
+				if i < item_nodes.size() and item_nodes[i]:
+					item_nodes[i].queue_free()
+					item_nodes[i] = null
 
 
 func _make_item_node(i: int) -> void:
@@ -1664,7 +1756,8 @@ func _make_item_node(i: int) -> void:
 		n.add_child(l)
 	items_root.add_child(n)
 	item_nodes[i] = n
-	_snap_q.append(i)
+	if not it.get("snapped", false):
+		_snap_q.append(i)
 
 
 # música do lobby: rock/metal (faixas CC0, ver sounds/CREDITOS.txt), uma sorteada, em loop no menu
@@ -1762,7 +1855,7 @@ func _enter_game() -> void:
 	cam = Camera3D.new()
 	cam.fov = 75.0
 	cam.far = 400.0
-	cam.near = 0.04
+	cam.near = 0.12     # perto demais estragava a profundidade (objetos longe "brigavam" e piscavam)
 	spring.add_child(cam)
 	cam.current = true
 	cam_yaw.position = Vector3(0, 20, 0)
@@ -1843,7 +1936,7 @@ func _apply_quality() -> void:
 	world.set_view(far * 0.8)
 	# a câmera enxerga o mapa todo: depois da distância de visão entra o cenário simples (blocos),
 	# então longe não fica só cinza; a névoa é mais leve (bruma de guerra, mas dá pra ver o horizonte)
-	cam.far = 1500.0
+	cam.far = 1050.0
 	fog_base = 0.42 / far
 	if env:
 		env.environment.fog_density = fog_base
@@ -1880,6 +1973,12 @@ func plane_j1() -> float:
 
 func can_leave_plane() -> bool:
 	return plane_frac() >= plane_j0() and plane_frac() <= plane_j1() + 0.01
+
+
+# onde o jogador aparece ao saltar: na porta de trás, na altura do avião (não flutuando embaixo dele)
+func plane_exit() -> Vector3:
+	var dir := (plane_b - plane_a).normalized()
+	return plane_pos() + Vector3(0, 3.6, 0) - dir * 9.0
 
 
 func plane_pos() -> Vector3:
@@ -2004,6 +2103,7 @@ func _process(delta: float) -> void:
 	if not in_game:
 		return
 	_snap_items()
+	_stream_items(delta)
 	_grenades_tick(delta)
 	# carros dos outros: seguem a posição recebida; o motorista vai junto no banco
 	for v: Vehicle in vehicles:
@@ -2455,6 +2555,16 @@ func _is_better(lp: Player, kind: String, extra = null) -> bool:
 				if str(a).rstrip("0123456789") == kind.rstrip("0123456789") and Weapons.level_of(str(a)) >= lv:
 					return false
 		return true
+	if Weapons.ITEMS.has(kind) and Weapons.ITEMS[kind]["kind"] == "ammo":
+		# munição só brilha se for de uma arma equipada (pistola não conta) e estiver faltando
+		var need := {"a556": 170, "a9": 170, "a762": 20, "a12": 30}
+		for g in lp.guns:
+			var gid: String = g["id"]
+			if gid == "" or not Weapons.is_gun(gid) or Weapons.get_w(gid)["type"] == "pistol":
+				continue
+			if Weapons.ammo_of(gid) == kind:
+				return lp.count(kind) < int(need.get(kind, 0))
+		return false
 	return false
 
 
@@ -2563,7 +2673,7 @@ func _on_action(act: String) -> void:
 	match act:
 		"leave":
 			if lp.air == 3 and phase == PLANE and can_leave_plane():
-				lp.leave_plane(plane_pos() + Vector3(0, -4, 0))
+				lp.leave_plane(plane_exit())
 				lp.velocity = Vector3.ZERO
 				sfx("jump")
 		"chute":
@@ -2654,20 +2764,14 @@ func _start_heal(lp: Player, kind: String) -> void:
 		return
 	if kind == "":
 		# escolhe o que faz mais sentido pra vida que falta
-		var opts := []
-		if lp.hp < 110.0:
-			opts = ["med", "drink", "bandage"]
-		elif lp.hp < 160.0:
-			opts = ["drink", "bandage", "med"]
-		else:
-			opts = ["bandage", "drink", "med"]
-		kind = "bandage"
+		var opts := ["med", "drink", "bandage"]
+		kind = "med"
 		for o in opts:
 			if lp.count(o) > 0:
 				kind = o
 				break
 	if lp.count(kind) <= 0:
-		hud.center("Sem bandagem nem kit médico", 1.2, "bad")
+		hud.center("Sem kit médico", 1.2, "bad")
 		return
 	lp.heal_kind = kind
 	lp.heal_t = float(Weapons.ITEMS[kind]["time"])
@@ -2771,7 +2875,7 @@ func _local_fire(lp: Player) -> void:
 	if lp.scoped:
 		spread *= float(w["ads"])
 	if lp.crouch:
-		spread *= 0.7
+		spread *= 0.6
 	if lp.prone:
 		spread *= 0.5
 	# andando o tiro abre bem mais (parado/agachado é que é preciso)
@@ -3275,7 +3379,7 @@ func _server_board() -> void:
 func server_bot_jump(p: Player) -> void:
 	if p.air != 3:
 		return
-	p.leave_plane(plane_pos() + Vector3(0, -4, 0))
+	p.leave_plane(plane_exit())
 	# escolhe uma localidade perto de onde pulou (às vezes um ponto qualquer)
 	var here := Vector2(p.position.x, p.position.z)
 	var opts := []
@@ -4237,6 +4341,11 @@ func on_item(i: int, avail: bool) -> void:
 	items_avail[i] = avail
 	if i < item_nodes.size() and item_nodes[i]:
 		item_nodes[i].visible = avail
+	elif avail and not dedicated and i < world.items.size():
+		# voltou a existir (partida nova): monta se estiver perto
+		var p: Vector3 = world.items[i]["pos"]
+		if _item_live.has(Vector2i(floori(p.x / ITEM_CELL), floori(p.z / ITEM_CELL))):
+			_item_build_q.append(i)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -4265,6 +4374,7 @@ func spawn_item(i: int, pos: Vector3, kind: String, n: int, extra, list: Array, 
 		items_avail.append(true)
 	if not dedicated:
 		_make_item_node(i)
+		_grid_add(i)
 		# barulho de item caindo no chão (largou da mochila / trocou de arma)
 		if nm == "" and in_game and not _quiet_spawn and sfxn:
 			sfxn.play_at("drop", pos, -3.0, 30.0)

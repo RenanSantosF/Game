@@ -48,6 +48,7 @@ func _ready() -> void:
 		"Controle total: sem ajuda. Gruda sem mira: a mira puxa pro inimigo só no tiro sem mirar. Gruda sempre: puxa também mirando. Arrastar pra cima enquanto atira sobe pra cabeça (capa).")
 	_slider(vb, "Sensibilidade", "sens", 0.3, 2.5)
 	_slider(vb, "Sensibilidade mirando", "sens_ads", 0.3, 2.5)
+	_slider(vb, "Transparência dos botões", "btn_alpha", 0.25, 1.0)
 	_toggle(vb, "Inverter vertical", "invert")
 	var eb := _button("EDITAR POSIÇÃO DOS BOTÕES", func():
 		edit_buttons.emit())

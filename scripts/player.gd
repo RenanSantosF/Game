@@ -58,6 +58,10 @@ var inv := {}
 var heal_t := 0.0
 var heal_kind := ""
 var punch_t := 0.0
+var gren_hold := false      # segurando a granada sem pino (braço pra trás, pronto pra jogar)
+var _gren_k := 0.0
+var _chute_age := -1.0      # tempo desde que o paraquedas abriu (tranco da abertura)
+var _gren_mi: MeshInstance3D
 var vault_t := -1.0
 var _vault := []
 var aim_t := 0.0         # tempo virado pra mira depois de atirar
@@ -228,7 +232,7 @@ func count(kind: String) -> int:
 
 
 func flags() -> int:
-	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8) | (int(reload_t > 0.0) << 9) | (int(prone) << 10)
+	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8) | (int(reload_t > 0.0) << 9) | (int(prone) << 10) | (int(gren_hold) << 11)
 
 
 func set_flags(f: int) -> void:
@@ -240,6 +244,8 @@ func set_flags(f: int) -> void:
 	if ((f >> 5) & 1) == 1 and punch_t <= 0.0:
 		punch_t = 0.3
 	_remote_air = ((f >> 6) & 1) == 1
+	if not sim_local():
+		gren_hold = ((f >> 11) & 1) == 1
 	_remote_car = ((f >> 7) & 1) == 1
 	if not sim_local():
 		stun_t = 0.3 if ((f >> 8) & 1) == 1 else 0.0
@@ -326,11 +332,11 @@ static func _chute_mesh() -> Mesh:
 		# perfil de asa e células estufadas (entre costuras) só em cima
 		var cell := fmod(u * CELLS, 1.0)
 		var puff := 0.55 + 0.45 * sin(cell * PI)
-		var thick := 0.52 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
+		var thick := 0.82 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
 		if side > 0.0:
 			y += thick
 		else:
-			y -= 0.04 * sin(PI * v)
+			y -= 0.13 * sin(PI * v)
 		# o arco "empurra" a altura pra fora do centro (normal do arco)
 		return Vector3(x, y, z)
 	for side in [1.0, -1.0]:
@@ -717,6 +723,11 @@ func _physics_process(delta: float) -> void:
 		pitch = lerpf(pitch, target_pitch, minf(1.0, 15.0 * delta))
 		est_speed = lerpf(est_speed, Vector2(position.x - _last_pos.x, position.z - _last_pos.z).length() / maxf(delta, 0.001), 0.2)
 		_last_pos = position
+	if visual and air == 3 and model and model.visible:
+		# dentro do avião ninguém aparece (nem de longe, sem esperar a animação)
+		model.visible = false
+		if chute:
+			chute.visible = false
 	if visual:
 		_steps(delta, sim)
 		if game.near_cam(position, 140.0):
@@ -968,6 +979,9 @@ func _vault_step(delta: float) -> void:
 	if k >= 1.0:
 		vault_t = -1.0
 		collision_mask = 1
+		# termina com o pé batendo no chão do outro lado
+		if game:
+			game.on_step(self, false)
 
 
 # ---------------- passos ----------------
@@ -1066,6 +1080,22 @@ func _animate(delta: float, sim: bool) -> void:
 		model.rotation.x = sin(ct * 1.05) * 0.1
 		chute.rotation.z = sin(ct * 1.35 - 0.5) * 0.08 + sin(ct * 2.9) * 0.02
 		chute.rotation.x = sin(ct * 1.05 - 0.5) * 0.05
+		# abertura bruta: o velame estoura de uma vez (passa do tamanho e volta) e o corpo leva o tranco
+		if _chute_age < 0.0:
+			_chute_age = 0.0
+			if is_local and game:
+				game._shake = maxf(game._shake, 0.75)
+		_chute_age += delta
+		var ca := _chute_age
+		if ca < 1.6:
+			var inf := 1.0 - exp(-ca * 7.0) * cos(ca * 15.0)
+			chute.scale = Vector3(lerpf(0.15, 1.0, inf), lerpf(0.35, 1.0, inf), lerpf(0.1, 1.0, inf))
+			var jolt := exp(-ca * 3.5)
+			model.position.y += -0.55 * jolt * cos(ca * 11.0)
+			model.rotation.x += 0.75 * jolt * sin(ca * 9.0 + 0.6)
+			model.rotation.z += 0.22 * jolt * sin(ca * 13.0)
+		else:
+			chute.scale = Vector3.ONE
 		if sol.has_anim("Chute"):
 			sol.play("Chute", 0.3)
 		else:
@@ -1073,6 +1103,7 @@ func _animate(delta: float, sim: bool) -> void:
 			hands = [model.global_transform * Vector3(-0.3, 1.95, -0.05), model.global_transform * Vector3(0.3, 1.95, -0.05)]
 		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
+	_chute_age = -1.0
 	model.position.y = 0.0
 	model.rotation.z = lerpf(model.rotation.z, 0.0, minf(1.0, 8.0 * delta))
 	# degrau/rampa irregular: o corpo acompanha a altura suave (o pulo da colisão não aparece)
@@ -1294,7 +1325,30 @@ func _animate(delta: float, sim: bool) -> void:
 	if vk > 0.0:
 		# mão de apoio no batente
 		hands = [model.global_transform * Vector3(-0.25, 0.95, -0.45), hands[1] if hands.size() == 2 else model.global_transform * Vector3(0.25, 0.95, -0.4)]
-	if hands.size() != 2 or reload_t > 0.0 or heal_t > 0.0 or punch_t > 0.0 or vk > 0.0:
+	# granada sem pino: braço de apoio aponta pra frente e a mão da granada fica atrás da cabeça
+	_gren_k = move_toward(_gren_k, 1.0 if (gren_hold and car < 0 and heal_t <= 0.0) else 0.0, delta * 7.0)
+	if _gren_k > 0.0:
+		var mg2 := model.global_transform
+		var e3 := _gren_k * _gren_k * (3.0 - 2.0 * _gren_k)
+		var hl := mg2 * Vector3(-0.2, 1.36, -0.36)
+		var hr := mg2 * Vector3(0.24, 1.6 + sin(Time.get_ticks_msec() * 0.004) * 0.01, 0.2)
+		if hands.size() == 2:
+			hands = [(hands[0] as Vector3).lerp(hl, e3), (hands[1] as Vector3).lerp(hr, e3)]
+		else:
+			hands = [hl, hr]
+		if gun:
+			gun.visible = gun.visible and _gren_k < 0.5
+		if _gren_mi == null:
+			_gren_mi = MeshInstance3D.new()
+			_gren_mi.mesh = Weapons.item_mesh("grenade")
+			_gren_mi.material_override = U.wmat()
+			_gren_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(_gren_mi)
+		_gren_mi.visible = _gren_k > 0.5
+		_gren_mi.global_position = hr + mg2.basis.z * 0.02 - mg2.basis.y * 0.02
+	elif _gren_mi:
+		_gren_mi.visible = false
+	if hands.size() != 2 or reload_t > 0.0 or heal_t > 0.0 or punch_t > 0.0 or vk > 0.0 or _gren_k > 0.0:
 		hand_dirs = []
 	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(0.0 if cr < 0.0 else _crouch_k, 0.85 * vk), hands, hand_dirs, pole_k)
 
@@ -1591,7 +1645,7 @@ func _bot_gate() -> Array:
 func _bot_try_heal(moving: bool) -> bool:
 	if heal_t > 0.0:
 		return true
-	if hp < 120.0 and count("med") > 0:
+	if hp < 150.0 and count("med") > 0:
 		heal_kind = "med"
 	elif hp < 160.0 and count("drink") > 0:
 		heal_kind = "drink"
@@ -1690,7 +1744,7 @@ func wants(kind: String) -> bool:
 		"bandage":
 			return count("bandage") < 10 and free_slots() > 0
 		"med":
-			return count("med") < 4 and free_slots() > 0
+			return count("med") < 3 and free_slots() >= int(Weapons.ITEMS["med"]["w"])
 		"drink":
 			return count("drink") < 5 and free_slots() > 0
 		"vest1", "vest2", "vest3":
