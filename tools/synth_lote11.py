@@ -5,7 +5,7 @@ Fontes (CC0, opengameart.org):
   - "equipment clicks III" (LFA): equipment_clicks3.wav  -> estalos de ferrolho de rifle de verdade
   - "Gun reload sounds" (SpringySpringo): assaultriflereload1_0.wav, shotguncock_0.wav
 Uso: python3 tools/synth_lote11.py <pasta_com_os_wav_baixados>
-Precisa de ffmpeg, numpy e scipy. Saída: sounds/switch.wav, sounds/kill.wav
+Precisa de ffmpeg, numpy e scipy. Saída: sounds/switch.wav, kill.wav, shot_silenced.wav, reload_out.wav, reload_mid.wav, reload_in.wav
 """
 import os
 import subprocess
@@ -92,6 +92,16 @@ def soft_clip(x, drive):
     return np.tanh(x * drive) / np.tanh(drive)
 
 
+def load_own(name):
+    with wave.open(os.path.join(ROOT, "sounds", name + ".wav")) as w:
+        x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float64) / 32767.0
+        if w.getnchannels() == 2:
+            x = x.reshape(-1, 2).mean(axis=1)
+        if w.getframerate() != R:
+            x = resample(x, int(len(x) * R / w.getframerate()))
+    return x
+
+
 clicks = load("equipment_clicks3.wav")
 rifle = load("assaultriflereload1_0.wav")
 pump = load("shotguncock_0.wav")
@@ -138,4 +148,37 @@ rum = lp(rng.uniform(-1, 1, int(1.3 * R)), 180) * np.exp(-t_(1.3) * 2.5)
 place(k, rum, 0.0, 0.9)
 k = soft_clip(k / (np.max(np.abs(k)) + 1e-9), 2.2)
 save("kill", room(k, 0.8, 0.3), 0.95)
-print("ok: switch.wav, kill.wav")
+
+# ---- silenciador: tiro de verdade (AR-15 do jogo) abafado e grave + mecanismo batendo ----
+rf = load_own("shot_rifle")
+sil = lp(lp(rf, 1300), 1800)
+sil *= np.exp(-np.arange(len(sil)) / R * 9.0)
+sil = sil[: int(0.42 * R)]
+body = np.zeros(int(0.45 * R))
+place(body, sil, 0.0, 1.0)
+place(body, thunk(0.18, 150, 70, 22), 0.0, 0.9)
+# ar saindo pelo silenciador ("tfff" grave, não fino)
+puff = lp(hp(rng.uniform(-1, 1, int(0.12 * R)), 200), 1600) * np.exp(-t_(0.12) * 30)
+place(body, puff, 0.004, 0.45)
+# ferrolho voltando (metal), mais baixo
+place(body, pitch(cut(clicks, 2.16, 0.12), 0.75), 0.055, 0.35)
+body = soft_clip(body / (np.max(np.abs(body)) + 1e-9), 1.4)
+save("shot_silenced", room(body, 0.18, 0.12), 0.8)
+
+# ---- recarga: tira o pente (raspa + clique), põe o pente (TCHAK), puxa o ferrolho (CHK-CHAK) ----
+ro = np.zeros(int(0.45 * R))
+place(ro, pitch(cut(rifle, 0.25, 0.12), 0.85), 0.0, 0.8)
+place(ro, hp(lp(rng.uniform(-1, 1, int(0.25 * R)), 2500), 300) * np.sin(np.linspace(0, np.pi, int(0.25 * R))) ** 2, 0.1, 0.25)
+place(ro, thunk(0.12, 230, 110, 30), 0.01, 0.4)
+save("reload_out", room(ro / (np.max(np.abs(ro)) + 1e-9), 0.15, 0.1), 0.85)
+rm = np.zeros(int(0.4 * R))
+place(rm, pitch(cut(rifle, 1.02, 0.14), 0.8), 0.0, 1.0)
+place(rm, thunk(0.16, 240, 100, 24), 0.004, 0.7)
+save("reload_mid", room(soft_clip(rm / (np.max(np.abs(rm)) + 1e-9), 1.5), 0.15, 0.12), 0.9)
+ri = np.zeros(int(0.6 * R))
+place(ri, pitch(cut(clicks, 2.16, 0.2), 0.74), 0.0, 1.0)
+place(ri, thunk(0.14, 250, 110, 26), 0.003, 0.5)
+place(ri, pitch(cut(rifle, 1.18, 0.24), 0.8), 0.16, 1.1)
+place(ri, thunk(0.2, 200, 85, 18), 0.165, 0.8)
+save("reload_in", room(soft_clip(hp(ri, 70) / (np.max(np.abs(ri)) + 1e-9), 1.6), 0.2, 0.15), 0.9)
+print("ok: switch, kill, shot_silenced, reload_out, reload_mid, reload_in")

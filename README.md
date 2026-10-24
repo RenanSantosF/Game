@@ -32,6 +32,10 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Bots se escondem atrás de caixote, muro, carro ou árvore na troca de tiro (abaixam pra recarregar/curar e levantam pra atirar) e erram um pouco mais
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
 - Arma baixa e atravessada na frente do corpo sem atirar; saque animado (a arma vem das costas e engatilha) com som de ferrolho de verdade; arma vazia recarrega sozinha ao sacar; tiros mais lentos e mais fortes, com tranco na arma e na câmera
+- Recarga com som do começo ao fim (tira o pente, pente novo entra, puxa o ferrolho); silenciador abafado e grave
+- Colete justo no corpo com bordas e listras brilhantes na cor do nível (1, 2 ou 3 listras); armas menores nas costas
+- Rodovias gastas (rachaduras, remendos, buracos, faixas apagadas, terra na beirada); casas de madeira com tábuas bem marcadas
+- Mais itens espalhados; tocar num colete/capacete/mochila de nível menor troca pelo que você está usando
 - Abate: caveira animada no meio da tela (dourada no tiro na cabeça) com estrondo grave
 - Paraquedas tipo asa, largo, de nylon brilhante com células estufadas tremendo no vento e cordas finas em cascata; corpo balança com o vento na queda e no paraquedas
 - De longe o mapa aparece inteiro em versão simples (blocos de casas e árvores, serra no horizonte), leve pro celular

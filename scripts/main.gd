@@ -2845,8 +2845,10 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 	p.kick = 1.0
 	if local:
 		var pk := clampf((float(wd["dmg"]) * float(wd["pellets"])) / 160.0, 0.25, 1.0)
-		_shake = maxf(_shake, 0.12 + 0.3 * pk)
-		cam.fov += 1.2 + 2.5 * pk
+		# fuzis e submetralhadoras (tiro seguido) tremem um pouco menos
+		var auto_k := 0.82 if str(wd["type"]) in ["rifle", "scar", "ak", "smg"] else 1.0
+		_shake = maxf(_shake, (0.12 + 0.3 * pk) * auto_k)
+		cam.fov += (1.2 + 2.5 * pk) * auto_k
 	if not far:
 		# sem traçante colorido: só a poeira no impacto e um clarão rápido de luz no cano
 		for e in ends:
@@ -3491,7 +3493,8 @@ func _p_guns(p: Player, sel: int) -> void:
 
 
 # Dá um item pro jogador. Devolve quantos ele conseguiu pegar.
-func _give(p: Player, kind: String, n: int, extra) -> int:
+# force: o jogador tocou no item (pega mesmo sendo de nível menor; troca pelo que está usando)
+func _give(p: Player, kind: String, n: int, extra, force := false) -> int:
 	if Weapons.is_gun(kind):
 		var w := Weapons.get_w(kind)
 		var slot := 2
@@ -3543,7 +3546,7 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 	if Weapons.is_vest(kind):
 		var lv := Weapons.level_of(kind)
 		var dur: float = float(extra) if (extra is float or extra is int) and float(extra) > 0.0 else 100.0
-		if lv < p.vest_lv or (lv == p.vest_lv and dur <= p.armor + 1.0):
+		if not force and (lv < p.vest_lv or (lv == p.vest_lv and dur <= p.armor + 1.0)):
 			return 0
 		if p.vest_lv > 0 and p.armor > 0.0:
 			_server_drop("vest%d" % p.vest_lv, p.position, 1, p.armor)
@@ -3554,7 +3557,7 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 	if Weapons.is_helmet(kind):
 		var lv := Weapons.level_of(kind)
 		var hd: float = float(extra) if (extra is float or extra is int) and float(extra) > 0.0 else 100.0
-		if lv < p.helmet or (lv == p.helmet and hd <= p.helmet_hp + 1.0):
+		if not force and (lv < p.helmet or (lv == p.helmet and hd <= p.helmet_hp + 1.0)):
 			return 0
 		if p.helmet > 0:
 			_server_drop("helmet%d" % p.helmet, p.position, 1, p.helmet_hp)
@@ -3564,7 +3567,7 @@ func _give(p: Player, kind: String, n: int, extra) -> int:
 		return 1
 	if Weapons.is_bag(kind):
 		var lv := int(kind.substr(3))
-		if lv <= p.bag:
+		if lv == p.bag or (lv < p.bag and not force):
 			return 0
 		if p.bag > 0:
 			_server_drop("bag%d" % p.bag, p.position)
@@ -3603,7 +3606,7 @@ func server_pickup(id: int, i: int, sub: int) -> void:
 			var e: Array = list[j]
 			if p.is_bot and not p.wants(e[0]):
 				continue
-			var got := _give(p, e[0], int(e[1]), e[2])
+			var got := _give(p, e[0], int(e[1]), e[2], sub >= 0 and not p.is_bot)
 			if got >= int(e[1]):
 				list.remove_at(j)
 			elif got > 0:
@@ -3614,7 +3617,7 @@ func server_pickup(id: int, i: int, sub: int) -> void:
 			_all("on_box", [i, list])
 		return
 	var n: int = it.get("n", 1)
-	var got := _give(p, it["kind"], n, it.get("extra", null))
+	var got := _give(p, it["kind"], n, it.get("extra", null), not p.is_bot)
 	if got <= 0:
 		return
 	if got >= n:

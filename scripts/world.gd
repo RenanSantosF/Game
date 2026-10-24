@@ -435,16 +435,21 @@ func _build_highway_mesh() -> void:
 				var g0 := height(e0.x + nn.x * 0.8, e0.y + nn.y * 0.8) - 0.4
 				var g1 := height(e1.x + nn.x * 0.8, e1.y + nn.y * 0.8) - 0.4
 				m.quad(Vector3(e0.x, y0, e0.y), Vector3(e1.x, y1, e1.y), Vector3(e1.x + nn.x * 0.8, g1, e1.y + nn.y * 0.8), Vector3(e0.x + nn.x * 0.8, g0, e0.y + nn.y * 0.8), Color(0.85, 0.82, 0.75), Vector3(nn.x, 1.0, nn.y).normalized())
-			# faixa branca nas bordas e amarela tracejada no meio
+			# faixa branca nas bordas e amarela tracejada no meio (gastas: apagadas em pedaços)
+			var hr := RandomNumberGenerator.new()
+			hr.seed = i * 7919 + int(p0.x * 13.0) + int(p0.y * 31.0)
 			m.tex(U.PLAIN, 1.0)
 			for sgn in [-1.0, 1.0]:
+				if hr.randf() < 0.3:
+					continue
 				var e0: Vector2 = p0 + sd * sgn * (half - 0.35)
 				var e1: Vector2 = p1 + sd * sgn * (half - 0.35)
 				var w0: Vector2 = sd * 0.08
-				m.quad(Vector3(e0.x + w0.x, y0 + 0.01, e0.y + w0.y), Vector3(e1.x + w0.x, y1 + 0.01, e1.y + w0.y), Vector3(e1.x - w0.x, y1 + 0.01, e1.y - w0.y), Vector3(e0.x - w0.x, y0 + 0.01, e0.y - w0.y), Color(0.92, 0.92, 0.9), Vector3.UP)
-			if i % 2 == 0:
+				m.quad(Vector3(e0.x + w0.x, y0 + 0.01, e0.y + w0.y), Vector3(e1.x + w0.x, y1 + 0.01, e1.y + w0.y), Vector3(e1.x - w0.x, y1 + 0.01, e1.y - w0.y), Vector3(e0.x - w0.x, y0 + 0.01, e0.y - w0.y), Color(0.74, 0.73, 0.68), Vector3.UP)
+			if i % 2 == 0 and hr.randf() > 0.25:
 				var w1 := sd * 0.08
-				m.quad(Vector3(p0.x + w1.x, y0 + 0.01, p0.y + w1.y), Vector3(p1.x + w1.x, y1 + 0.01, p1.y + w1.y), Vector3(p1.x - w1.x, y1 + 0.01, p1.y - w1.y), Vector3(p0.x - w1.x, y0 + 0.01, p0.y - w1.y), Color(0.95, 0.8, 0.25), Vector3.UP)
+				m.quad(Vector3(p0.x + w1.x, y0 + 0.01, p0.y + w1.y), Vector3(p1.x + w1.x, y1 + 0.01, p1.y + w1.y), Vector3(p1.x - w1.x, y1 + 0.01, p1.y - w1.y), Vector3(p0.x - w1.x, y0 + 0.01, p0.y - w1.y), Color(0.76, 0.64, 0.3), Vector3.UP)
+			_road_wear(m, hr, p0, p1, y0, y1, d, sd, half)
 			chunk += 1
 			if chunk >= 20 or i == line.size() - 2:
 				var mi := MeshInstance3D.new()
@@ -458,6 +463,63 @@ func _build_highway_mesh() -> void:
 
 
 # postes com fio, placas e carros na beira da rodovia
+
+# desgaste de guerra na pista: remendos, buracos, rachaduras, terra nas beiradas, manchas de óleo
+# (tudo dentro da pista e em tons discretos: parece asfalto velho, não quadrados colados)
+func _road_wear(m: MB, hr: RandomNumberGenerator, p0: Vector2, p1: Vector2, y0: float, y1: float, d: Vector2, sd: Vector2, half: float) -> void:
+	var seg_len := p0.distance_to(p1)
+	var at := func(t: float, s: float, lift: float) -> Vector3:
+		var q := p0.lerp(p1, t) + sd * clampf(s, -half + 0.15, half - 0.15)
+		return Vector3(q.x, lerpf(y0, y1, t) + lift, q.y)
+	# mancha irregular (polígono com borda torta) em volta de um ponto da pista
+	var blob := func(t: float, s: float, rl: float, rw: float, lift: float, col: Color) -> void:
+		var c: Vector3 = at.call(t, s, lift)
+		var n := 9
+		var ph := hr.randf() * TAU
+		for k in n:
+			var a0 := TAU * k / n
+			var a1 := TAU * (k + 1) / n
+			var f0 := 0.75 + 0.25 * sin(a0 * 3.0 + ph)
+			var f1 := 0.75 + 0.25 * sin(a1 * 3.0 + ph)
+			var o0 := d * cos(a0) * rl * f0 + sd * sin(a0) * rw * f0
+			var o1 := d * cos(a1) * rl * f1 + sd * sin(a1) * rw * f1
+			m.quad(c, c + Vector3(o1.x, 0, o1.y), c + Vector3(o0.x, 0, o0.y), c, col, Vector3.UP)
+	# remendo de asfalto (um pouco mais escuro ou mais claro que a pista)
+	if hr.randf() < 0.4:
+		m.tex(U.ASPHALT, 0.3)
+		var rw := hr.randf_range(0.5, 1.1)
+		blob.call(hr.randf_range(0.2, 0.8), hr.randf_range(-half + rw + 0.2, half - rw - 0.2), hr.randf_range(0.8, 1.8), rw, 0.012,
+			Color(0.8, 0.8, 0.82) if hr.randf() < 0.6 else Color(1.0, 0.97, 0.92))
+	# buraco (terra e cascalho no fundo)
+	if hr.randf() < 0.18:
+		m.tex(U.DIRT, 0.6)
+		var r := hr.randf_range(0.3, 0.7)
+		blob.call(hr.randf_range(0.2, 0.8), hr.randf_range(-half + r + 0.3, half - r - 0.3), r, r * 0.8, 0.014, Color(0.42, 0.36, 0.3))
+	# rachaduras finas (zigue-zague, sem sair da pista)
+	m.tex(U.PLAIN, 1.0)
+	if hr.randf() < 0.55:
+		var t := hr.randf_range(0.0, 0.6)
+		var lat := hr.randf_range(-half * 0.7, half * 0.7)
+		for k in 4:
+			var t2 := t + hr.randf_range(0.04, 0.1) * 4.0 / maxf(seg_len / 4.0, 1.0)
+			var lat2 := clampf(lat + hr.randf_range(-0.5, 0.5), -half + 0.3, half - 0.3)
+			var c0: Vector3 = at.call(t, lat, 0.013)
+			var c1: Vector3 = at.call(minf(t2, 1.0), lat2, 0.013)
+			var dv := c1 - c0
+			var w := Vector3(-dv.z, 0, dv.x).normalized() * 0.02
+			m.quad(c0 + w, c1 + w, c1 - w, c0 - w, Color(0.2, 0.2, 0.2), Vector3.UP)
+			t = minf(t2, 1.0)
+			lat = lat2
+	# terra/areia invadindo a beirada
+	if hr.randf() < 0.5:
+		m.tex(U.DIRT, 0.5)
+		var sg := -1.0 if hr.randf() < 0.5 else 1.0
+		blob.call(hr.randf_range(0.3, 0.7), sg * (half - 0.45), hr.randf_range(1.2, seg_len * 0.4), hr.randf_range(0.25, 0.45), 0.015, Color(0.78, 0.7, 0.56))
+	# mancha de óleo/fuligem
+	if hr.randf() < 0.18:
+		m.tex(U.PLAIN, 1.0)
+		blob.call(hr.randf_range(0.2, 0.8), hr.randf_range(-half * 0.5, half * 0.5), hr.randf_range(0.3, 0.6), hr.randf_range(0.25, 0.45), 0.016, Color(0.3, 0.3, 0.31))
+
 func _build_highway_props() -> void:
 	b.begin(SEED + 601)
 	var rng := b.rng
@@ -743,6 +805,21 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 		var am := Weapons.ammo_of(kind)
 		var off := Vector3(0.45, 0, 0.3)
 		items.append({"pos": pos + off, "kind": am, "n": Weapons.default_count(am), "door_out": dout, "door_in": din, "up": up})
+	# mais itens pelo mapa: cada ponto de saque ganha às vezes um ou dois itens a mais do lado
+	# (sorteio próprio pela posição: não mexe na sequência do mapa)
+	var xr := RandomNumberGenerator.new()
+	xr.seed = hash(Vector3i(int(pos.x * 10.0), int(pos.y * 10.0), int(pos.z * 10.0)))
+	var extra := 0
+	if xr.randf() < 0.65:
+		extra += 1
+	if xr.randf() < 0.25:
+		extra += 1
+	for k in extra:
+		var ek: String = Weapons.LOOT[xr.randi() % Weapons.LOOT.size()] if xr.randf() < 0.8 else Weapons.LOOT_GUNS[xr.randi() % Weapons.LOOT_GUNS.size()]
+		var eo := Vector3(xr.randf_range(-0.6, 0.6), 0, xr.randf_range(-0.6, 0.6))
+		if Weapons.is_gun(ek):
+			ek = Weapons.ammo_of(ek) if xr.randf() < 0.5 else ek
+		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up})
 
 
 func loot_kind(rng: RandomNumberGenerator, gun: bool) -> String:

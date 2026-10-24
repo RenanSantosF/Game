@@ -433,44 +433,49 @@ static func gear(kind: String) -> Mesh:
 	m.tex(U.FABRIC, 5.0)
 	# medidas do corpo (espaço do boneco: pés em 0, frente = -Z): peito na frente em z≈-0.10..-0.13,
 	# costas em z≈+0.11..+0.135, meia-largura do tronco ≈0.12, cabeça centrada em (0, 1.6, -0.025)
+	# detalhes brilhantes (cor do nível e fivelas): vão numa segunda parte com material liso e brilhante
+	var tm := MB.new()
+	tm.tex(U.PLAIN, 4.0)
 	if is_vest(kind):
-		# colete porta-placas: placa da frente inclinada acompanhando o peito, placa das costas,
-		# faixa lateral, alças nos ombros, porta-carregadores e remendo do nível
+		# colete porta-placas justo no corpo: placa da frente inclinada acompanhando o peito, placa das
+		# costas, faixa lateral, alças nos ombros, porta-carregadores; nível = cor das bordas + listras
 		var fr := Basis(Vector3.RIGHT, -0.12)
-		m.box(Transform3D(fr, Vector3(0, 1.23, -0.155)), Vector3(0.27, 0.33, 0.04), c)
-		m.box(Transform3D(Basis(), Vector3(0, 1.24, 0.163)), Vector3(0.27, 0.32, 0.04), c)
+		m.box(Transform3D(fr, Vector3(0, 1.24, -0.145)), Vector3(0.245, 0.29, 0.03), c)
+		m.box(Transform3D(Basis(), Vector3(0, 1.25, 0.152)), Vector3(0.245, 0.28, 0.03), c)
 		for sx in [-1.0, 1.0]:
 			# faixa lateral (cummerbund) e alças por cima do ombro
-			m.box(Transform3D(Basis(), Vector3(sx * 0.137, 1.13, 0.0)), Vector3(0.026, 0.13, 0.30), c.darkened(0.12))
-			# alça deitada em cima do ombro, ligando a placa da frente à de trás
-			m.box(Transform3D(Basis(), Vector3(sx * 0.09, 1.445, 0.005)), Vector3(0.065, 0.02, 0.27), c.darkened(0.08))
+			m.box(Transform3D(Basis(), Vector3(sx * 0.128, 1.14, 0.0)), Vector3(0.02, 0.11, 0.27), c.darkened(0.12))
+			m.box(Transform3D(Basis(), Vector3(sx * 0.085, 1.43, 0.004)), Vector3(0.05, 0.016, 0.25), c.darkened(0.08))
 		# porta-carregadores na frente (mais a cada nível) com tampas
 		var np := 2 + lv
 		for k in np:
-			var x := (k - (np - 1) / 2.0) * 0.062
-			m.box(Transform3D(fr, Vector3(x, 1.13, -0.19)), Vector3(0.055, 0.11, 0.035), c.lightened(0.05))
-			m.box(Transform3D(fr, Vector3(x, 1.19, -0.198)), Vector3(0.057, 0.022, 0.04), c.darkened(0.15))
+			var x := (k - (np - 1) / 2.0) * 0.055
+			m.box(Transform3D(fr, Vector3(x, 1.15, -0.172)), Vector3(0.048, 0.09, 0.028), c.lightened(0.05))
+			m.box(Transform3D(fr, Vector3(x, 1.2, -0.178)), Vector3(0.05, 0.018, 0.032), c.darkened(0.15))
 		# tiras MOLLE na placa (faixas finas)
 		m.tex(U.PLAIN, 4.0)
 		for k in 3:
-			m.box(Transform3D(fr, Vector3(0, 1.27 + k * 0.035, -0.177)), Vector3(0.25, 0.008, 0.006), c.darkened(0.3))
-			m.box(Transform3D(Basis(), Vector3(0, 1.17 + k * 0.05, 0.184)), Vector3(0.25, 0.008, 0.006), c.darkened(0.3))
-		# remendo do nível
-		m.box(Transform3D(fr, Vector3(-0.07, 1.345, -0.178)), Vector3(0.06, 0.035, 0.004), patch)
+			m.box(Transform3D(fr, Vector3(0, 1.28 + k * 0.03, -0.162)), Vector3(0.23, 0.007, 0.005), c.darkened(0.3))
+			m.box(Transform3D(Basis(), Vector3(0, 1.18 + k * 0.045, 0.169)), Vector3(0.23, 0.007, 0.005), c.darkened(0.3))
 		if lv >= 2:
-			# bolso administrativo e torniquete
 			m.tex(U.FABRIC, 5.0)
-			m.box(Transform3D(fr, Vector3(0.06, 1.33, -0.182)), Vector3(0.09, 0.07, 0.02), c.darkened(0.06))
-			m.tex(U.PLAIN, 4.0)
-			m.box(Transform3D(Basis(), Vector3(0.122, 1.32, -0.12)), Vector3(0.02, 0.07, 0.03), Color(0.08, 0.08, 0.08))
+			m.box(Transform3D(fr, Vector3(0.06, 1.33, -0.166)), Vector3(0.08, 0.06, 0.016), c.darkened(0.06))
 		if lv == 3:
-			# rádio nas costas com antena e bolsos laterais
-			m.tex(U.FABRIC, 5.0)
-			for sx in [-1.0, 1.0]:
-				m.box(Transform3D(Basis(), Vector3(sx * 0.155, 1.12, -0.03)), Vector3(0.03, 0.09, 0.08), c.darkened(0.05))
 			m.tex(U.PLAIN, 4.0)
-			m.box(Transform3D(Basis(), Vector3(0.07, 1.27, 0.2)), Vector3(0.06, 0.12, 0.035), Color(0.12, 0.13, 0.11))
-			m.cyl(Transform3D(Basis(), Vector3(0.085, 1.33, 0.2)), 0.004, 0.003, 0.2, 4, STRAP)
+			m.box(Transform3D(Basis(), Vector3(0.07, 1.27, 0.178)), Vector3(0.05, 0.1, 0.028), Color(0.12, 0.13, 0.11))
+			m.cyl(Transform3D(Basis(), Vector3(0.085, 1.32, 0.178)), 0.004, 0.003, 0.18, 4, STRAP)
+		# bordas da placa na cor do nível (brilhantes) e listras do nível (1, 2 ou 3) no peito e nas costas
+		for zz in [-0.162, 0.168]:
+			var bs: Basis = fr if zz < 0.0 else Basis()
+			var zc: float = zz + (-0.001 if zz < 0.0 else 0.001)
+			tm.box(Transform3D(bs, Vector3(0, 1.24 + 0.143, zc)), Vector3(0.25, 0.012, 0.006), patch)
+			for sx in [-1.0, 1.0]:
+				tm.box(Transform3D(bs, Vector3(sx * 0.122, 1.24, zc)), Vector3(0.01, 0.28, 0.006), patch)
+			for k in lv:
+				tm.box(Transform3D(bs, Vector3(-0.07, 1.345 - k * 0.022, zc - 0.002 * signf(zz))), Vector3(0.06, 0.012, 0.004), patch.lightened(0.15))
+		# fivelas de metal
+		for sx in [-1.0, 1.0]:
+			tm.box(Transform3D(Basis(), Vector3(sx * 0.13, 1.14, -0.09)), Vector3(0.012, 0.04, 0.03), Color(0.55, 0.55, 0.56))
 	elif is_helmet(kind):
 		# capacete de combate: casco que cobre o topo e a nuca, aberto no rosto, com borda,
 		# jugular, capa do nível e (nível 3) suporte de visão noturna e trilhos
@@ -510,8 +515,15 @@ static func gear(kind: String) -> Mesh:
 		# jugular (alças descendo até o queixo)
 		for sx in [-1.0, 1.0]:
 			m.box(Transform3D(Basis(Vector3.FORWARD, sx * 0.12), Vector3(sx * 0.093, 1.535, -0.03)), Vector3(0.008, 0.09, 0.016), STRAP)
-		# remendo do nível atrás
-		m.box(Transform3D(Basis(Vector3.RIGHT, 0.4), Vector3(0, 1.66, 0.105)), Vector3(0.05, 0.03, 0.004), patch)
+		# faixa do nível em volta do capacete e listras atrás (brilhantes)
+		for i in seg:
+			var e0: Vector3 = pts[1][i]
+			var e1: Vector3 = pts[1][i + 1]
+			var o0 := e0 + (e0 - hc).normalized() * 0.004
+			var o1 := e1 + (e1 - hc).normalized() * 0.004
+			tm.quad(o0, o1, o1 + Vector3(0, 0.012, 0), o0 + Vector3(0, 0.012, 0), patch, (e0 - hc).normalized())
+		for k in lv:
+			tm.box(Transform3D(Basis(Vector3.RIGHT, 0.4), Vector3(0, 1.672 - k * 0.018, 0.108)), Vector3(0.05, 0.01, 0.004), patch.lightened(0.15))
 		if lv == 3:
 			m.box(Transform3D(Basis(Vector3.RIGHT, -0.35), Vector3(0, 1.665, -0.14)), Vector3(0.05, 0.04, 0.02), Color(0.12, 0.12, 0.12))
 			m.box(Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0, 1.66, -0.165)), Vector3(0.06, 0.03, 0.04), Color(0.2, 0.2, 0.22))
@@ -543,7 +555,8 @@ static func gear(kind: String) -> Mesh:
 			m.box(Transform3D(Basis(), Vector3(sx * w * 0.3, yc + h * 0.02, z0 + d * 1.005)), Vector3(0.022, h * 0.86, 0.006), STRAP)
 		for kk in 2:
 			m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.06 - kk * 0.045, z0 + d * 0.98 + 0.04 + 0.01 * lv)), Vector3(w * 0.6, 0.008, 0.005), c.darkened(0.32))
-		m.box(Transform3D(Basis(), Vector3(0, yc + h * 0.26, z0 + d * 1.0 + 0.002)), Vector3(0.06, 0.035, 0.004), patch)
+		for li in lv:
+			tm.box(Transform3D(Basis(), Vector3(0, yc + h * 0.3 - li * 0.02, z0 + d * 1.0 + 0.003)), Vector3(0.07, 0.012, 0.004), patch)
 		# alças por cima dos ombros
 		for sx in [-1.0, 1.0]:
 			m.box(Transform3D(Basis(Vector3.RIGHT, -0.4), Vector3(sx * 0.075, 1.44, 0.14)), Vector3(0.045, 0.02, 0.12), STRAP)
@@ -552,8 +565,29 @@ static func gear(kind: String) -> Mesh:
 			m.tex(U.FABRIC, 6.0)
 			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(-w * 0.5, yc - h / 2.0 - 0.03, zc)), 0.04, 0.04, w, 12, Color(0.25, 0.27, 0.22))
 	var mesh := m.commit()
+	if tm.count > 0:
+		# segunda parte: detalhes lisos e brilhantes
+		var tmesh := tm.commit()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, tmesh.surface_get_arrays(0))
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _shiny())
 	_cache[key] = mesh
 	return mesh
+
+
+static var _shiny_mat: StandardMaterial3D
+
+
+static func _shiny() -> StandardMaterial3D:
+	if _shiny_mat == null:
+		_shiny_mat = StandardMaterial3D.new()
+		_shiny_mat.vertex_color_use_as_albedo = true
+		_shiny_mat.vertex_color_is_srgb = true
+		_shiny_mat.roughness = 0.22
+		_shiny_mat.metallic = 0.25
+		_shiny_mat.metallic_specular = 0.8
+		_shiny_mat.rim_enabled = true
+		_shiny_mat.rim = 0.4
+	return _shiny_mat
 
 
 # volume arredondado (superelipsoide): e ~0.4 = caixa de cantos bem redondos, 1 = elipsoide.
@@ -669,7 +703,9 @@ static func item_mesh(kind: String) -> Mesh:
 			xf = Transform3D(Basis().scaled(Vector3.ONE * 1.3), Vector3(0, 0.17, 0)) * Transform3D(Basis(), Vector3(0, -1.665, 0))
 		else:
 			xf = Transform3D(Basis(Vector3.RIGHT, PI / 2.0).scaled(Vector3.ONE * 1.25), Vector3(0, 0.0, 0)) * Transform3D(Basis(), Vector3(0, -1.26, -0.3))
-		st.append_from(gear(kind), 0, xf)
+		var gm := gear(kind)
+		for si in gm.get_surface_count():
+			st.append_from(gm, si, xf)
 		mesh = st.commit()
 	_cache[key] = mesh
 	return mesh

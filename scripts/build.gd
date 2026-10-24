@@ -367,6 +367,9 @@ func _style_tex(style: String) -> Array:
 	var tints: Array = theme_tints if not theme_tints.is_empty() else PLASTER_TINTS
 	# reboco desbotado e encardido (cidade abandonada às pressas)
 	var c: Color = (tints[rng.randi() % tints.size()] as Color).darkened(rng.randf() * 0.1)
+	# reboco marrom/alaranjado escuro parecia madeira lisa: vira madeira de verdade (tábuas e frestas)
+	if c.h > 0.03 and c.h < 0.13 and c.s > 0.32 and c.v < 0.82:
+		return [U.WOOD, 0.4, c.lerp(Color(1, 1, 1), 0.55)]
 	return [U.PLASTER, 0.3, c.lerp(Color(c.get_luminance(), c.get_luminance(), c.get_luminance()), 0.4).darkened(0.08)]
 
 

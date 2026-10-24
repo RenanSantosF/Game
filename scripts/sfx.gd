@@ -10,7 +10,7 @@ const NAMES := ["shot_pistol", "shot_deagle", "shot_smg", "shot_ump", "shot_rifl
 	"step_grass0", "step_grass1", "step_grass2", "step_grass3", "step_grass4", "step_grass5",
 	"step_hard0", "step_hard1", "step_hard2", "step_hard3", "step_hard4", "step_hard5",
 	"step_gravel0", "step_gravel1", "step_gravel2", "step_gravel3", "step_gravel4", "step_gravel5", "jump",
-	"land", "vault", "switch", "reload_out", "reload_in", "bolt", "pickup", "equip", "heal", "heal_done", "hit",
+	"land", "vault", "switch", "reload_out", "reload_mid", "reload_in", "bolt", "pickup", "equip", "heal", "heal_done", "hit",
 	"headshot", "kill", "punch_swing", "punch_hit", "chute", "zone", "click", "empty", "impact", "ricochet", "hurt",
 	"wind_fall", "wind_chute", "plane", "pain0", "pain1", "pain2", "door", "explosion", "drop", "pin", "beep", "crash",
 	"head_flesh", "win", "gear_break", "far_boom", "far_mg", "far_siren", "far_jet", "ambient_wind"]

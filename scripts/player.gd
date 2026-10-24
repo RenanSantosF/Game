@@ -425,15 +425,15 @@ func _build_model() -> void:
 	sol.setup(skin, shirt, pants, BOOTS[rng.randi() % BOOTS.size()], hair)
 	vest_mi = MeshInstance3D.new()
 	vest_mi.mesh = _gear("vest1")
-	vest_mi.material_override = U.wmat()
+	vest_mi.set_surface_override_material(0, U.wmat())
 	sol.attach("Spine2", vest_mi, "vest")
 	bag_mi = MeshInstance3D.new()
 	bag_mi.mesh = _gear("bag1")
-	bag_mi.material_override = U.wmat()
+	bag_mi.set_surface_override_material(0, U.wmat())
 	sol.attach("Spine2", bag_mi, "bag")
 	helmet_mi = MeshInstance3D.new()
 	helmet_mi.mesh = _gear("helmet1")
-	helmet_mi.material_override = U.wmat()
+	helmet_mi.set_surface_override_material(0, U.wmat())
 	sol.attach("Head", helmet_mi, "helmet")
 	if cap_hat:
 		var hat := MeshInstance3D.new()
@@ -532,6 +532,9 @@ var _back := []        # armas grandes penduradas nas costas
 var _back_key := ""
 
 
+const BACK_SCALE := 0.74
+
+
 func update_back_guns() -> void:
 	if not visual or sol == null:
 		return
@@ -551,7 +554,8 @@ func update_back_guns() -> void:
 		var tilt := 0.55 if k == 0 else -0.55
 		# colada nas costas (ou por cima da mochila, se tiver)
 		var bz: float = 0.175 if bag <= 0 else 0.15 + 0.11 * [0.0, 0.85, 1.0, 1.12][clampi(bag, 0, 3)] + 0.03
-		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 1.0, bz + k * 0.035))
+		# nas costas a arma fica menor (não cobre o boneco inteiro)
+		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis.from_scale(Vector3.ONE * BACK_SCALE), Vector3(0.0, 1.05, bz + k * 0.03))
 		for c in m.get_children():
 			if c is GeometryInstance3D:
 				c.visibility_range_end = 0.0
@@ -666,7 +670,12 @@ func _physics_process(delta: float) -> void:
 	aim_t = maxf(aim_t - delta, 0.0)
 	ready_t = maxf(ready_t - delta, 0.0)
 	if reload_t > 0.0:
+		var tot := maxf(float(cur_stat()["reload"]), 0.3)
+		var before := reload_t
 		reload_t -= delta
+		# no meio da recarga: o pente novo entra ("TCHAK"), o som não some no meio
+		if is_local and before > tot * 0.45 and reload_t <= tot * 0.45:
+			game.sfx("reload_mid", 3.0)
 		if reload_t <= 0.0:
 			reload_t = 0.0
 			var w := cur_wid()
@@ -1091,11 +1100,14 @@ func _animate(delta: float, sim: bool) -> void:
 	var idle_k := 1.0 - _ready_k
 	var low := _gun_low
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
-	aim.rotation.x = pitch * 0.85 * _ready_k * (1.0 - low) - 1.1 * low - 0.5 * idle_k * (1.0 - low)
-	aim.rotation.y = 0.55 * idle_k
+	var pistol := armed and str(Weapons.get_w(shown_wid)["type"]) == "pistol"
+	# pistola: baixa na frente (braço esticado pra frente, não dobrado pra dentro do peito)
+	aim.rotation.x = pitch * 0.85 * _ready_k * (1.0 - low) - 1.1 * low - (0.45 if pistol else 0.5) * idle_k * (1.0 - low)
+	aim.rotation.y = (0.08 if pistol else 0.42) * idle_k
 	# agachado a arma desce junto (fica no ombro/peito, não em cima da cabeça)
 	var sh_y := lerpf(1.36, 0.98, _crouch_k)
-	aim.position = Vector3(-0.04 * idle_k, sh_y - idle_k * 0.1, idle_k * 0.04)
+	# sem atirar a arma fica um pouco à frente do corpo (não entra no colete)
+	aim.position = Vector3((0.02 if pistol else -0.03) * idle_k, sh_y - idle_k * (0.14 if pistol else 0.1), -idle_k * (0.1 if pistol else 0.07))
 	if stun_t > 0.0 and not airborne:
 		# caiu de alto: aterrissa agachado com a mão no chão
 		if sol.has_anim("Land"):
@@ -1122,11 +1134,15 @@ func _animate(delta: float, sim: bool) -> void:
 			sol.play("ProneIdle" if sol.has_anim("ProneIdle") else "Prone", 0.3)
 		else:
 			sol.play("Prone", 0.3, clampf(sp / 0.45, 0.6, 1.6))
-		aim.position = Vector3(0.05, 0.28, -0.75)
-		aim.rotation.x = pitch * 0.5 * _ready_k
+		aim.rotation = Vector3(pitch * 0.3 * _ready_k, 0.0, 0.0)
 		if gun:
 			gun.visible = armed
 		sol.tick(delta, far, 0.0, 0.0, [])
+		# a arma fica na mão direita (a animação de rastejar mexe os braços; a arma vai junto)
+		if gun and armed and sol.b.has("RightHand"):
+			var hand: Vector3 = sol.sk.global_transform * sol.sk.get_bone_global_pose(sol.b["RightHand"]).origin
+			var grip := gun.position + Vector3(0, -0.05, 0.03)
+			aim.global_position = hand - aim.global_transform.basis * grip
 		return
 	# animações do Mixamo: parado (com e sem arma), andar, correr, correr rápido, pular, saltar janela.
 	# O ritmo acompanha a velocidade do jogo (o pé quase não desliza), com limite pra não ficar frenético.
