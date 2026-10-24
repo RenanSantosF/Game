@@ -59,6 +59,9 @@ var regen_t := 0.0
 var vehicles: Array = []
 var _veh_send_t := 0.0
 var _shake := 0.0
+var _drown_t := 0.0
+var _drown_msg := 0.0
+var _delta_ui := 0.016
 var grenades: Array = []
 var _runover_t := {}
 var _snap_q: Array = []
@@ -867,7 +870,7 @@ func _on_setting(key: String) -> void:
 			sfxn.volume = float(Cfg.get_v("volume"))
 		"fps":
 			Engine.max_fps = int(Cfg.get_v("fps"))
-		"quality", "shadows", "tex_detail", "grass", "view":
+		"quality", "shadows", "grass", "view":
 			if in_game and not dedicated:
 				_apply_quality()
 		"show_fps":
@@ -1344,6 +1347,71 @@ func on_explode(i: int) -> void:
 
 
 static var _scorch_mat: StandardMaterial3D
+static var _flash_mat: StandardMaterial3D
+
+
+# clarão: quadradinho somado (brilha) virado pra câmera que encolhe e some
+func _flash(at: Vector3, size: float, life: float) -> void:
+	if _flash_mat == null:
+		_flash_mat = StandardMaterial3D.new()
+		_flash_mat.albedo_texture = World.smoke_tex()
+		_flash_mat.albedo_color = Color(1.0, 0.72, 0.38)
+		_flash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_flash_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		_flash_mat.no_depth_test = false
+	var mi := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2.ONE * size
+	mi.mesh = qm
+	mi.material_override = _flash_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	mi.global_position = at
+	var tw := create_tween()
+	tw.tween_property(mi, "scale", Vector3.ONE * 0.25, life)
+	tw.tween_callback(mi.queue_free)
+
+
+# Aquecimento: desenha uma vez (minúsculo, na frente da câmera) cada efeito que tem material próprio,
+# assim o celular compila os shaders no carregamento e não trava no primeiro tiro/explosão/salto.
+func _warmup_fx() -> void:
+	if dedicated or cam == null:
+		return
+	var at := cam.global_position - cam.global_transform.basis.z * 1.5
+	var tmp: Array = []
+	var add := func(mesh: Mesh, mat: Material) -> void:
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.global_position = at
+		mi.scale = Vector3.ONE * 0.002
+		tmp.append(mi)
+	_flash(at, 0.002, 0.2)
+	_boom_particles(at, 0.002, 1, 0.3, Color.WHITE, Color.WHITE, 0.0, 0.0, Vector3.ZERO, 0.002, 0.002, true, 0.0)
+	_boom_particles(at, 0.002, 1, 0.3, Color.WHITE, Color.WHITE, 0.0, 0.0, Vector3.ZERO, 0.002, 0.002, false, 0.0)
+	var qm := QuadMesh.new()
+	add.call(qm, U.mat(Color(0.3, 0.25, 0.2)))
+	add.call(qm, U.mat(Color(1.0, 0.85, 0.4), true))
+	_ensure_impact_mats()
+	for m in [_hole_mat, _dust_mat, _chip_mat]:
+		if m:
+			add.call(qm, m)
+	if _scorch_mat == null:
+		_scorch_mat = StandardMaterial3D.new()
+		_scorch_mat.albedo_texture = World.smoke_tex()
+		_scorch_mat.albedo_color = Color(0.05, 0.045, 0.04)
+		_scorch_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	add.call(qm, _scorch_mat)
+	add.call(Player._gear("chute"), null)
+	add.call(Weapons.item_mesh("grenade"), U.wmat())
+	get_tree().create_timer(0.5).timeout.connect(func():
+		for mi in tmp:
+			if is_instance_valid(mi):
+				mi.queue_free())
 
 
 # nuvem de partículas com a textura de fumaça (cor do começo pro fim, sobe/espalha e cresce)
@@ -1398,15 +1466,8 @@ func _explosion_fx(at: Vector3, size: float) -> void:
 	if dedicated:
 		return
 	sfx_at("explosion", at, false, 0.0, 220.0)
-	var fl := OmniLight3D.new()
-	fl.light_color = Color(1.0, 0.55, 0.2)
-	fl.light_energy = 6.0
-	fl.omni_range = 12.0 * size
-	add_child(fl)
-	fl.global_position = at + Vector3(0, 0.8, 0)
-	var tw := create_tween()
-	tw.tween_property(fl, "light_energy", 0.0, 0.8)
-	tw.tween_callback(fl.queue_free)
+	# clarão grande (sem luz dinâmica: no celular cada luz redesenha tudo em volta)
+	_flash(at + Vector3(0, 0.8, 0), 5.0 * size, 0.35)
 	# bola de fogo rápida, poeira rasteira em anel, fumaça escura subindo devagar, terra voando
 	# e mancha de queimado no chão (tudo em partículas com textura de fumaça, nada de bolas)
 	_boom_particles(at, size, 10, 0.45, Color(1.0, 0.72, 0.35, 1.0), Color(0.9, 0.3, 0.08, 0.0), 2.5, 5.0, Vector3(0, 0.5, 0), 0.9 * size, 2.4 * size, true, 0.0)
@@ -1669,21 +1730,30 @@ func _snap_items() -> void:
 		if i >= item_nodes.size() or item_nodes[i] == null:
 			continue
 		var n: Node3D = item_nodes[i]
+		# item espalhado em volta do ponto de saque: se tem parede no meio, fica do lado de cá dela
+		var anc = world.items[i].get("anc")
+		if anc is Vector3:
+			var a3: Vector3 = anc + Vector3(0, 0.45, 0)
+			var b3 := Vector3(n.position.x, a3.y, n.position.z)
+			var wr := space.intersect_ray(PhysicsRayQueryParameters3D.create(a3, b3, 1))
+			if not wr.is_empty():
+				var back: Vector3 = (wr["position"] as Vector3) - (b3 - a3).normalized() * 0.35
+				n.position = Vector3(back.x, n.position.y, back.z)
 		var q := PhysicsRayQueryParameters3D.create(n.position + Vector3(0, 0.4, 0), n.position + Vector3(0, -3.0, 0), 1)
 		var r := space.intersect_ray(q)
 		if not r.is_empty():
 			n.position.y = r["position"].y + 0.01
 			# guarda a altura certa (quando o item for montado de novo não precisa procurar)
 			var ip: Vector3 = world.items[i]["pos"]
-			world.items[i]["pos"] = Vector3(ip.x, n.position.y, ip.z)
+			world.items[i]["pos"] = Vector3(n.position.x, n.position.y, n.position.z)
 			world.items[i]["snapped"] = true
 
 
 # Itens no chão aparecem só perto da câmera: o mapa tem milhares e montar todos pesa no celular.
 # Ficam numa grade de 40 m; a cada 0,3 s cria os de perto (aos poucos) e apaga os de longe.
 const ITEM_CELL := 40.0
-const ITEM_IN := 105.0
-const ITEM_OUT := 140.0
+const ITEM_IN := 80.0
+const ITEM_OUT := 110.0
 var _item_grid := {}
 var _item_live := {}       # célula -> true (itens dela montados)
 var _item_build_q: Array = []
@@ -1703,7 +1773,7 @@ func _stream_items(delta: float) -> void:
 		return
 	# monta poucos por quadro (sem engasgo)
 	var built := 0
-	while not _item_build_q.is_empty() and built < 60:
+	while not _item_build_q.is_empty() and built < 24:
 		var i: int = _item_build_q.pop_back()
 		if i < items_avail.size() and items_avail[i] and (i >= item_nodes.size() or item_nodes[i] == null):
 			_make_item_node(i)
@@ -1905,14 +1975,14 @@ func _apply_quality() -> void:
 	var far := 300.0     # mais curto que antes: o jogo fica mais leve (a névoa esconde o fim)
 	match int(Cfg.get_v("quality")):
 		0:
-			vp.scaling_3d_scale = 0.6
+			vp.scaling_3d_scale = 0.55
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			if sun:
 				sun.shadow_enabled = false
 			far = 250.0
 			world.set_view(200.0)
 		1:
-			vp.scaling_3d_scale = 0.8
+			vp.scaling_3d_scale = 0.72
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			if sun:
 				sun.shadow_enabled = true
@@ -1929,7 +1999,6 @@ func _apply_quality() -> void:
 	# ajustes finos das configurações
 	if sun and not bool(Cfg.get_v("shadows")):
 		sun.shadow_enabled = false
-	U.tmat().set_shader_parameter("detail", 1.0 if bool(Cfg.get_v("tex_detail")) else 0.0)
 	world.show_grass(bool(Cfg.get_v("grass")))
 	var vk: float = [0.75, 1.0, 1.25][clampi(int(Cfg.get_v("view")), 0, 2)]
 	far *= vk
@@ -2087,6 +2156,7 @@ func _make_loops() -> void:
 # ---------------- loop ----------------
 
 func _process(delta: float) -> void:
+	_delta_ui = delta
 	_menu_tick(delta)
 	run_t += delta / maxf(Engine.time_scale, 0.001)
 	if not shot_times.is_empty() and run_t >= shot_times[0]:
@@ -2117,6 +2187,8 @@ func _process(delta: float) -> void:
 				dp.target_pos = dp.position
 	if not dedicated and _frames < 30:
 		_frames += 1
+		if _frames == 10:
+			_warmup_fx()
 		if _frames == 30:
 			_step("jogando")
 	match phase:
@@ -2255,6 +2327,11 @@ func _local_update(lp: Player, delta: float) -> void:
 	elif phase == LOBBY:
 		mode = "lobby"
 	hud.mode = mode
+	if lp.alive and lp.air == 0 and lp.position.y < World.SEA_Y - 0.4:
+		_drown_msg -= _delta_ui
+		if _drown_msg <= 0.0:
+			_drown_msg = 1.0
+			hud.center("Afogando! Volte pra terra", 1.1, "bad")
 	hud.crouched = lp.crouch
 	hud.proned = lp.prone
 	hud.can_start = phase == LOBBY and multiplayer.is_server() and not training
@@ -2960,14 +3037,8 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 		for e in ends:
 			_impact(from, e)
 		if not ("silencer" in att) and cam and cam.global_position.distance_to(from) < 60.0:
-			var fl := OmniLight3D.new()
-			fl.light_color = Color(1.0, 0.75, 0.45)
-			fl.light_energy = 0.8
-			fl.omni_range = 2.2
-			fl.shadow_enabled = false
-			add_child(fl)
-			fl.global_position = from
-			get_tree().create_timer(0.04).timeout.connect(fl.queue_free)
+			# clarão no cano sem luz de verdade (luz dinâmica no celular pesa e trava na hora do tiro)
+			_flash(from, 0.38, 0.05)
 	_play_shot(wid, att, p.position, local)
 
 
@@ -3043,6 +3114,23 @@ static func _hole_tex() -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
+func _ensure_impact_mats() -> void:
+	if _hole_mat != null:
+		return
+	_hole_mat = StandardMaterial3D.new()
+	_hole_mat.albedo_texture = _hole_tex()
+	_hole_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_hole_mat.roughness = 1.0
+	_dust_mat = StandardMaterial3D.new()
+	_dust_mat.albedo_texture = World.smoke_tex()
+	_dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_dust_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	_dust_mat.vertex_color_use_as_albedo = true
+	_chip_mat = StandardMaterial3D.new()
+	_chip_mat.vertex_color_use_as_albedo = true
+
+
 func _impact(from: Vector3, to: Vector3) -> void:
 	if cam == null or cam.global_position.distance_to(to) > 90.0:
 		return
@@ -3053,19 +3141,7 @@ func _impact(from: Vector3, to: Vector3) -> void:
 		return
 	var pos: Vector3 = hit["position"]
 	var nrm: Vector3 = hit["normal"]
-	if _hole_mat == null:
-		_hole_mat = StandardMaterial3D.new()
-		_hole_mat.albedo_texture = _hole_tex()
-		_hole_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_hole_mat.roughness = 1.0
-		_dust_mat = StandardMaterial3D.new()
-		_dust_mat.albedo_texture = World.smoke_tex()
-		_dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_dust_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-		_dust_mat.vertex_color_use_as_albedo = true
-		_chip_mat = StandardMaterial3D.new()
-		_chip_mat.vertex_color_use_as_albedo = true
+	_ensure_impact_mats()
 	# furo (fica ~20 s; no máximo 60 no mapa)
 	var hole := MeshInstance3D.new()
 	var qm := QuadMesh.new()
@@ -3284,6 +3360,14 @@ func _server_tick(delta: float) -> void:
 		MATCH:
 			if z_stage >= 0 and z_t >= z_wait + z_shrink and z_stage < ZONES.size() - 1:
 				_zone_next()
+			# mar em volta da ilha: quem entra fundo se afoga
+			_drown_t += delta
+			if _drown_t >= 0.5:
+				_drown_t = 0.0
+				for id in players.keys():
+					var dp: Player = players.get(id)
+					if dp and dp.alive and not dp.spect and dp.air == 0 and dp.position.y < World.SEA_Y - 1.0:
+						_server_damage(id, -1, 35.0, false, "afogado", true)
 			z_tick += delta
 			if z_tick >= 1.0:
 				z_tick = 0.0
@@ -3864,7 +3948,7 @@ func req_pickup(i: int, sub: int) -> void:
 	var p: Player = players.get(id)
 	if p == null or i < 0 or i >= world.items.size():
 		return
-	if p.position.distance_to(world.items[i]["pos"]) > 4.0:
+	if p.position.distance_to(world.items[i]["pos"]) > 6.5:
 		return
 	server_pickup(id, i, sub)
 
@@ -4177,6 +4261,8 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		hud.feed("%s  [Granada]  %s" % [kn, vn], col)
 	elif wid == "explosão":
 		hud.feed("%s explodiu %s" % [kn, vn] if kn != vn else "%s explodiu" % vn, col)
+	elif wid == "afogado":
+		hud.feed("%s se afogou" % vn, col)
 	elif wid == "zona" or aid == 0:
 		hud.feed("%s morreu na zona" % vn, col)
 	else:
@@ -4195,7 +4281,7 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 		if spec_id == 0:
 			_spec_next()
 		var me = info.get(local_id)
-		var why := "na queda" if wid == "queda" else ("na zona" if (wid == "zona" or aid == 0) else "por %s" % kn)
+		var why := "na queda" if wid == "queda" else ("afogado" if wid == "afogado" else ("na zona" if (wid == "zona" or aid == 0) else "por %s" % kn))
 		hud.center("Eliminado %s\nColocação: #%d    Abates: %d    Dano: %d" % [why, rank, me["kills"] if me else 0, int(me["dmg"]) if me else 0], 7.0, "bad")
 	elif vid == spec_id:
 		get_tree().create_timer(2.0).timeout.connect(func():

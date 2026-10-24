@@ -43,7 +43,7 @@ const ITEMS := {
 	"a762": {"name": "Munição de sniper", "w": 1.0, "count": 10, "kind": "ammo"},
 	"a12": {"name": "Cartucho 12", "w": 0.8, "count": 12, "kind": "ammo"},
 	"bandage": {"name": "Bandagem", "w": 2.0, "count": 4, "kind": "heal", "heal": 30.0, "time": 2.0},
-	"med": {"name": "Kit médico", "w": 22.0, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
+	"med": {"name": "Kit médico", "w": 15.0, "count": 1, "kind": "heal", "heal": 100.0, "time": 4.5},
 	"drink": {"name": "Energético", "w": 4.0, "count": 2, "kind": "heal", "heal": 50.0, "time": 2.5},
 	"grenade": {"name": "Granada", "w": 6.0, "count": 1, "kind": "throw"},
 	"vest1": {"name": "Colete nível 1", "kind": "gear", "level": 1},
@@ -757,13 +757,13 @@ static func build_item(kind: String, glow := true) -> Node3D:
 		root.add_child(g)
 		for c in g.get_children():
 			if c is MeshInstance3D:
-				c.visibility_range_end = 80.0
+				c.visibility_range_end = 60.0
 				c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if glow:
 			_apply_glow(root, glow_mat(kind))
 		return root
 	var mi := U.mesh(root, item_mesh(kind))
-	mi.visibility_range_end = 120.0 if kind == "box" else 80.0
+	mi.visibility_range_end = 100.0 if kind == "box" else 60.0
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if glow and kind != "box":
 		_apply_glow(root, glow_mat(kind))

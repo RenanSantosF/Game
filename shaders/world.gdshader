@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode diffuse_lambert, specular_schlick_ggx;
+render_mode diffuse_lambert, specular_disabled;
 
 // Material de quase tudo: textura do atlas (camada em UV2.x) vezes a cor do vértice.
 // UV2.y > 0 = balança com o vento (folhas).
@@ -10,8 +10,11 @@ varying float layer;
 varying vec3 wpos;
 varying float wall;
 
+// hash sem seno (mais barato e estável no celular)
 float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
 }
 
 float vnoise(vec2 p) {
@@ -42,7 +45,7 @@ void fragment() {
 	if (wall > 0.5) {
 		float h = mod(wpos.x + wpos.z, 256.0);
 		// escorrido: faixas verticais finas que descem das janelas/telhado
-		float streak = vnoise(vec2(h * 3.1, mod(wpos.y, 256.0) * 0.22)) * (0.6 + 0.4 * vnoise(vec2(h * 9.0, 0.5)));
+		float streak = vnoise(vec2(h * 3.1, mod(wpos.y, 256.0) * 0.22)) * (0.6 + 0.4 * hash(vec2(floor(h * 9.0), 0.5)));
 		// manchas grandes de encardido / fumaça
 		float blot = vnoise(vec2(h * 0.4, wpos.y * 0.5) + 11.0);
 		float g = smoothstep(0.35, 0.8, streak) * 0.55 + smoothstep(0.45, 0.85, blot) * 0.45;
@@ -50,5 +53,4 @@ void fragment() {
 	}
 	ALBEDO = c;
 	ROUGHNESS = 0.88;
-	SPECULAR = 0.25;
 }

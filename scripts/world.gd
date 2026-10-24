@@ -7,6 +7,7 @@ const RES := 200
 const SEED := 2018
 const PLAY := 365.0            # metade da área jogável
 const WATER_Y := -3.0
+const SEA_Y := -18.0              # nível do mar em volta da ilha (abaixo do ponto mais baixo do mapa)
 const LAKE_C := Vector2(-40, 280)
 const LAKE_R := 58.0
 # nome, centro, tipo, raio
@@ -119,6 +120,8 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			_build_war()
 			_build_added()],
 		["Moldando o terreno", func():
+			# a ilha (praia descendo pro mar) só depois de tudo posicionado: o sorteio do mapa não muda
+			island = true
 			_wts = _build_terrain()
 			_highway_floor()
 			_build_floor_body()],
@@ -139,6 +142,7 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 	]
 
 
+var island := false        # borda vira praia/mar (ligado depois de posicionar as coisas)
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
 var detail_meshes := []   # [malha de cidade/objetos, alcance original]: some longe, entra a versão simples
 var far_lod := []         # versão bem simples (blocos de casas e árvores) que aparece de longe
@@ -196,6 +200,11 @@ func _base(x: float, z: float) -> float:
 		h += float(m[1]) * exp(-d2 / (rr * rr))
 	var e := maxf(absf(x), absf(z))
 	h += smoothstep(PLAY - 15.0, SIZE * 0.5, e) * 55.0
+	# ilha: depois da área jogável o chão desce em praia/barranco até o fundo do mar
+	if island and e > PLAY:
+		# costa irregular (não fica uma linha reta)
+		var wob := (noise_r.get_noise_2d(x * 2.0, z * 2.0) * 0.5 + 0.5) * 14.0
+		h = lerpf(h, SEA_Y - 7.0, smoothstep(PLAY, SIZE * 0.5 - 2.0 - wob, e))
 	# lagoa rasa (até a canela) com margem suave
 	var dl := Vector2(x, z).distance_to(LAKE_C)
 	if dl < LAKE_R + 40.0:
@@ -733,19 +742,39 @@ func _build_terrain() -> PackedColorArray:
 			var d := c2 + 1
 			idx.append_array(PackedInt32Array([a, b2, c2, b2, d, c2]))
 	if not headless:
-		var arr := []
-		arr.resize(Mesh.ARRAY_MAX)
-		arr[Mesh.ARRAY_VERTEX] = verts
-		arr[Mesh.ARRAY_NORMAL] = norms
-		arr[Mesh.ARRAY_COLOR] = cols
-		arr[Mesh.ARRAY_INDEX] = idx
-		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = U.tmat()
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
+		# em 4x4 blocos: o celular só desenha os blocos que estão na frente da câmera
+		var CH := 4
+		var per := RES / CH
+		for cj in CH:
+			for ci in CH:
+				var cv := PackedVector3Array()
+				var cn := PackedVector3Array()
+				var cc := PackedColorArray()
+				var cx := PackedInt32Array()
+				var w := per + 1
+				for j in range(cj * per, cj * per + per + 1):
+					for i in range(ci * per, ci * per + per + 1):
+						var k := j * n + i
+						cv.append(verts[k])
+						cn.append(norms[k])
+						cc.append(cols[k])
+				for j in per:
+					for i in per:
+						var a := j * w + i
+						cx.append_array(PackedInt32Array([a, a + 1, a + w, a + 1, a + w + 1, a + w]))
+				var arr := []
+				arr.resize(Mesh.ARRAY_MAX)
+				arr[Mesh.ARRAY_VERTEX] = cv
+				arr[Mesh.ARRAY_NORMAL] = cn
+				arr[Mesh.ARRAY_COLOR] = cc
+				arr[Mesh.ARRAY_INDEX] = cx
+				var mesh := ArrayMesh.new()
+				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+				var mi := MeshInstance3D.new()
+				mi.mesh = mesh
+				mi.material_override = U.tmat()
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(mi)
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for k in idx.size():
@@ -809,8 +838,8 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 	# (sorteio próprio pela posição: não mexe na sequência do mapa)
 	var xr := RandomNumberGenerator.new()
 	xr.seed = hash(Vector3i(int(pos.x * 10.0), int(pos.y * 10.0), int(pos.z * 10.0)))
-	# muito loot: todo ponto ganha 3 a 5 itens a mais (arma vem com munição do lado)
-	var extra := 3
+	# muito loot: todo ponto ganha 2 a 4 itens a mais, espalhados em volta (arma vem com munição do lado)
+	var extra := 2
 	if xr.randf() < 0.6:
 		extra += 1
 	if xr.randf() < 0.3:
@@ -818,11 +847,12 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 	for k in extra:
 		var ek: String = Weapons.LOOT[xr.randi() % Weapons.LOOT.size()] if xr.randf() < 0.72 else Weapons.LOOT_GUNS[xr.randi() % Weapons.LOOT_GUNS.size()]
 		var ang := TAU * (k + xr.randf() * 0.5) / extra
-		var eo := Vector3(cos(ang), 0, sin(ang)) * xr.randf_range(0.45, 0.8)
-		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up})
+		# espalhado em volta (perto, mas não amontoado no mesmo lugar)
+		var eo := Vector3(cos(ang), 0, sin(ang)) * (xr.randf_range(0.9, 1.5) if up else xr.randf_range(1.6, 3.4))
+		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up, "anc": pos})
 		if Weapons.is_gun(ek):
 			var am2 := Weapons.ammo_of(ek)
-			items.append({"pos": pos + eo + Vector3(0.3, 0, 0.2), "kind": am2, "n": Weapons.ammo_pack(ek), "door_out": dout, "door_in": din, "up": up})
+			items.append({"pos": pos + eo + Vector3(0.3, 0, 0.2), "kind": am2, "n": Weapons.ammo_pack(ek), "door_out": dout, "door_in": din, "up": up, "anc": pos})
 
 
 func loot_kind(rng: RandomNumberGenerator, gun: bool) -> String:
@@ -2861,7 +2891,7 @@ func _build_env() -> void:
 	sm.sky_top_color = Color(0.3, 0.45, 0.66)
 	sm.sky_horizon_color = Color(0.72, 0.78, 0.84)
 	sm.ground_horizon_color = Color(0.7, 0.76, 0.82)   # mesma cor da bruma (nada de faixa marrom no horizonte)
-	sm.ground_bottom_color = Color(0.56, 0.6, 0.65)
+	sm.ground_bottom_color = sm.ground_horizon_color   # embaixo do horizonte = mar sumindo na bruma
 	sm.sky_curve = 0.18
 	sm.sun_angle_max = 40.0
 	sm.sun_curve = 0.6
@@ -2870,7 +2900,7 @@ func _build_env() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.68, 0.74, 0.82)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_energy = 0.56
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
@@ -2881,42 +2911,20 @@ func _build_env() -> void:
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.94
 	env.adjustment_contrast = 1.12
-	env.adjustment_brightness = 0.99
-	# chão em volta do mapa até o horizonte (só visual)
-	var mb := MB.new()
-	mb.tex(U.GRASS, 0.02)
-	var h := SIZE / 2.0
-	var far := 760.0
-	var y := 40.0
-	var oc := Color(0.5, 0.56, 0.4)
-	var rects := [[-far, -far, far, -h], [-far, h, far, far], [-far, -h, -h, h], [h, -h, far, h]]
-	for r in rects:
-		mb.quad(Vector3(r[0], y, r[1]), Vector3(r[2], y, r[1]), Vector3(r[2], y, r[3]), Vector3(r[0], y, r[3]), oc, Vector3.UP)
-	# serra ao longe em volta de tudo (a névoa apaga): o horizonte não fica com borda reta
-	var segs := 72
-	var mtn := func(a: float, k: float) -> Vector3:
-		var r := lerpf(720.0, 1020.0, k)
-		var ht := 30.0 + k * (90.0 + 70.0 * (0.5 + 0.5 * sin(a * 5.0 + 1.3)) + 40.0 * sin(a * 13.0)) * (1.0 - 0.35 * k * k)
-		return Vector3(cos(a) * r, ht, sin(a) * r)
-	for i in segs:
-		var a0 := TAU * i / segs
-		var a1 := TAU * (i + 1) / segs
-		for j in 4:
-			var k0 := j / 4.0
-			var k1 := (j + 1) / 4.0
-			var p00: Vector3 = mtn.call(a0, k0)
-			var p01: Vector3 = mtn.call(a1, k0)
-			var p10: Vector3 = mtn.call(a0, k1)
-			var p11: Vector3 = mtn.call(a1, k1)
-			var nrm := (p10 - p00).cross(p01 - p00).normalized()
-			if nrm.y < 0.0:
-				nrm = -nrm
-			mb.quad(p00, p01, p11, p10, oc.lerp(Color(0.42, 0.48, 0.44), k1), nrm)
-	var ring := MeshInstance3D.new()
-	ring.mesh = mb.commit()
-	ring.material_override = U.wmat()
-	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(ring)
+	env.adjustment_brightness = 1.03
+	# mar em volta da ilha até o horizonte (a névoa apaga a borda): um quadrado só, opaco e barato
+	var sea := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(9000, 9000)
+	sea.mesh = pm
+	var sm2 := ShaderMaterial.new()
+	sm2.shader = load("res://shaders/sea.gdshader")
+	sm2.set_shader_parameter("horizon", Color(0.7, 0.76, 0.82))
+	sea.material_override = sm2
+	sea.position = Vector3(0, SEA_Y, 0)
+	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sea.extra_cull_margin = 50.0
+	add_child(sea)
 	# lagoa
 	# lagoa rasa: disco que termina antes da margem (não aparece pedaço de água fora dela)
 	var water := MeshInstance3D.new()
@@ -2948,7 +2956,7 @@ func _build_env() -> void:
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-38, 48, 0)
 	sun.light_color = Color(0.96, 0.97, 1.0)
-	sun.light_energy = 1.08
+	sun.light_energy = 1.14
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

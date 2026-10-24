@@ -57,7 +57,6 @@ func _ready() -> void:
 	_cycle(vb, "Gráficos", "quality", Cfg.QUALITY_NAMES, "BAIXA: mais leve (sem sombra, sem grama, resolução menor). Grama muda na próxima partida.")
 	_cycle_vals(vb, "Limite de FPS", "fps", [30, 45, 60], ["30", "45", "60"])
 	_toggle(vb, "Sombras", "shadows")
-	_toggle(vb, "Texturas detalhadas", "tex_detail")
 	_toggle(vb, "Grama", "grass")
 	_cycle_vals(vb, "Distância de visão", "view", [0, 1, 2], ["PERTO", "MÉDIA", "LONGE"])
 	_hint(vb, "Desligar sombras, grama e textura detalhada deixa o jogo mais leve em celular fraco.")

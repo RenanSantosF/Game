@@ -218,7 +218,7 @@ func _tile_style(c: Color, border := Color(1, 1, 1, 0.18)) -> StyleBoxFlat:
 	sb.set_corner_radius_all(6)
 	sb.set_border_width_all(1)
 	sb.border_color = border
-	sb.set_content_margin_all(3)
+	sb.set_content_margin_all(2)
 	return sb
 
 
@@ -272,7 +272,7 @@ func _build_bag_panel() -> void:
 	vb.add_child(hb)
 	bag_left = VBoxContainer.new()
 	bag_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bag_left.size_flags_stretch_ratio = 1.4
+	bag_left.size_flags_stretch_ratio = 1.25
 	bag_left.add_theme_constant_override("separation", 6)
 	hb.add_child(bag_left)
 	var sc := ScrollContainer.new()
@@ -706,9 +706,9 @@ func refresh_bag(p: Player) -> void:
 					if Weapons.att_cat(a) == c:
 						have = a
 				if have != "":
-					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 52.0))
+					ar.add_child(_item_tile(have, 1, {"t": "att", "kind": have, "slot": i}, 62.0))
 				else:
-					ar.add_child(_empty_slot(c, 52.0))
+					ar.add_child(_empty_slot(c, 62.0))
 		bag_left.add_child(card)
 	# equipamento vestido
 	var gear := HBoxContainer.new()
@@ -717,19 +717,19 @@ func refresh_bag(p: Player) -> void:
 	for gk in ["vest", "helmet", "bag"]:
 		var lv: int = {"vest": p.vest_lv if p.armor > 0.0 else 0, "helmet": p.helmet, "bag": p.bag}[gk]
 		if lv > 0:
-			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 96.0))
+			gear.add_child(_item_tile("%s%d" % [gk, lv], int(p.armor) if gk == "vest" else 1, {"t": "gear" if gk != "bag" else "none", "kind": gk, "icon": "%s%d" % [gk, lv]}, 112.0))
 		else:
-			gear.add_child(_empty_slot(gk, 96.0))
+			gear.add_child(_empty_slot(gk, 112.0))
 	# itens soltos
 	for k in p.inv:
 		var kind: String = k
 		var n: int = p.inv[k]
 		if n <= 0:
 			continue
-		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 98.0))
+		bag_grid.add_child(_item_tile(kind, n, {"t": "item", "kind": kind, "n": n}, 128.0))
 	for i in clampi(p.capacity() - used, 0, 3):   # só algumas vagas vazias (não centenas)
 		var empty := Panel.new()
-		empty.custom_minimum_size = Vector2(98, 98)
+		empty.custom_minimum_size = Vector2(128, 128)
 		empty.add_theme_stylebox_override("panel", _tile_style(Color(0, 0, 0, 0.22), Color(1, 1, 1, 0.06)))
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bag_grid.add_child(empty)
@@ -794,7 +794,6 @@ func _buttons() -> Dictionary:
 	b["exit"] = [Vector2(s.x - 300, 34), 22.0, "exit"]
 	b["settings"] = [Vector2(s.x - 352, 34), 22.0, "gear"]
 	if big_map:
-		b["map"] = [Vector2(s.x - 70, s.y - 60), 34.0, "close"]
 		return b
 	if bag_open:
 		return b
@@ -983,6 +982,14 @@ func _down(i: int, p: Vector2) -> void:
 		set_bag(false)
 		return
 	var b := _hit_button(p)
+	if big_map and not edit_mode and b == "":
+		# mapa aberto: tocar fora do mapa fecha
+		var vs := get_viewport().get_visible_rect().size
+		var side := vs.y * 0.92
+		if not Rect2(Vector2((vs.x - side) / 2.0, (vs.y - side) / 2.0), Vector2(side, side)).has_point(p):
+			touches[i] = "btn"
+			action.emit("map")
+			return
 	if edit_mode:
 		if b in EDITABLE:
 			edit_sel = b
@@ -1109,6 +1116,7 @@ func _edit_cmd(b: String) -> void:
 
 
 func _process(delta: float) -> void:
+	_btn_cache_tick()
 	_update_ghost()
 	center_t -= delta
 	if center_t <= 0.0:
@@ -1166,7 +1174,7 @@ func _process(delta: float) -> void:
 	pick_list.custom_minimum_size = Vector2(pw - 12.0, 0)
 	pick_panel.visible = _pick_n > 0 and mode == "ground" and not bag_open and not edit_mode and not big_map
 	# mochila: no meio, sem ocupar a tela toda
-	var bw := clampf(s.x * 0.62, 560.0, 860.0)
+	var bw := clampf(s.x * 0.74, 600.0, 1060.0)
 	bag_panel.size = Vector2(bw, s.y * 0.82)
 	bag_panel.position = Vector2((s.x - bw) / 2.0, s.y * 0.09)
 	bag_panel.custom_minimum_size = bag_panel.size
@@ -1185,26 +1193,23 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 	var hd: bool = ((k == "fire" or k == "fire2") and fire_held) or held.has(k)
 	# transparência escolhida nas configurações (o editor de botões mostra sempre bem visível)
 	var al := 1.0 if edit_mode else clampf(float(Cfg.get_v("btn_alpha")), 0.25, 1.0)
-	var bg := Color(0.04, 0.05, 0.06, 0.38)
-	var ring := Color(1, 1, 1, 0.42)
 	var on := (k == "sprint" and sprinting) or (k == "crouch" and crouched) or (k == "prone" and proned)
-	if hd:
-		bg = Color(0.95, 0.42, 0.18, 0.55)
-	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
-		bg = Color(0.85, 0.55, 0.1, 0.6)
-	elif on:
-		bg = Color(0.95, 0.72, 0.2, 0.5)
-		ring = Color(1, 0.86, 0.38, 0.95)
+	var state := "n"
 	if edit_mode and k == edit_sel:
-		bg = Color(0.2, 0.6, 1.0, 0.5)
-	bg.a *= al
-	ring.a *= al
-	# fundo com degradê (mais escuro no centro), anel fino e um brilho em cima
-	pad.draw_circle(pos, r, bg)
-	pad.draw_circle(pos, r * 0.78, Color(0, 0, 0, 0.12 * al))
-	pad.draw_arc(pos, r - 1.0, 0, TAU, 48, ring, 2.0, true)
-	pad.draw_arc(pos, r - 4.0, PI * 1.15, PI * 1.85, 20, Color(1, 1, 1, 0.16 * al), 2.0, true)
-	glyph(pad, icon, pos, r * 0.5, Color(1, 1, 1, minf(1.0, 0.95 * al + 0.1)))
+		state = "sel"
+	elif hd:
+		state = "hd"
+	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
+		state = "gold"
+	elif on:
+		state = "on"
+	# desenho pronto em textura (1 desenho por botão em vez de vários círculos/linhas): bem mais leve
+	var tex := _btn_texture(icon, state)
+	if tex:
+		var rr := r * (BTN_HALF / BTN_R)
+		pad.draw_texture_rect(tex, Rect2(pos - Vector2(rr, rr), Vector2(rr, rr) * 2.0), false, Color(1, 1, 1, al))
+	else:
+		_paint_btn(pad, pos, r, icon, state, al)
 	if k == "bag" and bag_fill > 0.0:
 		# borda que enche com o espaço usado: branca, amarela quase cheia, vermelha cheia
 		var bf := clampf(bag_fill, 0.0, 1.0)
@@ -1220,6 +1225,82 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.15, 0.6, 0.25))
 		var sw := font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 		pad.draw_string(font, pos + Vector2(r * 0.68 - sw / 2.0, -r * 0.68 + 5), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+
+# fundo com degradê (mais escuro no centro), anel fino, brilho em cima e o ícone
+func _paint_btn(ci: CanvasItem, pos: Vector2, r: float, icon: String, state: String, al: float) -> void:
+	var bg := Color(0.04, 0.05, 0.06, 0.38)
+	var ring := Color(1, 1, 1, 0.42)
+	match state:
+		"hd":
+			bg = Color(0.95, 0.42, 0.18, 0.55)
+		"gold":
+			bg = Color(0.85, 0.55, 0.1, 0.6)
+		"on":
+			bg = Color(0.95, 0.72, 0.2, 0.5)
+			ring = Color(1, 0.86, 0.38, 0.95)
+		"sel":
+			bg = Color(0.2, 0.6, 1.0, 0.5)
+	bg.a *= al
+	ring.a *= al
+	ci.draw_circle(pos, r, bg)
+	ci.draw_circle(pos, r * 0.78, Color(0, 0, 0, 0.12 * al))
+	ci.draw_arc(pos, r - 1.0 * r / 40.0, 0, TAU, 48, ring, maxf(2.0, r / 20.0), true)
+	ci.draw_arc(pos, r - 4.0 * r / 40.0, PI * 1.15, PI * 1.85, 20, Color(1, 1, 1, 0.16 * al), maxf(2.0, r / 20.0), true)
+	glyph(ci, icon, pos, r * 0.5, Color(1, 1, 1, minf(1.0, 0.95 * al + 0.1)))
+
+
+# cache dos botões: cada (ícone, estado) é desenhado uma vez numa SubViewport e vira textura
+const BTN_R := 100.0       # raio do botão dentro da textura
+const BTN_HALF := 112.0    # meia largura da textura
+var _btn_tex := {}
+var _btn_q: Array = []
+var _btn_vp: SubViewport
+var _btn_drawer: Control
+var _btn_pending := ""
+var _btn_wait := 0
+
+
+func _btn_texture(icon: String, state: String) -> Texture2D:
+	var key := icon + "|" + state
+	var t = _btn_tex.get(key)
+	if t is Texture2D:
+		return t
+	if t == null and key != _btn_pending and not _btn_q.has(key):
+		_btn_q.append(key)
+	return null
+
+
+func _btn_cache_tick() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if _btn_vp == null:
+		_btn_vp = SubViewport.new()
+		_btn_vp.size = Vector2i(int(BTN_HALF * 2.0), int(BTN_HALF * 2.0))
+		_btn_vp.transparent_bg = true
+		_btn_vp.disable_3d = true
+		_btn_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(_btn_vp)
+		_btn_drawer = Control.new()
+		_btn_drawer.size = Vector2(BTN_HALF * 2.0, BTN_HALF * 2.0)
+		_btn_drawer.draw.connect(func():
+			if _btn_pending != "":
+				var sp := _btn_pending.split("|")
+				_paint_btn(_btn_drawer, Vector2(BTN_HALF, BTN_HALF), BTN_R, sp[0], sp[1], 1.0))
+		_btn_vp.add_child(_btn_drawer)
+	if _btn_pending != "":
+		_btn_wait += 1
+		if _btn_wait >= 3:
+			var img := _btn_vp.get_texture().get_image()
+			_btn_tex[_btn_pending] = ImageTexture.create_from_image(img) if img and not img.is_empty() else false
+			_btn_pending = ""
+		return
+	if _btn_q.is_empty():
+		return
+	_btn_pending = _btn_q.pop_front()
+	_btn_wait = 0
+	_btn_drawer.queue_redraw()
+	_btn_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 # retângulo de cantos redondos preenchido

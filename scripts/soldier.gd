@@ -105,7 +105,7 @@ func tick(delta: float, far: bool, pitch: float, crouch: float, hands: Array, ha
 			_grip("Left", 0.8)
 
 
-static var CURL_SIGN := -1.0
+static var CURL_SIGN := 1.0
 var _fingers := {}
 
 

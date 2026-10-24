@@ -60,8 +60,10 @@ var heal_kind := ""
 var punch_t := 0.0
 var gren_hold := false      # segurando a granada sem pino (braço pra trás, pronto pra jogar)
 var _gren_k := 0.0
+var _vel_mul := 1.0
 var _chute_age := -1.0      # tempo desde que o paraquedas abriu (tranco da abertura)
 var _gren_mi: MeshInstance3D
+static var _handle_cache := {}
 var vault_t := -1.0
 var _vault := []
 var aim_t := 0.0         # tempo virado pra mira depois de atirar
@@ -331,12 +333,14 @@ static func _chute_mesh() -> Mesh:
 		y -= v * 0.28
 		# perfil de asa e células estufadas (entre costuras) só em cima
 		var cell := fmod(u * CELLS, 1.0)
-		var puff := 0.55 + 0.45 * sin(cell * PI)
-		var thick := 0.82 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
+		var puff := 0.7 + 0.3 * sin(cell * PI)
+		# perfil cheio até perto das bordas (quinas arredondadas e gordinhas, não em ponta)
+		var prof := pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 0.55)
+		var thick := 0.82 * prof * puff
 		if side > 0.0:
 			y += thick
 		else:
-			y -= 0.13 * sin(PI * v)
+			y -= 0.16 * pow(sin(PI * v), 0.6)
 		# o arco "empurra" a altura pra fora do centro (normal do arco)
 		return Vector3(x, y, z)
 	for side in [1.0, -1.0]:
@@ -654,8 +658,21 @@ func reset_state(pos: Vector3) -> void:
 		model.visible = true
 
 
+# meio do cabo da pistola (no espaço da arma): embaixo e atrás do modelo
+static func _pistol_handle(id: String) -> Vector3:
+	if not _handle_cache.has(id):
+		var ab := AABB(Vector3(-0.02, -0.05, -0.15), Vector3(0.04, 0.12, 0.19))
+		if ResourceLoader.exists("res://models/guns/%s.res" % id):
+			ab = (load("res://models/guns/%s.res" % id) as Mesh).get_aabb()
+		_handle_cache[id] = Vector3(0.0, ab.position.y * 0.55, ab.end.z - 0.03)
+	return _handle_cache[id]
+
+
 func board() -> void:
 	air = 3
+	dying_t = 0.0
+	if model:
+		model.visible = false
 	set_crouch(false)
 	set_prone(false)
 	velocity = Vector3.ZERO
@@ -708,10 +725,16 @@ func _physics_process(delta: float) -> void:
 		if alive:
 			if is_bot and not (b_far and Engine.get_physics_frames() % 3 != pid % 3):
 				_bot(delta * (3.0 if b_far else 1.0))
+			_vel_mul = 1.0
 			if car >= 0:
 				velocity = Vector3.ZERO
 			elif vault_t >= 0.0:
 				_vault_step(delta)
+			elif is_bot and b_far and air == 0 and not game.near_cam(position, 120.0):
+				# longe de todos e da câmera: anda só 1 quadro a cada 3
+				if Engine.get_physics_frames() % 3 == pid % 3:
+					_vel_mul = 3.0
+					_move(delta * 3.0)
 			else:
 				_move(delta)
 	else:
@@ -828,7 +851,14 @@ func _move(delta: float) -> void:
 			if is_local:
 				game.sfx("jump")
 	want_jump = false
-	move_and_slide()
+	if _vel_mul != 1.0:
+		# bot longe de todo mundo anda 1 quadro a cada 3 (com o passo 3x maior): física bem mais leve
+		var vm := velocity
+		velocity *= _vel_mul
+		move_and_slide()
+		velocity = Vector3(vm.x, velocity.y / _vel_mul, vm.z)
+	else:
+		move_and_slide()
 	_step_up(dir, spd, delta)
 	if is_on_floor() and not _was_floor and _air_time > 0.35:
 		game.sfx_at("land", global_position, is_local)
@@ -1003,6 +1033,14 @@ func _steps(delta: float, sim: bool) -> void:
 # ---------------- animação ----------------
 
 func _animate(delta: float, sim: bool) -> void:
+	# dentro do avião nada do boneco aparece (nem animação de morte que sobrou do lobby)
+	if air == 3:
+		dying_t = 0.0
+		model.visible = false
+		chute.visible = false
+		if _gren_mi:
+			_gren_mi.visible = false
+		return
 	var sp := est_speed
 	if sim:
 		sp = Vector2(velocity.x, velocity.z).length()
@@ -1351,6 +1389,16 @@ func _animate(delta: float, sim: bool) -> void:
 	if hands.size() != 2 or reload_t > 0.0 or heal_t > 0.0 or punch_t > 0.0 or vk > 0.0 or _gren_k > 0.0:
 		hand_dirs = []
 	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(0.0 if cr < 0.0 else _crouch_k, 0.85 * vk), hands, hand_dirs, pole_k)
+	# pistola: o cabo fica na palma da mão (a mão já está virada como quem empunha); assim a arma nunca
+	# fica solta na frente da mão, seja qual for o tamanho da pistola
+	if armed and gun and gun.visible and not far and _gren_k <= 0.0 and heal_t <= 0.0 and reload_t <= 0.0 and sol.b.has("RightHandMiddle1") and shown_wid != "" and shown_wid != "fist":
+		var wrist: Vector3 = sol.sk.global_transform * sol.sk.get_bone_global_pose(sol.b["RightHand"]).origin
+		var knuckle: Vector3 = sol.sk.global_transform * sol.sk.get_bone_global_pose(sol.b["RightHandMiddle1"]).origin
+		var palm := wrist.lerp(knuckle, 0.55)
+		var pist: bool = Weapons.get_w(shown_wid)["type"] == "pistol"
+		var want_p := aim.global_transform.affine_inverse() * palm - (_pistol_handle(shown_wid) if pist else Vector3(0.0, -0.035, 0.02))
+		# fuzil: só corrige o que falta (a mão de apoio continua no guarda-mão)
+		gun.position = want_p if pist else gun.position.lerp(want_p, 0.85)
 
 
 
