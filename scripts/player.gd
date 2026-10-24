@@ -64,6 +64,9 @@ var aim_t := 0.0         # tempo virado pra mira depois de atirar
 var ready_t := 0.0       # tempo com a arma apontada (depois volta pra perto da barriga)
 var _ready_k := 0.0
 var _air_time := 0.0
+var _jump_seen := false
+var _jump_t := -1.0          # tempo da animação do pulo (-1 = no chão)
+const JUMP_ANIM_T := 0.72   # ~ tempo no ar de um pulo normal
 var _step_t := 0.0
 
 # jogadores remotos (interpolação)
@@ -129,6 +132,11 @@ var b_exit: Array = []       # caminho pra sair de casa (porta de dentro, porta 
 var b_stuck_n := 0
 var b_escape_t := 0.0
 var b_escape := Vector3.ZERO
+var b_cover := Vector3.INF   # ponto atrás de alguma coisa (protegido do alvo) ou INF
+var b_cover_t := 0.0         # quando procurar cobertura de novo
+var b_peek := false          # atrás da cobertura: true = levantou pra atirar, false = escondido
+var b_peek_t := 0.0
+var b_hold := 0.0            # escondido: continua "lembrando" do alvo mesmo sem ver
 
 
 func setup(g: Node, id: int, n: String, local: bool, bot: bool, vis: bool) -> void:
@@ -657,9 +665,9 @@ func _move(delta: float) -> void:
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
 	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
-	var spd := lerpf(3.5, 4.5, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
+	var spd := lerpf(3.3, 4.2, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
 	if sprint:
-		spd = 6.2 if (sel < 0 or cur_wid() == "fist") else 5.8
+		spd = 5.8 if (sel < 0 or cur_wid() == "fist") else 5.45
 	# atirando ou dando soco anda bem mais devagar
 	if (aim_t > 0.0 and not sprint) or (is_local and game.hud != null and game.hud.fire_held):
 		spd = minf(spd, 2.6)
@@ -676,7 +684,7 @@ func _move(delta: float) -> void:
 	if game.world.in_water(position):
 		spd = minf(spd, 3.2)
 	if is_bot:
-		spd = (5.8 if sprint else 4.5) if b_target == 0 else (5.4 if sprint else 4.2)
+		spd = (5.45 if sprint else 4.2) if b_target == 0 else (5.3 if sprint else 3.95)
 		if crouch:
 			spd = 2.6
 	if stun_t > 0.0:
@@ -779,11 +787,15 @@ func try_vault(dir: Vector3) -> bool:
 	var space := get_world_3d().direct_space_state
 	var base := global_position
 	var ex := [get_rid()]
+	# subindo escada/rampa não é janela: pulo normal
+	if is_on_floor() and get_floor_normal().y < 0.9:
+		return false
 	var hit_d := 99.0
 	for hgt in [0.45, 0.85, 1.2]:
 		var q := PhysicsRayQueryParameters3D.create(base + Vector3(0, hgt, 0), base + Vector3(0, hgt, 0) + f * 1.25, 1, ex)
 		var r := space.intersect_ray(q)
-		if not r.is_empty():
+		# só conta parede de pé (rampa da escada é inclinada)
+		if not r.is_empty() and absf((r["normal"] as Vector3).y) < 0.4:
 			hit_d = minf(hit_d, Vector2(r["position"].x - base.x, r["position"].z - base.z).length())
 	if hit_d > 1.2:
 		return false
@@ -798,7 +810,7 @@ func try_vault(dir: Vector3) -> bool:
 	if tr.is_empty():
 		return false
 	var top: float = tr["position"].y - base.y
-	if top < 0.4 or top > 1.45:
+	if top < 0.4 or top > 1.45 or (tr["normal"] as Vector3).y < 0.85:
 		return false
 	# coisa larga (caixote, feno, caixa de arma, pedra): sobe e fica em cima, não atravessa
 	var on_top := true
@@ -916,6 +928,9 @@ func _animate(delta: float, sim: bool) -> void:
 	chute.rotation.y = yaw
 	var k := minf(1.0, 12.0 * delta)
 	var airborne := (not is_on_floor()) if sim else _remote_air
+	if not airborne:
+		_jump_t = -1.0
+		_jump_seen = false
 	var armed := shown_wid != "fist"
 	var far: bool = not game.near_cam(global_position, 35.0)
 	var cr := 0.0
@@ -1012,9 +1027,16 @@ func _animate(delta: float, sim: bool) -> void:
 		# salto da janela: a animação inteira cabe no tempo do pulo
 		if sol.cur != "Vault":
 			sol.play("Vault", 0.06, sol.ap.get_animation("Vault").length / (VAULT_TIME * 1.6))
-	elif airborne and mix and (not sim or velocity.y > 1.5 or _air_time > 0.2):
-		# pulo: encolhe as pernas (juntas) enquanto estiver no ar
-		sol.play("Air", 0.18)
+	elif airborne and mix and (not sim or velocity.y > 1.5 or _air_time > 0.2 or _jump_t >= 0.0):
+		# pulo: o pulo antigo (pernas menos abertas) uma vez; se ainda estiver caindo, pose de queda
+		if _jump_t < 0.0 and (velocity.y > 1.5 or (not sim and not _jump_seen)) and sol.has_anim("JumpSoft"):
+			_jump_t = 0.0
+		if _jump_t >= 0.0 and _jump_t < JUMP_ANIM_T:
+			_jump_t += delta
+			sol.play("JumpSoft", 0.08, sol.ap.get_animation("JumpSoft").length / JUMP_ANIM_T)
+		else:
+			sol.play("Air", 0.25)
+		_jump_seen = true
 	elif airborne and sp > 2.5 and vault_t < 0.0:
 		# pulando correndo: as pernas continuam no passo
 		sol.play("Running", 0.15, 0.8)
@@ -1150,13 +1172,14 @@ func _bot(delta: float) -> void:
 		b_target = 0
 		b_think = 0.0
 	if t != null and is_instance_valid(t) and t.alive and t.air == 0:
-		heal_t = 0.0
+		if b_cover == Vector3.INF or b_peek or b_cover.distance_to(position) > 1.0:
+			heal_t = 0.0   # só se cura no meio da briga escondido atrás da cobertura
 		b_exit.clear()
 		if sel < 0 or cur_wid() == "fist" or not _has_ammo(cur_wid()):
 			_bot_best_gun()
 		var from := position + Vector3(0, head_y(), 0)
 		# mira no peito, às vezes na cabeça
-		var aimp := t.position + Vector3(0, t.head_y() - (0.05 if randf() < 0.25 * b_skill else 0.45), 0)
+		var aimp := t.position + Vector3(0, t.head_y() - (0.05 if randf() < 0.18 * b_skill else 0.45), 0)
 		var d := aimp - from
 		var wy := atan2(-d.x, -d.z)
 		var wp := atan2(d.y, Vector2(d.x, d.z).length())
@@ -1166,10 +1189,11 @@ func _bot(delta: float) -> void:
 		if b_strafe_t <= 0.0:
 			b_strafe = [-1.0, -1.0, 0.0, 1.0, 1.0].pick_random()
 			b_strafe_t = randf_range(0.5, 1.4)
-			set_crouch(randf() < 0.2 and hp > 80.0)
-			# pula de vez em quando pra atrapalhar a mira
-			if randf() < 0.15 * b_skill:
-				want_jump = true
+			if b_cover == Vector3.INF:
+				set_crouch(randf() < 0.2 and hp > 80.0)
+				# pula de vez em quando pra atrapalhar a mira
+				if randf() < 0.12 * b_skill:
+					want_jump = true
 		var dist := d.length()
 		var w := cur_stat()
 		var ideal := 8.0 if w["type"] == "shotgun" else (2.0 if w["type"] == "fist" else (60.0 if w["type"] == "sniper" else 20.0))
@@ -1182,15 +1206,47 @@ func _bot(delta: float) -> void:
 		if hp < 70.0 and (count("med") > 0 or count("bandage") > 0) and w["type"] != "fist":
 			fwd = 1.0
 		mv = Vector2(b_strafe, fwd)
+		# briga de média/longa distância: procura algo pra se esconder atrás (caixote, muro, carro, árvore)
+		var can_fire := true
+		b_cover_t -= delta
+		if w["type"] != "fist" and w["type"] != "shotgun" and dist > 9.0 and not out_zone:
+			if b_cover_t <= 0.0:
+				b_cover_t = randf_range(2.5, 4.0)
+				if b_cover == Vector3.INF or b_cover.distance_to(position) > 12.0 or not _bot_covered(b_cover, t):
+					b_cover = _bot_find_cover(t)
+			if b_cover != Vector3.INF:
+				var tc := b_cover - position
+				if Vector2(tc.x, tc.z).length() > 0.7:
+					# corre pra cobertura olhando pro inimigo
+					mv = _world_to_local(Vector3(tc.x, 0, tc.z).normalized())
+					set_crouch(false)
+				else:
+					# atrás da cobertura: abaixa (recarrega/se cura escondido) e levanta pra atirar
+					mv = Vector2.ZERO
+					b_peek_t -= delta
+					if b_peek_t <= 0.0:
+						b_peek = not b_peek
+						b_peek_t = randf_range(1.2, 2.2) if b_peek else randf_range(0.9, 1.7)
+					var low_hp := hp < 110.0
+					if reload_t > 0.0 or low_hp and not b_peek:
+						b_peek = false
+					set_crouch(not b_peek)
+					can_fire = b_peek
+					b_hold = 3.0
+					if not b_peek and hp < 120.0 and heal_t <= 0.0:
+						_bot_try_heal(false)
+		else:
+			b_cover = Vector3.INF
 		# fora da zona: briga andando pra dentro dela
 		if out_zone:
 			var to := (zc - me).normalized()
 			mv = _world_to_local(Vector3(to.x, 0, to.y))
 		b_react -= delta
-		if b_react <= 0.0 and absf(angle_difference(yaw, wy)) < 0.12 and dist < float(w["range"]):
+		if can_fire and b_react <= 0.0 and absf(angle_difference(yaw, wy)) < 0.12 and dist < float(w["range"]):
 			_bot_fire(from, aimp, w)
 	else:
 		b_react = randf_range(0.45, 0.9)
+		b_cover = Vector3.INF
 		set_crouch(false)
 		set_prone(false)
 		if heal_t > 0.0:
@@ -1257,6 +1313,52 @@ func _bot(delta: float) -> void:
 			b_stuck_n = 0
 		b_last = position
 		b_stuck_t = 0.0
+
+
+# ponto protegido: algo baixo entre o ponto e o alvo, perto do ponto (agachado não leva tiro)
+func _bot_covered(p: Vector3, t: Player) -> bool:
+	var space := get_world_3d().direct_space_state
+	var tp := t.position + Vector3(0, 1.2, 0)
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.75, 0), tp, 1, [get_rid(), t.get_rid()])
+	var r := space.intersect_ray(q)
+	return not r.is_empty() and (r["position"] as Vector3).distance_to(p) < 3.0
+
+
+# procura cobertura em volta (de lado/pra trás em relação ao alvo), a mais perto que sirva
+func _bot_find_cover(t: Player) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var to_t := Vector3(t.position.x - position.x, 0, t.position.z - position.z).normalized()
+	var best := Vector3.INF
+	var bd := 99.0
+	for k in 12:
+		var a := TAU * k / 12.0 + randf() * 0.3
+		var dir := Vector3(sin(a), 0, cos(a))
+		# não corre pra cima do inimigo
+		if dir.dot(to_t) > 0.5:
+			continue
+		var r := randf_range(2.5, 8.0)
+		var p := position + dir * r
+		var dq := PhysicsRayQueryParameters3D.create(p + Vector3(0, 3.0, 0), p + Vector3(0, -4.0, 0), 1, [get_rid()])
+		var dr := space.intersect_ray(dq)
+		if dr.is_empty():
+			continue
+		p = dr["position"]
+		if absf(p.y - position.y) > 1.2:
+			continue
+		# dá pra chegar (nada no caminho) e dá pra ficar em pé lá
+		var wq := PhysicsRayQueryParameters3D.create(position + Vector3(0, 0.9, 0), p + Vector3(0, 0.9, 0), 1, [get_rid()])
+		if not space.intersect_ray(wq).is_empty():
+			continue
+		if not _bot_covered(p, t):
+			continue
+		# levantando tem que enxergar o alvo (senão não dá pra atirar dali)
+		var hq := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1.6, 0), t.position + Vector3(0, 1.3, 0), 1, [get_rid(), t.get_rid()])
+		var peek_ok := space.intersect_ray(hq).is_empty()
+		var sc := r + (0.0 if peek_ok else 6.0)
+		if sc < bd:
+			bd = sc
+			best = p
+	return best
 
 
 # direção mais livre (raio no peito e no joelho), puxando pro destino
@@ -1507,6 +1609,12 @@ func _bot_pick_target() -> void:
 		if space.intersect_ray(q).is_empty():
 			best = id
 			bd = dd
+	# escondido atrás da cobertura não vê o alvo, mas lembra dele por um tempo
+	b_hold = maxf(b_hold - 0.25, 0.0)
+	if best == 0 and b_hold > 0.0 and game.players.has(b_target):
+		var ot: Player = game.players[b_target]
+		if ot.alive and ot.air == 0 and ot.position.distance_to(position) < 90.0:
+			best = b_target
 	if best != b_target:
 		b_react = randf_range(0.35, 0.8) / b_skill
 	b_target = best
@@ -1528,11 +1636,13 @@ func _bot_fire(from: Vector3, aimp: Vector3, w: Dictionary) -> void:
 			_bot_best_gun()
 		return
 	mag[wid] -= 1
-	cool = 1.0 / float(w["rate"]) * 1.2
+	cool = 1.0 / float(w["rate"]) * 1.3
 	var base := (aimp - from).normalized()
 	var right := base.cross(Vector3.UP).normalized()
 	var up := right.cross(base)
-	var s := tan(deg_to_rad(float(w["spread"]) * 0.8 + 2.2 / b_skill))
+	# erra um pouco mais (e mais ainda de longe e com o alvo correndo)
+	var far_k := clampf(from.distance_to(aimp) / 60.0, 0.0, 1.0)
+	var s := tan(deg_to_rad(float(w["spread"]) * 0.85 + (2.9 + 1.6 * far_k) / b_skill))
 	var dirs := []
 	for i in int(w["pellets"]):
 		var a := randf() * TAU

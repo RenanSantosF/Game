@@ -130,7 +130,7 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 				# o minimapa é desenhado em segundo plano (não segura o carregamento)
 				var wts := _wts
 				if map_thread:
-					WorkerThreadPool.add_task(func(): _build_map(wts))
+					_map_task = WorkerThreadPool.add_task(func(): _build_map(wts))
 				else:
 					_build_map(wts)
 				_build_env()
@@ -139,6 +139,15 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 
 
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
+var _map_task := -1
+
+
+# o minimapa em segundo plano usa os dados do mundo: espera ele acabar antes de liberar o mundo
+# (sair da partida/voltar ao menu com ele ainda rodando corrompia a memória e fechava o jogo)
+func _exit_tree() -> void:
+	if _map_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_map_task)
+		_map_task = -1
 
 
 # cidades em várias etapas (a barra de carregamento anda aos poucos)
@@ -2525,9 +2534,9 @@ const MAP_PX := 2048
 func _build_map(wts: PackedColorArray) -> void:
 	var n := RES + 1
 	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	var cg := Color(0.42, 0.55, 0.27)
-	var cg2 := Color(0.33, 0.46, 0.22)
-	var cd := Color(0.66, 0.55, 0.38)
+	var cg := Color(0.32, 0.5, 0.2)
+	var cg2 := Color(0.24, 0.4, 0.15)
+	var cd := Color(0.56, 0.44, 0.28)
 	var cr := Color(0.58, 0.57, 0.53)
 	var cs := Color(0.8, 0.73, 0.54)
 	var cell := SIZE / RES
@@ -2757,9 +2766,9 @@ func _build_env() -> void:
 	var env := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	# dia nublado e pesado (pré-guerra): céu cinza, sol fraco, névoa de poeira e fumaça
-	sm.sky_top_color = Color(0.36, 0.48, 0.62)
-	sm.sky_horizon_color = Color(0.68, 0.7, 0.7)
+	# dia de guerra, mas com cor: céu azul com bruma de poeira, sol firme
+	sm.sky_top_color = Color(0.22, 0.4, 0.7)
+	sm.sky_horizon_color = Color(0.6, 0.7, 0.8)
 	sm.ground_horizon_color = Color(0.56, 0.55, 0.52)
 	sm.ground_bottom_color = Color(0.42, 0.41, 0.39)
 	sm.sky_curve = 0.18
@@ -2769,19 +2778,19 @@ func _build_env() -> void:
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.64, 0.64, 0.64)
-	env.ambient_light_energy = 0.62
+	env.ambient_light_color = Color(0.68, 0.7, 0.74)
+	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.64, 0.66, 0.66)
-	env.fog_density = 0.0024
+	env.fog_light_color = Color(0.58, 0.64, 0.7)
+	env.fog_density = 0.0018
 	env.fog_sky_affect = 0.55
-	# cores mais secas e frias (o mundo parece cansado)
+	# cores vivas e com contraste (sombras mais fundas, luz mais clara)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 0.95
-	env.adjustment_contrast = 1.05
-	env.adjustment_brightness = 1.02
+	env.adjustment_saturation = 1.15
+	env.adjustment_contrast = 1.12
+	env.adjustment_brightness = 0.95
 	# chão em volta do mapa até o horizonte (só visual)
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
@@ -2827,8 +2836,8 @@ func _build_env() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-48, 35, 0)
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 0.95
+	sun.light_color = Color(1.0, 0.94, 0.82)
+	sun.light_energy = 1.05
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

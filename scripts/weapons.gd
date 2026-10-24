@@ -518,34 +518,73 @@ static func gear(kind: String) -> Mesh:
 			for sx in [-1.0, 1.0]:
 				m.box(Transform3D(Basis(), Vector3(sx * 0.108, 1.615, -0.02)), Vector3(0.012, 0.022, 0.12), Color(0.12, 0.12, 0.12))
 	elif is_bag(kind):
-		# mochila de assalto quadrada, colada nas costas (por cima do colete), maior a cada nível
+		# mochila militar arredondada (lona estufada), colada nas costas, maior a cada nível:
+		# corpo curvo, tampa abaulada, bolso da frente estufado, bolsos laterais, fitas de compressão
 		var k: float = [0.0, 0.85, 1.0, 1.12][lv]
-		var d := 0.11 * k
-		var h := 0.36 * k
-		var w := 0.27 * minf(k, 1.05)
+		var d := 0.12 * k
+		var h := 0.37 * k
+		var w := 0.28 * minf(k, 1.05)
 		var z0 := 0.15     # encosta nas costas (o colete, se tiver, fica escondido atrás dela)
 		var yc := 1.22
-		m.box(Transform3D(Basis(), Vector3(0, yc, z0 + d / 2.0)), Vector3(w, h, d), c)
-		# cantos arredondados (laterais um pouco mais escuras) e tampa
-		for sx in [-1.0, 1.0]:
-			m.box(Transform3D(Basis(), Vector3(sx * (w / 2.0 + 0.008), yc, z0 + d / 2.0)), Vector3(0.016, h * 0.94, d * 0.9), c.darkened(0.1))
-		m.box(Transform3D(Basis(Vector3.RIGHT, -0.12), Vector3(0, yc + h / 2.0 - 0.02, z0 + d / 2.0 + 0.01)), Vector3(w * 1.02, 0.05, d * 1.05), c.darkened(0.15))
-		# bolso da frente e remendo do nível
-		m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.18, z0 + d + 0.015)), Vector3(w * 0.75, h * 0.42, 0.03), c.lightened(0.05))
+		var zc := z0 + d / 2.0
+		# corpo: costas retas (encostam no corpo), resto estufado
+		_pack(m, Vector3(0, yc, zc), Vector3(w / 2.0, h / 2.0, d / 2.0), c, 0.45, zc - d * 0.32)
+		# tampa por cima, caindo um pouco pra trás
+		_pack(m, Vector3(0, yc + h * 0.44, zc + 0.012), Vector3(w * 0.53, h * 0.11, d * 0.6), c.darkened(0.12), 0.5)
+		# bolso da frente, estufado, na parte de baixo
+		_pack(m, Vector3(0, yc - h * 0.14, z0 + d * 0.98), Vector3(w * 0.38, h * 0.26, 0.035 + 0.01 * lv), c.lightened(0.04), 0.5)
+		if lv >= 2:
+			# bolsos laterais (cantil/carregador)
+			for sx in [-1.0, 1.0]:
+				_pack(m, Vector3(sx * (w * 0.5 + 0.012), yc - h * 0.12, zc + 0.006), Vector3(0.026, h * 0.24, d * 0.36), c.darkened(0.06), 0.55)
 		m.tex(U.PLAIN, 4.0)
-		m.box(Transform3D(Basis(), Vector3(0, yc + h * 0.18, z0 + d + 0.003)), Vector3(0.06, 0.035, 0.004), patch)
-		for kk in 3:
-			m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.05 + kk * 0.04, z0 + d + 0.004)), Vector3(w * 0.8, 0.008, 0.005), c.darkened(0.3))
+		# fitas de compressão contornando as laterais e o bolso, e o remendo do nível
+		for sx in [-1.0, 1.0]:
+			m.box(Transform3D(Basis(), Vector3(sx * w * 0.3, yc + h * 0.02, z0 + d * 1.005)), Vector3(0.022, h * 0.86, 0.006), STRAP)
+		for kk in 2:
+			m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.06 - kk * 0.045, z0 + d * 0.98 + 0.04 + 0.01 * lv)), Vector3(w * 0.6, 0.008, 0.005), c.darkened(0.32))
+		m.box(Transform3D(Basis(), Vector3(0, yc + h * 0.26, z0 + d * 1.0 + 0.002)), Vector3(0.06, 0.035, 0.004), patch)
 		# alças por cima dos ombros
 		for sx in [-1.0, 1.0]:
 			m.box(Transform3D(Basis(Vector3.RIGHT, -0.4), Vector3(sx * 0.075, 1.44, 0.14)), Vector3(0.045, 0.02, 0.12), STRAP)
 		if lv == 3:
 			# isolante enrolado embaixo
 			m.tex(U.FABRIC, 6.0)
-			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(-w * 0.5, yc - h / 2.0 - 0.035, z0 + d / 2.0)), 0.04, 0.04, w, 10, Color(0.25, 0.27, 0.22))
+			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(-w * 0.5, yc - h / 2.0 - 0.03, zc)), 0.04, 0.04, w, 12, Color(0.25, 0.27, 0.22))
 	var mesh := m.commit()
 	_cache[key] = mesh
 	return mesh
+
+
+# volume arredondado (superelipsoide): e ~0.4 = caixa de cantos bem redondos, 1 = elipsoide.
+# flat_z: corta o lado de trás (z menor) reto nesse plano (encosta no corpo)
+static func _pack(m: MB, ctr: Vector3, hs: Vector3, col: Color, e: float, flat_z := -INF) -> void:
+	var seg := 14
+	var rings := 8
+	var pts := []
+	for j in rings + 1:
+		var el := lerpf(-PI / 2.0, PI / 2.0, float(j) / rings)
+		var row := []
+		for i in seg + 1:
+			var az := TAU * i / seg
+			var ce := _sp(cos(el), e)
+			var p := ctr + Vector3(_sp(sin(az), e) * ce * hs.x, _sp(sin(el), e) * hs.y, -_sp(cos(az), e) * ce * hs.z)
+			p.z = maxf(p.z, flat_z)
+			row.append(p)
+		pts.append(row)
+	for j in rings:
+		for i in seg:
+			var a0: Vector3 = pts[j][i]
+			var a1: Vector3 = pts[j][i + 1]
+			var b0: Vector3 = pts[j + 1][i]
+			var b1: Vector3 = pts[j + 1][i + 1]
+			var mid := (a0 + a1 + b0 + b1) / 4.0 - ctr
+			var nrm := Vector3(mid.x / (hs.x * hs.x), mid.y / (hs.y * hs.y), mid.z / (hs.z * hs.z)).normalized()
+			m.quad(a0, a1, b1, b0, col, nrm)
+
+
+static func _sp(v: float, e: float) -> float:
+	return signf(v) * pow(absf(v), e)
 
 
 static func item_mesh(kind: String) -> Mesh:

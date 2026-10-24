@@ -452,7 +452,7 @@ func _build_menu_stage() -> void:
 	add_child(menu_stage)
 	# cada vez que abre o menu, um cenário diferente
 	# (a arena de cubos acesos saiu: parecia de brinquedo) — base ao pôr do sol ou acampamento à noite
-	menu_theme = 1 + randi() % 2
+	menu_theme = randi() % 2   # dia claro ou pôr do sol (a noite deixava o menu triste)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--menu-theme="):
 			menu_theme = int(a.get_slice("=", 1)) % 3
@@ -477,6 +477,9 @@ func _build_menu_stage() -> void:
 	env.ambient_light_color = [Color(0.7, 0.8, 0.95), Color(0.95, 0.75, 0.6), Color(0.35, 0.45, 0.7)][menu_theme]
 	env.ambient_light_energy = [0.75, 0.6, 0.55][menu_theme]
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.2
+	env.adjustment_contrast = 1.08
 	if menu_theme == 1:
 		env.fog_enabled = true
 		env.fog_light_color = Color(1.0, 0.7, 0.45)
@@ -2212,7 +2215,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		lp.wish = Vector3.ZERO
 	# câmera
 	var t := _view_target()
-	var target_len := 2.1
+	var target_len := 1.8
 	var fov := 75.0
 	var base := t.position if t else Vector3.ZERO
 	var cy := cam_yaw_v

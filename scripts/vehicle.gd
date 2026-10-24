@@ -135,7 +135,7 @@ static func paint_for(k: int, tint: Color) -> Color:
 	return tint
 
 
-static func car_material(paint: Color, dirt: float, rust := 0.0) -> ShaderMaterial:
+static func car_material(paint: Color, dirt: float, rust := 0.0, burn := 0.0) -> ShaderMaterial:
 	if _shader == null:
 		_shader = load("res://shaders/car.gdshader")
 	var m := ShaderMaterial.new()
@@ -143,6 +143,7 @@ static func car_material(paint: Color, dirt: float, rust := 0.0) -> ShaderMateri
 	m.set_shader_parameter("paint", paint)
 	m.set_shader_parameter("dirt", dirt)
 	m.set_shader_parameter("rust", rust)
+	m.set_shader_parameter("burn", burn)
 	return m
 
 

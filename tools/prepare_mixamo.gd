@@ -40,6 +40,8 @@ const ANIMS := [
 ]
 # o jogo é que sobe o boneco no pulo: o quadril dessas fica na altura de pé
 const LOCK_Y := ["Jump"]
+# quanto o "JumpSoft" puxa as pernas pro parado (0 = pulo original, 1 = pernas paradas)
+const LEG_SOFT := 0.55
 # ossos dos braços (o "WalkFree" pega esses do parado)
 const ARM_WORDS := ["Shoulder", "Arm", "Hand"]
 
@@ -149,10 +151,11 @@ func _initialize() -> void:
 		s.free()
 	if lib.has_animation("Walking") and idle_anim:
 		lib.add_animation("WalkFree", _arms_from(lib.get_animation("Walking"), idle_anim))
-	if lib.has_animation("Jump"):
-		# no ar: pose encolhida com as pernas juntas (o pulo em distância abre demais as pernas)
-		var src_air: Animation = lib.get_animation("JumpDown") if lib.has_animation("JumpDown") else lib.get_animation("Jump")
-		lib.add_animation("Air", _pose_at(src_air, 0.02, idle_anim))
+	if lib.has_animation("Jump") and idle_anim:
+		# pulo antigo com as pernas menos abertas: coxas/canelas no meio do caminho pro parado
+		lib.add_animation("JumpSoft", _soften_legs(lib.get_animation("Jump"), idle_anim, LEG_SOFT))
+		# no ar (caindo de mais alto): pose do meio desse pulo, parada
+		lib.add_animation("Air", _pose_at(lib.get_animation("JumpSoft"), 0.8, idle_anim))
 	if lib.has_animation("Prone"):
 		# deitado parado: pose do começo do rastejar
 		lib.add_animation("ProneIdle", _pose_at(lib.get_animation("Prone"), 0.0))
@@ -252,4 +255,24 @@ func _pose_at(src: Animation, frac: float, height_from: Animation = null) -> Ani
 				if hi >= 0:
 					pv.y = height_from.position_track_interpolate(hi, 0.0).y
 			an.position_track_insert_key(nt, 0.0, pv)
+	return an
+
+
+# pernas (coxa/canela/pé) misturadas com a pose do parado: menos abertura, mesmo ritmo
+func _soften_legs(src: Animation, idle: Animation, amt: float) -> Animation:
+	var an := src.duplicate(true) as Animation
+	for t in an.get_track_count():
+		if an.track_get_type(t) != Animation.TYPE_ROTATION_3D:
+			continue
+		var path := an.track_get_path(t)
+		var bone := str(path).get_slice(":", 1)
+		if not ("UpLeg" in bone or bone.ends_with("Leg") or "Foot" in bone):
+			continue
+		var it := idle.find_track(path, Animation.TYPE_ROTATION_3D)
+		if it < 0:
+			continue
+		var rest_q := idle.rotation_track_interpolate(it, 0.0)
+		for k in an.track_get_key_count(t):
+			var q: Quaternion = an.track_get_key_value(t, k)
+			an.track_set_key_value(t, k, q.slerp(rest_q, amt))
 	return an

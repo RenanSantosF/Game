@@ -16,7 +16,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 
 ## Conteúdo
 
-- Personagem com rig e animações do Mixamo (preparado por tools/prepare_mixamo.gd a partir de models_src/mixamo): skin padrão fixa pra todos (camiseta, bermuda cargo e tênis); parado, parado com rifle, andar com rifle, corrida, corrida rápida, pulo correndo, salto de janela, queda livre, paraquedas (pendurado), aterrissagem, tiro, reação a tiro, morte, dirigindo e comemoração na vitória; o ritmo dos passos acompanha a velocidade do jogo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
+- Personagem com rig e animações do Mixamo (preparado por tools/prepare_mixamo.gd a partir de models_src/mixamo): skin padrão fixa pra todos (camiseta, bermuda cargo e tênis); parado, parado com rifle, andar com rifle, corrida, corrida rápida, pulo (o pulo correndo com as pernas menos abertas), salto de janela (nunca em escada), queda livre, paraquedas (pendurado), aterrissagem, tiro, reação a tiro, morte, dirigindo e comemoração na vitória; o ritmo dos passos acompanha a velocidade do jogo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
 - Árvores (folhas do Poly Haven, CC0): tronco reto e grosso (dá pra se proteger atrás) e copa falhada de cartões de folhas, leves pro celular; três tipos + moita
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
@@ -28,10 +28,11 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Cada cidade com a sua cara (cor das paredes, telhado e um marco no meio: monumento, moinho, ônibus ou caixa d'água) e mais casas
 - Casas nunca ficam tortas: o chão fica plano embaixo delas e de todos os objetos; cercas acompanham o terreno
 - Armas detalhadas (Ultimate Gun Pack da Quaternius, CC0) com luneta, holográfica e silenciador encaixados; dano cai com a distância (SMG e 12 fortes de perto e fracas de longe)
-- Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo
+- Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo; mochila militar arredondada (lona estufada, tampa, bolsos e fitas)
+- Bots se escondem atrás de caixote, muro, carro ou árvore na troca de tiro (abaixam pra recarregar/curar e levantam pra atirar) e erram um pouco mais
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
 - Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
-- Clima de pré-guerra: dia nublado e triste, névoa, mato seco com manchas queimadas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
+- Clima de guerra com cor: céu azul com bruma de poeira, verde vivo com manchas queimadas, sombras fundas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
 - Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela
 - Marcas da guerra no mapa todo: postos de controle nas rodovias, tanques queimados, crateras, trincheiras, arame farpado, ouriços de aço, casamatas e canhões
 - Asfalto, calçadas, pistas e cimento com colisão de verdade (o pé não afunda); nenhuma estrutura nasce dentro da outra; sem barranco onde as rampas das cidades se encontram
@@ -42,7 +43,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Mapa de 800 m com 26 localidades fictícias e formatos diferentes: vilas redondas, bairros com ruas curvas, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
 - Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco
-- Casas quase todas térreas (algumas de dois andares, com escada e sacada), varandas, muros baixos, cercas, carros e picapes abandonados
+- Casas quase todas térreas (algumas de dois andares, com escada e sacada), varandas, muros baixos, cercas e carcaças de carro queimadas (amassadas, sem rodas, chão preto e destroços em volta: dá pra ver de longe que não anda)
 - **Pular janela e muro baixo**: chegue perto e toque em PULAR. Pulando da janela de cima, cai, faz barulho e fica ~1 s sem andar
 - Armas reais: Glock 17, Desert Eagle, MP5, UMP-45, M4A1, SCAR-L, AK-47, Remington 870, M1014 (escopeta 12 semiautomática), Kar98k e AWM, além do soco
 - Acessórios: coronha (menos coice), carregador estendido, mira holográfica, luneta 4x e silenciador

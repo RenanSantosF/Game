@@ -6,6 +6,7 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 uniform vec3 paint : source_color = vec3(0.5, 0.1, 0.08);
 uniform float dirt = 0.25;     // poeira de guerra
 uniform float rust = 0.0;      // carcaça abandonada: ferrugem
+uniform float burn = 0.0;      // carcaça queimada: fuligem preta por cima de tudo
 varying vec3 wpos;
 varying vec3 wnrm;
 varying float painted;
@@ -47,6 +48,15 @@ void fragment() {
 		float r = smoothstep(0.35, 0.75, (vnoise(wpos.xy * 6.0) * 0.5 + vnoise(wpos.zy * 6.0 + 7.0) * 0.5 + vnoise(wpos.xz * 6.0 + 3.0) * 0.3)) * rust;
 		base = mix(base, vec3(0.32, 0.17, 0.08) * (0.7 + 0.5 * n), r);
 		rough = mix(rough, 1.0, r);
+	}
+	if (burn > 0.0) {
+		// queimado: preto de fuligem com manchas de metal cozido (cinza/laranja) aparecendo
+		float b = clamp(burn * (0.65 + 0.6 * vnoise(wpos.xz * 2.3 + wpos.y * 1.7)), 0.0, 1.0);
+		vec3 soot = mix(vec3(0.05, 0.045, 0.04), vec3(0.3, 0.27, 0.24), smoothstep(0.62, 0.9, n));
+		soot = mix(soot, vec3(0.24, 0.12, 0.06), smoothstep(0.72, 0.95, vnoise(wpos.zy * 5.0 + 2.0)) * 0.5);
+		base = mix(base, soot, b);
+		rough = mix(rough, 1.0, b);
+		spec = mix(spec, 0.05, b);
 	}
 	ALBEDO = base;
 	ROUGHNESS = rough;

@@ -1385,24 +1385,62 @@ func car(pos: Vector3, yaw: float) -> void:
 
 
 func _k_car(pos: Vector3, yaw: float) -> void:
+	# carro de cenário = carcaça destruída (não dá pra dirigir): queimada, amassada, sem rodas, no chão
 	var kind := 0 if rng.randf() < 0.65 else 1
 	var tint: Color = CAR_TINTS[rng.randi() % CAR_TINTS.size()]
-	var wreck := rng.randf() < 0.35
-	if wreck:
-		tint = tint.lerp(Color(0.45, 0.3, 0.2), 0.45)
+	# sorteio próprio pros detalhes (não mexe na sequência do mapa: as edições salvas continuam batendo)
+	var lr := RandomNumberGenerator.new()
+	lr.seed = int(rng.randf() * 1000000.0)
 	var ci: Dictionary = CarInfo.INFO[kind]
 	var L: float = ci["len"]
+	var W: float = ci["wid"]
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), 3.5)
-	col_box(root, Vector3(float(ci["wid"]) * 0.92, 1.0, L * 0.95), Vector3(0, 0.62, 0))
+	col_box(root, Vector3(W * 0.92, 0.8, L * 0.95), Vector3(0, 0.42, 0))
 	if kind == 0:
-		col_box(root, Vector3(1.5, 0.5, 1.9), Vector3(0, 1.2, 0.2))
-	if not headless:
-		var mi := Vehicle.prop_node(kind, Vehicle.car_material(Vehicle.paint_for(kind, tint).darkened(0.15), 0.55, 0.85 if wreck else 0.15))
-		root.add_child(mi)
-		if wreck:
-			mi.rotation.z = 0.04
-			mi.position.y = -0.08
+		col_box(root, Vector3(1.5, 0.4, 1.9), Vector3(0, 0.95, 0.2))
+	if headless:
+		return
+	var burn := lr.randf_range(0.75, 1.0)
+	var mat := Vehicle.car_material(Vehicle.paint_for(kind, tint).darkened(0.35), 0.8, 1.0, burn)
+	var mi := Vehicle.prop_node(kind, mat)
+	root.add_child(mi)
+	# tira as rodas (às vezes sobra uma, caída e torta)
+	var keep := lr.randi() % 4 if lr.randf() < 0.35 else -1
+	var wr: float = (Vehicle.wh_of(kind) as Array)[1]
+	var wi := 0
+	for c in mi.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh != null and str((c as MeshInstance3D).mesh.resource_path).contains("wheel"):
+			if wi != keep:
+				c.queue_free()
+			else:
+				c.rotation.z = 0.5
+				c.position.y -= wr * 0.4
+			wi += 1
+	# carroceria apoiada no chão, amassada (teto afundado) e torta
+	mi.position.y = -wr * 0.78
+	mi.scale = Vector3(1.0, lr.randf_range(0.72, 0.84), 1.0)
+	mi.rotation = Vector3(lr.randf_range(-0.07, 0.07), lr.randf_range(-0.05, 0.05), lr.randf_range(-0.13, 0.13))
+	# chão queimado embaixo e destroços em volta (lataria, pneu solto, vidro)
+	vis(root, Vector3(W + 1.6, 0.06, L + 1.8), Vector3(0, 0.02, 0), Color(0.07, 0.065, 0.06), U.DIRT, 0.6)
+	var dk := Color(0.1, 0.09, 0.08)
+	for k in lr.randi_range(3, 5):
+		var a := lr.randf() * TAU
+		var r := lr.randf_range(W * 0.7, W * 1.2)
+		var pp := Vector3(cos(a) * r, 0.04, sin(a) * r * L / W)
+		vis(root, Vector3(lr.randf_range(0.3, 0.9), 0.03, lr.randf_range(0.2, 0.7)), pp, dk.lerp(Color(0.35, 0.18, 0.08), lr.randf()), U.METAL, 0.5,
+			Basis(Vector3.UP, lr.randf() * TAU) * Basis(Vector3.RIGHT, lr.randf_range(-0.2, 0.2)))
+	if lr.randf() < 0.6:
+		var sx := -1.0 if lr.randf() < 0.5 else 1.0
+		var tp := Vector3(sx * (W / 2.0 + 0.7), 0.13, lr.randf_range(-L * 0.3, L * 0.3))
+		var tmb := MB.new()
+		tmb.tex(U.PLAIN, 1.0)
+		tmb.cyl(Transform3D(Basis(), tp - Vector3(0, 0.13, 0)), 0.36, 0.36, 0.25, 10, Color(0.05, 0.05, 0.05))
+		tmb.cyl(Transform3D(Basis(), tp + Vector3(0, 0.122, 0)), 0.2, 0.2, 0.01, 8, Color(0.3, 0.28, 0.26))
+		var tmi := MeshInstance3D.new()
+		tmi.mesh = tmb.commit()
+		tmi.material_override = U.wmat()
+		root.add_child(tmi)
 
 
 # ---------------- estruturas de guerra e de cidade (cenário pré-guerra) ----------------

@@ -27,6 +27,27 @@ func _initialize() -> void:
 	var ctr := ab.get_center()
 	# o arquivo aponta o nariz pra +Z; o jogo usa -Z como frente
 	var flip := Basis(Vector3.UP, PI)
+	# o modelo vem girado no chão (as hélices não ficam na mesma linha): endireita pelas duas hélices,
+	# senão o avião voa "de lado"
+	var sh := Vector3.ZERO
+	var pc := [Vector3.ZERO, Vector3.ZERO]
+	var pn := [0, 0]
+	for s in src.get_surface_count():
+		var m0 := src.surface_get_material(s)
+		if m0 == null or m0.resource_name != "props":
+			continue
+		for v in (src.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array):
+			var q: Vector3 = flip * (v - ctr)
+			var sd := 0 if q.x < 0.0 else 1
+			pc[sd] += q
+			pn[sd] += 1
+	if pn[0] > 0 and pn[1] > 0:
+		var dv: Vector3 = pc[1] / pn[1] - pc[0] / pn[0]
+		flip = Basis(Vector3.UP, atan2(dv.z, dv.x)) * flip
+		# centraliza entre as hélices (eixo do avião no meio)
+		var mid: Vector3 = Basis(Vector3.UP, atan2(dv.z, dv.x)) * ((pc[1] / pn[1] + pc[0] / pn[0]) * 0.5)
+		sh = Vector3(-mid.x, 0, 0) * SCALE
+		print("avião endireitado em ", snappedf(rad_to_deg(atan2(dv.z, dv.x)), 0.1), " graus")
 	for s in src.get_surface_count():
 		var mat := src.surface_get_material(s)
 		var mname := mat.resource_name if mat else ""
@@ -38,14 +59,14 @@ func _initialize() -> void:
 		var n: int = idx.size() if idx != null else pos.size()
 		for t in range(0, n, 3):
 			var ids := [idx[t], idx[t + 1], idx[t + 2]] if idx != null else [t, t + 1, t + 2]
-			var p0: Vector3 = flip * ((pos[ids[0]] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE)
+			var p0: Vector3 = flip * ((pos[ids[0]] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE) + sh
 			if mname == "props":
 				var side := 0 if p0.x < 0.0 else 1
 				for k in ids:
-					props[side].append([flip * ((pos[k] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE), flip * nrm[k]])
+					props[side].append([flip * ((pos[k] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE) + sh, flip * nrm[k]])
 				continue
 			for k in ids:
-				var p: Vector3 = flip * ((pos[k] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE)
+				var p: Vector3 = flip * ((pos[k] - Vector3(ctr.x, ab.position.y, ctr.z)) * SCALE) + sh
 				var nn: Vector3 = flip * nrm[k]
 				# barriga mais clara (camuflagem de avião: escuro em cima, claro embaixo)
 				var c := col
