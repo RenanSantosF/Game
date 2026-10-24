@@ -30,7 +30,8 @@ Modelos dos carros (convertidos por tools/prepare_cars2.gd, sem vidros e repinta
 Personagem: modelo do autor do jogo (feito no Meshy), reduzido por tools/prepare_man.gd.
 Animações do personagem: "Universal Animation Library" de Quaternius, CC0 (https://quaternius.com)
   — passadas pro esqueleto do boneco por tools/prepare_man.gd.
-Árvores: "tree_small_02" e "island_tree_02" do Poly Haven, CC0 (https://polyhaven.com) — troncos reduzidos
+Árvore principal: modelo enviado pelo dono do jogo (gerado no Tripo), reduzido e com texturas juntas num atlas (tools/prepare_tripo_tree.gd)
+Árvores antigas/moita: "tree_small_02" e "island_tree_02" do Poly Haven, CC0 (https://polyhaven.com) — troncos reduzidos
   e copa refeita com cartões de folhas (tools/prepare_trees.gd, tools/make_leaf_cards.py).
 Avião: "Low poly twin prop airplane" (OpenGameArt.org), CC0 — tools/prepare_plane.gd.
 Modelos das armas, lunetas, silenciador e coronha: "Ultimate Gun Pack" de Quaternius, CC0

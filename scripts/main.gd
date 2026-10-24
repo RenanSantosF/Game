@@ -1973,6 +1973,9 @@ func _apply_quality() -> void:
 	var sun: DirectionalLight3D = world.get_node_or_null("Sun")
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	# malhas com níveis de detalhe (boneco, armas, carros) trocam pro simples um pouco antes:
+	# de longe não dá pra ver a diferença e são bem menos triângulos
+	vp.mesh_lod_threshold = [4.0, 2.5, 1.5][clampi(int(Cfg.get_v("quality")), 0, 2)]
 	var far := 300.0     # mais curto que antes: o jogo fica mais leve (a névoa esconde o fim)
 	match int(Cfg.get_v("quality")):
 		0:

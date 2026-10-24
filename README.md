@@ -17,7 +17,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 ## Conteúdo
 
 - Personagem com rig e animações do Mixamo (preparado por tools/prepare_mixamo.gd a partir de models_src/mixamo): skin padrão fixa pra todos (camiseta, bermuda cargo e tênis); parado, parado com rifle, andar com rifle, corrida, corrida rápida, pulo (o pulo correndo com as pernas menos abertas), salto de janela (nunca em escada), queda livre, paraquedas (pendurado), aterrissagem, tiro, reação a tiro, morte, dirigindo e comemoração na vitória; o ritmo dos passos acompanha a velocidade do jogo; braços seguram a arma; arma grande fica nas costas e a pistola sai rápido do coldre
-- Árvores (folhas do Poly Haven, CC0): tronco reto e grosso (dá pra se proteger atrás) e copa falhada de cartões de folhas, leves pro celular; três tipos + moita
+- Árvores: modelo novo (feito no Tripo, enviado pelo dono do jogo) com tronco reto e grosso (dá pra se proteger atrás) e copa em tufos sólidos; o original de 50 mil triângulos e 18 texturas virou 1 malha de ~1.800 triângulos (perto) e ~380 (longe) com 1 textura só, mais leve que as árvores antigas; dois formatos (baixa e larga, alta); moita do Poly Haven (CC0)
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
 - Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta; segurando, o braço vai pra trás com a granada na mão, o mesmo dedo anda como o analógico e aparece o começo do arco em pontinhos discretos. Um só tipo de cura: kit médico (ocupa 15 de espaço na mochila)
@@ -95,6 +95,7 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Na BAIXA: resolução 50% e sem grama
 - Ilha cercada de mar até o horizonte (praia descendo pra água); quem entra no mar fundo se afoga
 - **Ajuste pro aparelho (só na primeira vez)**: ao abrir pela primeira vez o jogo vê a placa de vídeo e a memória do celular e escolhe a qualidade (fraco: BAIXA, 30 FPS, sem grama, visão curta; médio: MÉDIA; forte: ALTA). Na primeira partida confere o FPS no lobby uma vez e, se não aguentar, desce um nível. Depois disso não mexe mais sozinho (você muda nas configurações)
+- Malhas com níveis de detalhe (boneco, armas, carros) trocam pro simples um pouco antes de longe
 - Céu em degradê leve, sem mapa de reflexo; árvores com material simples (sem brilho); bonecos longe ou fora da tela animam menos vezes; bots longe da câmera calculam movimento e decisões em quadros alternados; minimapa redesenhado 20x por segundo
 - Itens no chão só existem perto de você (carregam aos poucos em blocos de 40 m), então dá pra ter muito mais loot sem pesar
 - Câmera com faixa de profundidade ajustada e sem sobreposição de cenário perto/longe: nada de casas e avião piscando
@@ -177,6 +178,7 @@ tools/gen_assets.py    gera textures/atlas.png e sounds/*.wav (python3 + numpy +
 tools/prepare_guns.gd  converte as armas CC0 de models_src/guns pra models/guns/*.res e gera scripts/gun_info.gd
 tools/prepare_cars2.gd converte o muscle car e o jipe de models_src pra models/car*.res
 tools/prepare_trees.gd árvores do Poly Haven (com tools/decimate_trees.py e tools/make_leaf_cards.py) pra models/trees/
+tools/prepare_tripo_tree.gd + tools/tripo_tree.py: árvore do Tripo (FBX) -> atlas de textura e malha reduzida (models/trees/tripo*.res)
 tools/prepare_plane.gd avião de models_src/plane pra models/plane.scn
 tools/prepare_man.gd   reduz o personagem (com tools/decimate_man.py e tools/man_mask.py) pra models/soldier.scn
 tools/render_keyart.gd arte da tela de carregamento (depois tools/keyart_post.py -> art/loading.jpg)

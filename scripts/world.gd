@@ -2202,12 +2202,23 @@ func _tree_meshes() -> Dictionary:
 		m3.cyl(Transform3D(Basis(Quaternion(Vector3.UP, d)), Vector3(0, 0.05, 0)), 0.02, 0.005, 0.9, 3, bark, false)
 	out["bush"] = m3.commit()
 	# árvores e moita de verdade (Poly Haven, CC0; tools/prepare_trees.gd): troca o desenho simples
+	var have_tripo := ResourceLoader.exists("res://models/trees/tripo.res")
 	for k in ["oak", "pine", "tall", "bush"]:
+		if have_tripo and k in ["oak", "tall"]:
+			continue    # trocadas pela árvore nova logo abaixo
 		var path := "res://models/trees/%s.res" % k
 		if ResourceLoader.exists(path):
 			out[k] = _cheap_tree(load(path))
 			if ResourceLoader.exists("res://models/trees/%s_lo.res" % k):
 				out[k + "_lo"] = _cheap_tree(load("res://models/trees/%s_lo.res" % k))
+	# árvore nova (modelo do Tripo, tools/prepare_tripo_tree.gd): copa sólida (sem folha recortada,
+	# bem mais leve de desenhar no celular). Os dois tipos usam ela com proporções diferentes.
+	if have_tripo:
+		var hi: Mesh = load("res://models/trees/tripo.res")
+		var lo: Mesh = load("res://models/trees/tripo_lo.res")
+		for e in [["oak", Vector3(1.75, 1.0, 1.75)], ["tall", Vector3(1.55, 1.15, 1.55)]]:
+			out[e[0]] = _scaled(hi, e[1])
+			out[e[0] + "_lo"] = _scaled(lo, e[1])
 	# pedra
 	var m4 := MB.new()
 	m4.tex(U.ROCK, 0.8)
@@ -2303,7 +2314,8 @@ func _nat_col(kind: String, xf: Transform3D, body: StaticBody3D) -> void:
 		"oak", "pine", "tall":
 			var cs := CollisionShape3D.new()
 			var cyl := CylinderShape3D.new()
-			cyl.radius = 0.5 * sc.x
+			# tronco da árvore nova: ~0,42 m de raio (com a escala do tipo)
+			cyl.radius = 0.42 * sc.x
 			cyl.height = 6.0 * sc.x
 			cs.shape = cyl
 			cs.position = xf.origin + Vector3(0, 3.0 * sc.x, 0)
@@ -2558,6 +2570,15 @@ func show_grass(on: bool) -> void:
 
 
 # Distância de visão da vegetação (depende da qualidade gráfica)
+# cópia da malha com escala aplicada nos vértices (mesmo material)
+static func _scaled(m: Mesh, sc: Vector3) -> Mesh:
+	var st := SurfaceTool.new()
+	st.append_from(m, 0, Transform3D(Basis.from_scale(sc), Vector3.ZERO))
+	var out := st.commit()
+	out.surface_set_material(0, m.surface_get_material(0))
+	return out
+
+
 # material das árvores mais barato pro celular: sem brilho especular nem sombra recebida
 static var _cheap_mats := {}
 
