@@ -9,18 +9,18 @@ const JOY_R := 90.0
 const MINI := 170.0
 const MINI_M := 170.0      # metros mostrados no minimapa
 # botões que dá pra arrastar/mudar de tamanho no editor de controles (a pé e no carro)
-const ED_GROUND := ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car"]
+const ED_GROUND := ["fire", "fire2", "jump", "crouch", "prone", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car"]
 const ED_CAR := ["gas", "brake", "steer_l", "steer_r", "car", "heal"]
-const EDITABLE := ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car", "gas", "brake", "steer_l", "steer_r"]
+const EDITABLE := ["fire", "fire2", "jump", "crouch", "prone", "scope", "heal", "bag", "sprint", "grenade", "gren_cancel", "car", "gas", "brake", "steer_l", "steer_r"]
 const HOLD := ["gas", "brake", "steer_l", "steer_r"]   # botões de segurar (carro)
 # posição padrão dos botões (fração da tela) e raio base
 # mochila e cura ficam embaixo do minimapa; correr do lado do minimapa
 const DEFAULTS := {
-	"fire": [0.883, 0.757, 78.0], "fire2": [0.3, 0.46, 46.0], "jump": [0.765, 0.882, 44.0], "crouch": [0.945, 0.917, 40.0],
+	"fire": [0.883, 0.757, 78.0], "fire2": [0.3, 0.46, 46.0], "jump": [0.765, 0.882, 44.0], "crouch": [0.945, 0.917, 40.0], "prone": [0.945, 0.76, 36.0],
 	"scope": [0.85, 0.54, 40.0], "heal": [0.112, 0.345, 32.0], "bag": [0.04, 0.345, 32.0],
 	"sprint": [0.18, 0.13, 36.0], "grenade": [0.33, 0.66, 34.0], "gren_cancel": [0.68, 0.6, 30.0],
 	"car": [0.66, 0.68, 40.0],
-	"gas": [0.9, 0.72, 62.0], "brake": [0.765, 0.86, 46.0], "steer_l": [0.075, 0.8, 52.0], "steer_r": [0.225, 0.8, 52.0],
+	"gas": [0.905, 0.75, 74.0], "brake": [0.78, 0.81, 62.0], "steer_l": [0.085, 0.78, 68.0], "steer_r": [0.205, 0.78, 68.0],
 }
 const SCALE_MAX := 2.4
 
@@ -85,6 +85,7 @@ var can_start := false
 var can_retry := false
 var show_fps := true
 var crouched := false
+var proned := false
 var alive_n := 0
 var kills_n := 0
 var slots := []            # [{id, att, ammo, max}] x4 (mãos, principal 1, principal 2, pistola)
@@ -809,7 +810,7 @@ func _buttons() -> Dictionary:
 			if gren_left >= 0.0:
 				var gc := btn_pos("gren_cancel", s)
 				b["gren_cancel"] = [gc[0], gc[1], "close"]
-			for k in ["fire", "fire2", "jump", "crouch", "scope", "heal", "bag", "sprint"]:
+			for k in ["fire", "fire2", "jump", "crouch", "prone", "scope", "heal", "bag", "sprint"]:
 				if k == "scope" and not can_scope:
 					continue
 				var bp := btn_pos(k, s)
@@ -916,6 +917,8 @@ func _input(e: InputEvent) -> void:
 				action.emit("scope")
 			KEY_CTRL, KEY_Z:
 				action.emit("crouch")
+			KEY_P:
+				action.emit("prone")
 			KEY_H:
 				action.emit("heal")
 			KEY_M:
@@ -977,7 +980,7 @@ func _down(i: int, p: Vector2) -> void:
 	if Rect2(mini.position, mini.size).grow(10).has_point(p) and not big_map:
 		touches[i] = "btn"
 		action.emit("map")
-	elif p.x < get_viewport().get_visible_rect().size.x * 0.42 and not joy_active:
+	elif p.x < get_viewport().get_visible_rect().size.x * 0.42 and not joy_active and not driving:
 		# encostar no analógico já para a corrida automática
 		action.emit("joy_touch")
 		touches[i] = "joy"
@@ -1137,7 +1140,7 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 		bg = Color(1, 0.4, 0.2, 0.5)
 	elif k == "leave" or k == "start" or k == "retry" or k == "e_save":
 		bg = Color(0.85, 0.55, 0.1, 0.6)
-	elif (k == "sprint" and sprinting) or (k == "crouch" and crouched):
+	elif (k == "sprint" and sprinting) or (k == "crouch" and crouched) or (k == "prone" and proned):
 		bg = Color(1, 0.75, 0.2, 0.45)
 		ring = Color(1, 0.85, 0.35, 0.95)
 	if edit_mode and k == edit_sel:
@@ -1188,6 +1191,12 @@ static func glyph(ci: CanvasItem, k: String, c: Vector2, r: float, col: Color) -
 		"jump":
 			for o in [0.0, 0.45]:
 				ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.6, r * (0.15 + o)), c + Vector2(0, r * (-0.45 + o)), c + Vector2(r * 0.6, r * (0.15 + o))]), col, w * 1.2)
+		"prone":
+			# bonequinho deitado: cabeça, corpo na horizontal e braços pra frente, no chão
+			ci.draw_circle(c + Vector2(-r * 0.55, r * 0.05), r * 0.17, col)
+			ci.draw_line(c + Vector2(-r * 0.35, r * 0.15), c + Vector2(r * 0.6, r * 0.2), col, w * 1.4)
+			ci.draw_line(c + Vector2(-r * 0.3, r * 0.15), c + Vector2(-r * 0.75, r * 0.32), col, w)
+			ci.draw_line(c + Vector2(-r * 0.8, r * 0.55), c + Vector2(r * 0.8, r * 0.55), col, w)
 		"crouch", "stand":
 			var sg := 1.0 if k == "crouch" else -1.0
 			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.55, -r * 0.35 * sg), c + Vector2(0, r * 0.2 * sg), c + Vector2(r * 0.55, -r * 0.35 * sg)]), col, w * 1.2)
@@ -1530,7 +1539,7 @@ func _draw_pad() -> void:
 		pad.draw_string_outline(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 5, Color(0, 0, 0, 0.8))
 		pad.draw_string(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 0.45, 0.4))
 	# joystick
-	if mode in ["ground", "lobby", "fall", "glide", "plane"] and not bag_open:
+	if mode in ["ground", "lobby", "fall", "glide", "plane"] and not bag_open and not driving:
 		if joy_active:
 			pad.draw_circle(joy_origin, JOY_R, Color(1, 1, 1, 0.1))
 			pad.draw_arc(joy_origin, JOY_R, 0, TAU, 40, Color(1, 1, 1, 0.4), 2.0)

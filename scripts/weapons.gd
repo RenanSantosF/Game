@@ -217,10 +217,10 @@ static func stat(id: String, att: Array) -> Dictionary:
 	w["id"] = id
 	w["bloom"] = float(w.get("bloom", 0.0))
 	w["bloom_max"] = float(w.get("bloom_max", 0.0))
-	# segurando o dedo o tiro chega no máximo de espalhar em ~2,5 s; com coronha demora só um pouco mais
+	# segurando o dedo o tiro chega no máximo de espalhar em ~1,3 s; com coronha demora só um pouco mais
 	var sl := att_level(att, "stock")
 	if w["bloom_max"] > 0.0:
-		w["bloom"] = w["bloom_max"] / (float(w["rate"]) * 2.5) * [1.0, 0.9, 0.82, 0.75][sl]
+		w["bloom"] = w["bloom_max"] / (float(w["rate"]) * 1.3) * [1.0, 0.9, 0.82, 0.75][sl]
 	if sl > 0:
 		w["spread"] = float(w["spread"]) * (0.95 - sl * 0.03)
 	var ml := att_level(att, "mag")
@@ -418,6 +418,7 @@ static func build_model(id: String, att: Array = []) -> Node3D:
 # Cor por nível: 1 verde-oliva, 2 azul, 3 roxo.
 const LV_COL := [Color(0.46, 0.5, 0.32), Color(0.32, 0.46, 0.7), Color(0.52, 0.36, 0.66)]
 const STRAP := Color(0.1, 0.1, 0.1)
+const MIL_COL := [Color(0.58, 0.62, 0.43), Color(0.82, 0.72, 0.54), Color(0.5, 0.53, 0.47)]
 
 
 static func gear(kind: String) -> Mesh:
@@ -425,71 +426,123 @@ static func gear(kind: String) -> Mesh:
 	if _cache.has(key):
 		return _cache[key]
 	var lv := clampi(level_of(kind), 1, 3)
-	var c: Color = LV_COL[lv - 1]
+	# cores de exército (verde-oliva, coiote, preto); o nível aparece num remendo colorido
+	var c: Color = MIL_COL[lv - 1]
+	var patch: Color = RARITY[lv]
 	var m := MB.new()
 	m.tex(U.FABRIC, 5.0)
+	# medidas do corpo (espaço do boneco: pés em 0, frente = -Z): peito na frente em z≈-0.10..-0.13,
+	# costas em z≈+0.11..+0.135, meia-largura do tronco ≈0.12, cabeça centrada em (0, 1.6, -0.025)
 	if is_vest(kind):
-		# placas da frente e de trás arredondadas, faixa lateral, alças, bolsos e tiras (MOLLE)
-		for sz in [-1.0, 1.0]:
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.185, 0.175, 0.045)), Vector3(0, 1.27, sz * 0.105)), 12, 6, c, null, 0.0, true, 0.25)
+		# colete porta-placas: placa da frente inclinada acompanhando o peito, placa das costas,
+		# faixa lateral, alças nos ombros, porta-carregadores e remendo do nível
+		var fr := Basis(Vector3.RIGHT, -0.12)
+		m.box(Transform3D(fr, Vector3(0, 1.23, -0.155)), Vector3(0.27, 0.33, 0.04), c)
+		m.box(Transform3D(Basis(), Vector3(0, 1.24, 0.163)), Vector3(0.27, 0.32, 0.04), c)
 		for sx in [-1.0, 1.0]:
-			m.box(Transform3D(Basis(), Vector3(sx * 0.17, 1.2, 0.0)), Vector3(0.04, 0.16, 0.2), c.darkened(0.15))
-			m.box(Transform3D(Basis(Vector3.FORWARD, sx * 0.15), Vector3(sx * 0.09, 1.44, 0.0)), Vector3(0.07, 0.035, 0.24), c.darkened(0.1))
-		m.tex(U.PLAIN, 4.0)
-		for k in 3:
-			m.box(Transform3D(Basis(), Vector3(0, 1.17 + k * 0.06, -0.152)), Vector3(0.3, 0.012, 0.012), STRAP)
-		m.tex(U.FABRIC, 5.0)
+			# faixa lateral (cummerbund) e alças por cima do ombro
+			m.box(Transform3D(Basis(), Vector3(sx * 0.137, 1.13, 0.0)), Vector3(0.026, 0.13, 0.30), c.darkened(0.12))
+			# alça deitada em cima do ombro, ligando a placa da frente à de trás
+			m.box(Transform3D(Basis(), Vector3(sx * 0.09, 1.445, 0.005)), Vector3(0.065, 0.02, 0.27), c.darkened(0.08))
+		# porta-carregadores na frente (mais a cada nível) com tampas
 		var np := 2 + lv
 		for k in np:
-			var x := (k - (np - 1) / 2.0) * 0.075
-			m.box(Transform3D(Basis(), Vector3(x, 1.18, -0.155)), Vector3(0.062, 0.095, 0.04), c.lightened(0.08))
-			m.box(Transform3D(Basis(), Vector3(x, 1.235, -0.157)), Vector3(0.064, 0.02, 0.046), c.darkened(0.2))
+			var x := (k - (np - 1) / 2.0) * 0.062
+			m.box(Transform3D(fr, Vector3(x, 1.13, -0.19)), Vector3(0.055, 0.11, 0.035), c.lightened(0.05))
+			m.box(Transform3D(fr, Vector3(x, 1.19, -0.198)), Vector3(0.057, 0.022, 0.04), c.darkened(0.15))
+		# tiras MOLLE na placa (faixas finas)
+		m.tex(U.PLAIN, 4.0)
+		for k in 3:
+			m.box(Transform3D(fr, Vector3(0, 1.27 + k * 0.035, -0.177)), Vector3(0.25, 0.008, 0.006), c.darkened(0.3))
+			m.box(Transform3D(Basis(), Vector3(0, 1.17 + k * 0.05, 0.184)), Vector3(0.25, 0.008, 0.006), c.darkened(0.3))
+		# remendo do nível
+		m.box(Transform3D(fr, Vector3(-0.07, 1.345, -0.178)), Vector3(0.06, 0.035, 0.004), patch)
 		if lv >= 2:
-			# placa balística por cima
-			m.box(Transform3D(Basis(Vector3.RIGHT, -0.05), Vector3(0, 1.33, -0.152)), Vector3(0.24, 0.13, 0.025), c.darkened(0.3))
-		if lv == 3:
-			# gola, ombreiras e rádio
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.14, 0.04, 0.12)), Vector3(0, 1.47, 0.0)), 10, 4, c.darkened(0.2))
-			for sx in [-1.0, 1.0]:
-				m.blob(Transform3D(Basis.from_scale(Vector3(0.06, 0.03, 0.08)), Vector3(sx * 0.2, 1.42, 0.0)), 8, 4, c.darkened(0.1))
+			# bolso administrativo e torniquete
+			m.tex(U.FABRIC, 5.0)
+			m.box(Transform3D(fr, Vector3(0.06, 1.33, -0.182)), Vector3(0.09, 0.07, 0.02), c.darkened(0.06))
 			m.tex(U.PLAIN, 4.0)
-			m.box(Transform3D(Basis(), Vector3(0.13, 1.36, -0.15)), Vector3(0.04, 0.07, 0.03), STRAP)
-			m.cyl(Transform3D(Basis(), Vector3(0.14, 1.395, -0.15)), 0.004, 0.003, 0.08, 4, STRAP)
-	elif is_helmet(kind):
-		var hy := 1.665
-		m.tex(U.PLAIN, 4.0)
-		if lv == 1:
-			# capacete leve de tecido (tipo boné de combate) com aba
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.128, 0.085, 0.14)), Vector3(0, hy + 0.005, 0.01)), 12, 6, c)
-			m.box(Transform3D(Basis(Vector3.RIGHT, 0.15), Vector3(0, hy - 0.035, -0.135)), Vector3(0.17, 0.012, 0.08), c.darkened(0.2))
-		else:
-			# casco de aço com borda, jugular e (nível 3) suporte de visão noturna e trilhos
-			m.blob(Transform3D(Basis.from_scale(Vector3(0.138, 0.115, 0.152)), Vector3(0, hy + 0.01, 0.01)), 14, 7, c, null, 0.0, true, 0.15)
-			m.cyl(Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 1.1)), Vector3(0, hy - 0.035, 0.01)), 0.142, 0.138, 0.025, 14, c.darkened(0.2))
-			for sx in [-1.0, 1.0]:
-				m.box(Transform3D(Basis(), Vector3(sx * 0.125, hy - 0.08, 0.0)), Vector3(0.012, 0.09, 0.02), STRAP)
-			if lv == 3:
-				m.box(Transform3D(Basis(), Vector3(0, hy + 0.03, -0.15)), Vector3(0.05, 0.04, 0.02), STRAP)
-				m.box(Transform3D(Basis(Vector3.RIGHT, 0.3), Vector3(0, hy + 0.01, -0.175)), Vector3(0.06, 0.035, 0.05), Color(0.2, 0.2, 0.22))
-				for sx in [-1.0, 1.0]:
-					m.box(Transform3D(Basis(), Vector3(sx * 0.13, hy - 0.005, 0.0)), Vector3(0.015, 0.025, 0.12), STRAP)
-	elif is_bag(kind):
-		# mochila: corpo arredondado (maior a cada nível), tampa, bolsos dos lados e da frente, alças
-		var k := 0.85 + lv * 0.12
-		var bz := 0.21
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.17, 0.23, 0.09) * k), Vector3(0, 1.26, bz + 0.03 * k)), 12, 6, c, null, 0.0, true, 0.25)
-		m.box(Transform3D(Basis(Vector3.RIGHT, -0.25), Vector3(0, 1.26 + 0.2 * k, bz + 0.05 * k)), Vector3(0.3 * k, 0.05, 0.15 * k), c.darkened(0.2))
-		m.blob(Transform3D(Basis.from_scale(Vector3(0.12, 0.09, 0.05) * k), Vector3(0, 1.17, bz + 0.11 * k)), 10, 5, c.lightened(0.06))
-		if lv >= 2:
-			for sx in [-1.0, 1.0]:
-				m.blob(Transform3D(Basis.from_scale(Vector3(0.045, 0.1, 0.06) * k), Vector3(sx * 0.17 * k, 1.2, bz + 0.03 * k)), 8, 5, c.darkened(0.1))
+			m.box(Transform3D(Basis(), Vector3(0.122, 1.32, -0.12)), Vector3(0.02, 0.07, 0.03), Color(0.08, 0.08, 0.08))
 		if lv == 3:
-			# saco de dormir enrolado em cima
-			m.tex(U.FABRIC, 6.0)
-			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(0.16 * k, 1.53, bz + 0.03)), 0.06, 0.06, 0.32 * k, 10, Color(0.3, 0.3, 0.28))
+			# rádio nas costas com antena e bolsos laterais
+			m.tex(U.FABRIC, 5.0)
+			for sx in [-1.0, 1.0]:
+				m.box(Transform3D(Basis(), Vector3(sx * 0.155, 1.12, -0.03)), Vector3(0.03, 0.09, 0.08), c.darkened(0.05))
+			m.tex(U.PLAIN, 4.0)
+			m.box(Transform3D(Basis(), Vector3(0.07, 1.27, 0.2)), Vector3(0.06, 0.12, 0.035), Color(0.12, 0.13, 0.11))
+			m.cyl(Transform3D(Basis(), Vector3(0.085, 1.33, 0.2)), 0.004, 0.003, 0.2, 4, STRAP)
+	elif is_helmet(kind):
+		# capacete de combate: casco que cobre o topo e a nuca, aberto no rosto, com borda,
+		# jugular, capa do nível e (nível 3) suporte de visão noturna e trilhos
+		var hc := Vector3(0, 1.618, -0.022)
+		var rr := Vector3(0.106, 0.098, 0.122)
+		var seg := 16
+		var rings := 7
+		var pts := []
+		for j in rings + 1:
+			var row := []
+			for i in seg + 1:
+				var az := TAU * i / seg
+				var front := maxf(0.0, -cos(az))      # 1 na frente (-Z), 0 dos lados/atrás
+				var low := lerpf(-0.42, 0.18, front)   # na frente o casco termina acima da testa
+				var el := lerpf(low, PI / 2.0, float(j) / rings)
+				row.append(hc + Vector3(sin(az) * cos(el) * rr.x, sin(el) * rr.y, -cos(az) * cos(el) * rr.z))
+			pts.append(row)
+		var cc := c if lv >= 2 else c.lightened(0.05)
+		for j in rings:
+			for i in seg:
+				var a0: Vector3 = pts[j][i]
+				var a1: Vector3 = pts[j][i + 1]
+				var b0: Vector3 = pts[j + 1][i]
+				var b1: Vector3 = pts[j + 1][i + 1]
+				var nrm := ((a0 + a1 + b0 + b1) / 4.0 - hc).normalized()
+				m.quad(a0, a1, b1, b0, cc, nrm)
+				m.quad(a1, a0, b0, b1, cc.darkened(0.5), -nrm)
+		# borda (aba fina por fora)
 		m.tex(U.PLAIN, 4.0)
-		for sx in [-0.09, 0.09]:
-			m.box(Transform3D(Basis(), Vector3(sx, 1.27, bz - 0.06 * k)), Vector3(0.035, 0.36, 0.02), STRAP)
+		for i in seg:
+			var e0: Vector3 = pts[0][i]
+			var e1: Vector3 = pts[0][i + 1]
+			var o0 := e0 + (e0 - hc) * Vector3(0.12, 0.0, 0.12)
+			var o1 := e1 + (e1 - hc) * Vector3(0.12, 0.0, 0.12)
+			m.quad(e0, e1, o1, o0, cc.darkened(0.25), Vector3.DOWN)
+			m.quad(o0, o1, e1, e0, cc.darkened(0.25), Vector3.UP)
+		# jugular (alças descendo até o queixo)
+		for sx in [-1.0, 1.0]:
+			m.box(Transform3D(Basis(Vector3.FORWARD, sx * 0.12), Vector3(sx * 0.093, 1.535, -0.03)), Vector3(0.008, 0.09, 0.016), STRAP)
+		# remendo do nível atrás
+		m.box(Transform3D(Basis(Vector3.RIGHT, 0.4), Vector3(0, 1.66, 0.105)), Vector3(0.05, 0.03, 0.004), patch)
+		if lv == 3:
+			m.box(Transform3D(Basis(Vector3.RIGHT, -0.35), Vector3(0, 1.665, -0.14)), Vector3(0.05, 0.04, 0.02), Color(0.12, 0.12, 0.12))
+			m.box(Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0, 1.66, -0.165)), Vector3(0.06, 0.03, 0.04), Color(0.2, 0.2, 0.22))
+			for sx in [-1.0, 1.0]:
+				m.box(Transform3D(Basis(), Vector3(sx * 0.108, 1.615, -0.02)), Vector3(0.012, 0.022, 0.12), Color(0.12, 0.12, 0.12))
+	elif is_bag(kind):
+		# mochila de assalto quadrada, colada nas costas (por cima do colete), maior a cada nível
+		var k: float = [0.0, 0.85, 1.0, 1.12][lv]
+		var d := 0.11 * k
+		var h := 0.36 * k
+		var w := 0.27 * minf(k, 1.05)
+		var z0 := 0.15     # encosta nas costas (o colete, se tiver, fica escondido atrás dela)
+		var yc := 1.22
+		m.box(Transform3D(Basis(), Vector3(0, yc, z0 + d / 2.0)), Vector3(w, h, d), c)
+		# cantos arredondados (laterais um pouco mais escuras) e tampa
+		for sx in [-1.0, 1.0]:
+			m.box(Transform3D(Basis(), Vector3(sx * (w / 2.0 + 0.008), yc, z0 + d / 2.0)), Vector3(0.016, h * 0.94, d * 0.9), c.darkened(0.1))
+		m.box(Transform3D(Basis(Vector3.RIGHT, -0.12), Vector3(0, yc + h / 2.0 - 0.02, z0 + d / 2.0 + 0.01)), Vector3(w * 1.02, 0.05, d * 1.05), c.darkened(0.15))
+		# bolso da frente e remendo do nível
+		m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.18, z0 + d + 0.015)), Vector3(w * 0.75, h * 0.42, 0.03), c.lightened(0.05))
+		m.tex(U.PLAIN, 4.0)
+		m.box(Transform3D(Basis(), Vector3(0, yc + h * 0.18, z0 + d + 0.003)), Vector3(0.06, 0.035, 0.004), patch)
+		for kk in 3:
+			m.box(Transform3D(Basis(), Vector3(0, yc - h * 0.05 + kk * 0.04, z0 + d + 0.004)), Vector3(w * 0.8, 0.008, 0.005), c.darkened(0.3))
+		# alças por cima dos ombros
+		for sx in [-1.0, 1.0]:
+			m.box(Transform3D(Basis(Vector3.RIGHT, -0.4), Vector3(sx * 0.075, 1.44, 0.14)), Vector3(0.045, 0.02, 0.12), STRAP)
+		if lv == 3:
+			# isolante enrolado embaixo
+			m.tex(U.FABRIC, 6.0)
+			m.cyl(Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(-w * 0.5, yc - h / 2.0 - 0.035, z0 + d / 2.0)), 0.04, 0.04, w, 10, Color(0.25, 0.27, 0.22))
 	var mesh := m.commit()
 	_cache[key] = mesh
 	return mesh

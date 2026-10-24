@@ -67,13 +67,14 @@ const FOOT := {"monument": 2.4, "windmill": 1.8, "bus": 5.6, "shack": 3.8, "ware
 	"crates": 1.9, "barrel": 0.7, "container": 3.8, "barrier": 1.9, "barricade": 2.0, "gun_crate": 2.0,
 	"hay": 1.6, "logs": 3.2, "car": 3.0,
 	"hangar": 16.0, "galpao": 8.0, "stilt_hut": 3.6, "tent": 3.2, "bunker": 4.4, "tank_wreck": 4.2, "hedgehog": 1.4,
-	"mg_nest": 3.0, "artillery": 2.8, "fuel_tank": 4.0, "checkpoint": 2.2}
+	"mg_nest": 3.0, "artillery": 2.8, "fuel_tank": 4.0, "checkpoint": 2.2, "barn": 10.5}
 const PROPS := ["crates", "barrel", "container", "sandbags", "barrier", "barricade", "gun_crate", "hay", "logs", "car"]
 const AB := ["low_wall", "fence"]
 
 var edits: Dictionary = {}     # chave -> ajuste ("e" de MapEdits)
 var editor := false            # editor: cada objeto vira um nó separado pra poder mexer
 var no_items := false
+var no_pads := false         # montando em cima de estrutura (não mexe no terreno)
 var reg := {}                  # editor: chave -> dados pra remontar o objeto
 var _used := {}
 var _depth := 0
@@ -194,6 +195,9 @@ func _obj(kind: String, args: Array, key := "", e_over = null) -> void:
 # deixa o chão plano embaixo (casas na altura delas; objetos soltos assentam no chão)
 func _ground_pad(kind: String, a2: Array, edited: bool) -> void:
 	if not (kind in FOOT or kind == "house" or kind == "sandbags"):
+		return
+	# em cima do deque da cidade alta o chão não sobe atrás das casas
+	if no_pads:
 		return
 	var pos: Vector3 = a2[0]
 	if absf(pos.x) > World.SIZE / 2.0 - 4.0 or absf(pos.z) > World.SIZE / 2.0 - 4.0:
@@ -1970,3 +1974,120 @@ func _k_trench(pos: Vector3, yaw: float, length := 12.0) -> void:
 			var x := -length / 2.0 + i * length / n
 			vis(root, Vector3(0.14, 1.6, 0.14), Vector3(x, 0.8, -0.55), Color(0.42, 0.34, 0.26), U.WOOD, 0.8)
 	w.add_item(pos + bs * Vector3(rng.randf_range(-length * 0.3, length * 0.3), 0.08, 0.1), w.loot_kind(rng, rng.randf() < 0.5), null, null)
+
+
+# celeiro de fazenda: madeira vermelha desbotada, telhado de duas águas alto, portão grande,
+# janela do sótão e mezanino de feno com escada por dentro
+func barn(pos: Vector3, yaw: float) -> void:
+	_obj("barn", [pos, yaw])
+
+
+func _k_barn(pos: Vector3, yaw: float) -> void:
+	var root := body(pos, yaw)
+	var W := 12.0
+	var D := 16.0
+	var H := 5.2
+	var col := Color(0.72, 0.28, 0.2).darkened(rng.randf() * 0.2)
+	var trim := Color(0.92, 0.9, 0.84)
+	var bs := Basis(Vector3.UP, yaw)
+	w.claim(Vector2(pos.x, pos.z), 11.0)
+	wall(root, true, -D / 2.0, W, H, 0.0, [[0.0, 4.2, 0.0, 4.2]], col, U.WOOD, 0.45, false)
+	wall(root, true, D / 2.0, W, H, 0.0, [[0.0, 1.4, 0.0, 2.3]], col, U.WOOD, 0.45, false)
+	for sx in [-1.0, 1.0]:
+		wall(root, false, sx * W / 2.0, D, H, 0.0, [_win(-4.0), _win(4.0)], col, U.WOOD, 0.45)
+	piece(root, Vector3(W, 0.1, D), Vector3(0, 0, 0), Color(0.6, 0.5, 0.38), U.WOOD, 0.5)
+	_gable_x(root, W, D, H, 3.4, col)
+	# mezanino de feno no fundo + escada
+	var mh := 2.9
+	piece(root, Vector3(W - 0.4, 0.15, 5.0), Vector3(0, mh, D / 2.0 - 2.7), Color(0.55, 0.45, 0.33), U.WOOD, 0.6)
+	railing(root, Vector3(-W / 2.0 + 1.6, mh + 0.08, D / 2.0 - 5.2), Vector3(W / 2.0 - 0.2, mh + 0.08, D / 2.0 - 5.2), Color(0.45, 0.35, 0.25), U.WOOD, 0.9)
+	stairs(root, Vector3(-W / 2.0 + 0.8, mh + 0.08, D / 2.0 - 5.25), Vector3(0, 0, -1), mh + 0.08, 1.2, Color(0.5, 0.4, 0.3), false)
+	if not headless:
+		# portão em X (branco) aberto pros lados, molduras brancas
+		for sx in [-1.0, 1.0]:
+			vis(root, Vector3(2.1, 4.2, 0.08), Vector3(sx * 3.2, 2.1, -D / 2.0 - 0.6), col.darkened(0.1), U.WOOD, 0.5, Basis(Vector3.UP, sx * 1.1))
+		vis(root, Vector3(W + 0.1, 0.18, 0.06), Vector3(0, H - 0.1, -D / 2.0 - 0.12), trim, U.PLAIN, 1.0)
+		for sx in [-1.0, 1.0]:
+			vis(root, Vector3(0.18, H, 0.06), Vector3(sx * (W / 2.0 - 0.09), H / 2.0, -D / 2.0 - 0.12), trim, U.PLAIN, 1.0)
+		# janela do sótão
+		vis(root, Vector3(1.6, 1.4, 0.06), Vector3(0, H + 1.4, -D / 2.0 - 0.12), Color(0.12, 0.1, 0.08), U.PLAIN, 1.0)
+	# fardos de feno dentro e em cima
+	for k in 3:
+		hay(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), 0.05, rng.randf_range(-D * 0.3, 0.0)), yaw + rng.randf_range(-0.4, 0.4))
+	var din := pos + bs * Vector3(0, 0.3, -D / 2.0 + 2.0)
+	var dout := pos + bs * Vector3(0, 0.3, -D / 2.0 - 3.0)
+	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 7.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.add_item(pos + bs * Vector3(rng.randf_range(-3, 3), mh + 0.12, D / 2.0 - 2.5), w.loot_kind(rng, true), null, null, true)
+	for k in 2:
+		w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.1, rng.randf_range(-D * 0.35, 0.0)), w.loot_kind(rng, k == 0), dout, din)
+
+
+# telhado de duas águas com a cumeeira no comprimento (Z), oitão na frente e atrás
+func _gable_x(root: Node3D, wdt: float, dpt: float, y: float, rise: float, wall_col: Color) -> void:
+	var ov := 0.5
+	var half := wdt / 2.0 + ov
+	var slope := atan2(rise, half)
+	var slab_w := sqrt(half * half + rise * rise)
+	var rc := Color(0.62, 0.6, 0.56)
+	for s in [-1.0, 1.0]:
+		var rot := Basis(Vector3(0, 0, 1), -s * slope)
+		piece(root, Vector3(slab_w, 0.14, dpt + ov * 2.0), Vector3(s * half / 2.0, y + rise / 2.0 + 0.05, 0), rc, U.METAL, 0.35, true, rot)
+	if headless:
+		return
+	var apex := y + rise * (wdt / 2.0) / half
+	mb.tex(U.WOOD, 0.45)
+	for sz in [-1.0, 1.0]:
+		var z: float = sz * dpt / 2.0
+		var a := root.transform * Vector3(-wdt / 2.0, y, z)
+		var b2 := root.transform * Vector3(wdt / 2.0, y, z)
+		var c := root.transform * Vector3(0.0, apex, z)
+		var nrm := (root.transform.basis * Vector3(0, 0, sz)).normalized()
+		mb.tri(a, b2, c, wall_col, nrm)
+		mb.tri(a, b2, c, wall_col.darkened(0.3), -nrm)
+
+
+# deque gigante (a cidade inteira fica em cima, bem alta): pilares, mureta em volta, escadas largas
+# no meio de cada lado e frades de concreto no pé da escada (carro não sobe)
+func deck(pos: Vector3, yaw: float, size: float, h: float) -> void:
+	_obj("deck", [pos, yaw, size, h])
+
+
+func _k_deck(pos: Vector3, yaw: float, size: float, h: float) -> void:
+	var root := body(pos, yaw)
+	var col := Color(0.76, 0.75, 0.72)
+	var half := size / 2.0
+	piece(root, Vector3(size, 0.5, size), Vector3(0, h - 0.25, 0), col, U.CONCRETE, 0.25)
+	if not headless:
+		# piso de cima com placas (concreto mais claro) e faixas
+		vis(root, Vector3(size - 0.2, 0.02, size - 0.2), Vector3(0, h + 0.01, 0), col.lightened(0.05), U.CONCRETE, 0.2)
+	var n := int(size / 7.0) + 1
+	for i in n:
+		for j in n:
+			var px := -half + 0.6 + i * (size - 1.2) / (n - 1)
+			var pz := -half + 0.6 + j * (size - 1.2) / (n - 1)
+			piece(root, Vector3(0.9, h + 2.0, 0.9), Vector3(px, (h - 2.0) / 2.0, pz), col.darkened(0.15), U.CONCRETE, 0.35)
+	var sw := 3.2
+	var L := h * 1.45
+	for side in 4:
+		var rot := Basis(Vector3.UP, side * PI / 2.0)
+		var out_dir: Vector3 = rot * Vector3(0, 0, 1)
+		var top: Vector3 = rot * Vector3(0, 0, half)
+		top.y = h
+		# mureta do lado, com a abertura da escada no meio
+		var a0: Vector3 = rot * Vector3(-half, 0, half)
+		var a1: Vector3 = rot * Vector3(-sw / 2.0, 0, half)
+		var b0: Vector3 = rot * Vector3(sw / 2.0, 0, half)
+		var b1: Vector3 = rot * Vector3(half, 0, half)
+		for seg in [[a0, a1], [b0, b1]]:
+			var p0: Vector3 = seg[0]
+			var p1: Vector3 = seg[1]
+			railing(root, Vector3(p0.x, h, p0.z), Vector3(p1.x, h, p1.z), Color(0.35, 0.36, 0.34))
+		stairs(root, top, out_dir, h, sw, col.darkened(0.06))
+		# frades no pé da escada: gente passa entre eles, carro não
+		var foot: Vector3 = top + out_dir * (L + 0.9)
+		foot.y = 0.0
+		var rt: Vector3 = rot * Vector3(1, 0, 0)
+		for k in 4:
+			var bp: Vector3 = foot + rt * (-1.5 + k * 1.0)
+			piece(root, Vector3(0.3, 0.9, 0.3), bp + Vector3(0, 0.45, 0), Color(0.85, 0.83, 0.78), U.CONCRETE, 0.5)
+	w.claim(Vector2(pos.x, pos.z), half * 0.9)

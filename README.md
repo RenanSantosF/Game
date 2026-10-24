@@ -35,6 +35,10 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela
 - Marcas da guerra no mapa todo: postos de controle nas rodovias, tanques queimados, crateras, trincheiras, arame farpado, ouriços de aço, casamatas e canhões
 - Asfalto, calçadas, pistas e cimento com colisão de verdade (o pé não afunda); nenhuma estrutura nasce dentro da outra; sem barranco onde as rampas das cidades se encontram
+- Texturas de reboco, tijolo, telha, madeira, zinco, concreto, asfalto, grama e terra com fotos CC0 do Poly Haven em 1024 px (tools/atlas_photo.py): casas nítidas e detalhadas
+- Vale do Corvo em cima de um deque de concreto de 7 m com escadas largas nos quatro lados (carro não sobe); fazendas com celeiro vermelho com mezanino de feno
+- Botão de deitar (rasteja devagar, tiro mais preciso); colete, capacete e mochila militares (oliva, coiote, verde-escuro) com remendo da cor do nível
+- Marca de tiro (furo com borda lascada, poeira e lascas), explosão com fogo, poeira em anel, fumaça subindo e queimado no chão
 - Mapa de 800 m com 26 localidades fictícias e formatos diferentes: vilas redondas, bairros com ruas curvas, casas espalhadas, fazendas (silos, celeiro, feno), base militar (muro, contêineres, torres de vigia), posto de gasolina, pedreiras, serraria, ruínas, torre de rádio, estação de trem e porto na lagoa
 - Relevo suave com subidas longas entre as cidades, duas rodovias de asfalto que cruzam o mapa (com postes, fios e carros), estradas de terra ligando as cidades às rodovias, plantações cercadas, linha de trem com vagões, lagoa rasa (água na canela, sem nadar)
 - Árvores pequenas e ralas (dá pra ver através), sem flutuar em barranco

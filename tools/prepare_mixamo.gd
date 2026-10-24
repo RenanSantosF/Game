@@ -150,7 +150,12 @@ func _initialize() -> void:
 	if lib.has_animation("Walking") and idle_anim:
 		lib.add_animation("WalkFree", _arms_from(lib.get_animation("Walking"), idle_anim))
 	if lib.has_animation("Jump"):
-		lib.add_animation("Air", _pose_at(lib.get_animation("Jump"), 0.2))
+		# no ar: pose encolhida com as pernas juntas (o pulo em distância abre demais as pernas)
+		var src_air: Animation = lib.get_animation("JumpDown") if lib.has_animation("JumpDown") else lib.get_animation("Jump")
+		lib.add_animation("Air", _pose_at(src_air, 0.02, idle_anim))
+	if lib.has_animation("Prone"):
+		# deitado parado: pose do começo do rastejar
+		lib.add_animation("ProneIdle", _pose_at(lib.get_animation("Prone"), 0.0))
 	var ap := AnimationPlayer.new()
 	ap.name = "Anim"
 	out.add_child(ap)
@@ -226,7 +231,7 @@ func _arms_from(walk: Animation, idle: Animation) -> Animation:
 
 
 # pose parada tirada de um instante (no ar)
-func _pose_at(src: Animation, frac: float) -> Animation:
+func _pose_at(src: Animation, frac: float, height_from: Animation = null) -> Animation:
 	var an := Animation.new()
 	an.length = 0.5
 	an.loop_mode = Animation.LOOP_LINEAR
@@ -240,5 +245,11 @@ func _pose_at(src: Animation, frac: float) -> Animation:
 		if ty == Animation.TYPE_ROTATION_3D:
 			an.rotation_track_insert_key(nt, 0.0, src.rotation_track_interpolate(t, t0))
 		else:
-			an.position_track_insert_key(nt, 0.0, src.position_track_interpolate(t, t0))
+			var pv := src.position_track_interpolate(t, t0)
+			# quadril na altura de pé (as pernas é que encolhem, o tronco não desce)
+			if height_from and str(src.track_get_path(t)).ends_with("mixamorig_Hips"):
+				var hi := height_from.find_track(src.track_get_path(t), Animation.TYPE_POSITION_3D)
+				if hi >= 0:
+					pv.y = height_from.position_track_interpolate(hi, 0.0).y
+			an.position_track_insert_key(nt, 0.0, pv)
 	return an

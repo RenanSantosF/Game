@@ -21,7 +21,7 @@ const LOCS := [
 	["Pouso Velho", Vector2(-35, -135), "igreja", 40.0],
 	["Posto Alvorada", Vector2(110, -160), "posto", 26.0],
 	["Fazenda Taquaral", Vector2(225, -70), "fazenda", 42.0],
-	["Vale do Corvo", Vector2(-205, 5), "bairro", 42.0],
+	["Vale do Corvo", Vector2(-205, 5), "alta", 42.0],
 	["Bela Poeira", Vector2(25, -10), "centro", 58.0],
 	["Estação Carvoeira", Vector2(175, 40), "estacao", 34.0],
 	["Ruínas do Engenho", Vector2(305, 110), "ruinas", 30.0],
@@ -107,9 +107,7 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 			b = Build.new(self)
 			b.edits = edit_data["e"]
 			b.editor = editor],
-		["Construindo as cidades", func():
-			for i in towns.size():
-				_build_loc(i)],
+	] + _town_steps() + [
 		["Colocando carros e objetos", func():
 			# o sorteio daqui em diante não depende de como as cidades foram montadas
 			# (mantém no lugar os objetos que o jogador já ajustou no editor)
@@ -129,10 +127,30 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 		["Desenhando o mapa", func():
 			if not headless:
 				_build_highway_mesh()
-				_build_map(_wts)
+				# o minimapa é desenhado em segundo plano (não segura o carregamento)
+				var wts := _wts
+				if map_thread:
+					WorkerThreadPool.add_task(func(): _build_map(wts))
+				else:
+					_build_map(wts)
 				_build_env()
 				_build_smoke()],
 	]
+
+
+var map_thread := true    # testes que leem o mapa logo depois desligam isso
+
+
+# cidades em várias etapas (a barra de carregamento anda aos poucos)
+func _town_steps() -> Array:
+	var out := []
+	var per := 4
+	for i0 in range(0, LOCS.size(), per):
+		var a := i0
+		out.append(["Construindo as cidades", func():
+			for i in range(a, mini(a + per, towns.size())):
+				_build_loc(i)])
+	return out
 
 
 func _step_relief() -> void:
@@ -756,7 +774,7 @@ const THEMES := {
 	"Arraial do Sapo": {"tints": [Color(0.7, 0.85, 0.62), Color(0.62, 0.78, 0.55), Color(0.82, 0.9, 0.72)], "roof": Color(0.4, 0.45, 0.3), "styles": ["plaster", "wood", "wood"], "mark": "windmill"},
 	"Brejo Seco": {"tints": [Color(0.86, 0.78, 0.58), Color(0.8, 0.7, 0.5), Color(0.9, 0.84, 0.66)], "roof": Color(0.6, 0.5, 0.36), "styles": ["plaster", "wood", "brick"], "mark": "bus"},
 	"Pouso Velho": {"tints": [Color(0.97, 0.97, 0.95), Color(0.92, 0.94, 0.98), Color(0.95, 0.95, 0.92)], "roof": Color(0.36, 0.42, 0.62), "styles": ["plaster", "plaster", "plaster"], "mark": ""},
-	"Vale do Corvo": {"tints": [Color(0.55, 0.55, 0.58), Color(0.48, 0.48, 0.5), Color(0.62, 0.6, 0.6)], "roof": Color(0.25, 0.25, 0.28), "styles": ["brick", "brick", "plaster"], "mark": "monument"},
+	"Vale do Corvo": {"tints": [Color(0.55, 0.55, 0.58), Color(0.48, 0.48, 0.5), Color(0.62, 0.6, 0.6)], "roof": Color(0.25, 0.25, 0.28), "styles": ["brick", "brick", "plaster"], "mark": ""},
 	"Bela Poeira": {"tints": [Color(0.96, 0.8, 0.62), Color(0.94, 0.72, 0.58), Color(0.98, 0.88, 0.7)], "roof": Color(0.85, 0.42, 0.3), "styles": ["plaster", "plaster", "brick"], "mark": "monument"},
 	"Chapada Ventania": {"tints": [Color(0.7, 0.82, 0.92), Color(0.62, 0.75, 0.88), Color(0.82, 0.9, 0.96)], "roof": Color(0.3, 0.38, 0.5), "styles": ["plaster", "plaster", "wood"], "mark": "windmill"},
 	"Colônia Caracol": {"tints": [Color(0.9, 0.72, 0.8), Color(0.82, 0.7, 0.88), Color(0.95, 0.82, 0.86)], "roof": Color(0.55, 0.3, 0.4), "styles": ["plaster", "plaster", "brick"], "mark": "monument"},
@@ -817,6 +835,8 @@ func _build_loc(ti: int) -> void:
 			_palafitas(c, y, r)
 		"mirante":
 			_mirante(c, y, r)
+		"alta":
+			_cidade_alta(c, y, r)
 	# localidade pequena com pouca casa: completa (cidade grande ganha algumas a mais também)
 	var extra: int = {"mirante": 3, "palafitas": 1, "posto": 3, "serraria": 3, "fazenda": 2, "estacao": 3, "porto": 3, "esparso": 2, "vila": 2, "igreja": 2, "bairro": 2, "centro": 3}.get(t["kind"], 0)
 	if extra > 0:
@@ -1432,6 +1452,64 @@ func _mirante(c: Vector2, y: float, r: float) -> void:
 			b.sandbags(_p3(p, y), rng.randf() * TAU, rng.randf_range(2.5, 4.0))
 
 
+# Vale do Corvo: a cidade inteira em cima de um deque de concreto bem alto (7 m, uns 4 s de escada),
+# com escadas largas no meio de cada lado e frades no pé (carro não sobe)
+const ALTA_H := 7.0
+const ALTA_SIZE := 46.0
+
+
+func _cidade_alta(c: Vector2, y: float, r: float) -> void:
+	var rng := b.rng
+	var th := rng.randf_range(-0.3, 0.3)
+	var bs := Basis(Vector3.UP, th)
+	var top := y + ALTA_H
+	var half := ALTA_SIZE / 2.0
+	b.no_pads = true
+	var placed := []
+	for k in 40:
+		if placed.size() >= 8:
+			break
+		var lx := rng.randf_range(-half + 6.0, half - 6.0)
+		var lz := rng.randf_range(-half + 6.0, half - 6.0)
+		# não bloqueia a chegada das escadas (faixa do meio de cada lado)
+		if (absf(lx) < 4.5 and absf(lz) > half - 9.0) or (absf(lz) < 4.5 and absf(lx) > half - 9.0):
+			continue
+		var v: Vector3 = bs * Vector3(lx, 0, lz)
+		var p := c + Vector2(v.x, v.z)
+		var ok := true
+		for q in placed:
+			if p.distance_to(q) < 11.5:
+				ok = false
+		if not ok:
+			continue
+		placed.append(p)
+		var spec := _house_spec(rng)
+		spec.erase("ext_stairs")
+		spec["porch"] = false
+		var yaw := -th + PI / 2.0 * rng.randi_range(0, 3)
+		b.house(_p3(p, top), yaw, spec)
+	for k in 6:
+		var v: Vector3 = bs * Vector3(rng.randf_range(-half + 3.0, half - 3.0), 0, rng.randf_range(-half + 3.0, half - 3.0))
+		var p := c + Vector2(v.x, v.z)
+		if is_free(p, 2.2):
+			if k % 3 == 0:
+				b.sandbags(_p3(p, top), rng.randf() * TAU, rng.randf_range(2.5, 4.0))
+			elif k % 3 == 1:
+				b.crates(_p3(p, top), rng.randf() * TAU)
+			else:
+				b.barricade(_p3(p, top), rng.randf() * TAU)
+	b.no_pads = false
+	b.deck(_p3(c, y), -th, ALTA_SIZE, ALTA_H)
+	# embaixo do deque: sombra, carros abandonados e caixotes entre os pilares
+	for k in 4:
+		var v: Vector3 = bs * Vector3(rng.randf_range(-half + 4.0, half - 4.0), 0, rng.randf_range(-half + 4.0, half - 4.0))
+		var p := c + Vector2(v.x, v.z)
+		if k < 2:
+			b.car(_p3(p, y), rng.randf() * TAU)
+		else:
+			b.crates(_p3(p, y), rng.randf() * TAU)
+
+
 func _esparso(c: Vector2, y: float, r: float) -> void:
 	var rng := b.rng
 	var n := rng.randi_range(6, 8)
@@ -1466,9 +1544,9 @@ func _fazenda(c: Vector2, y: float, r: float) -> void:
 	var dir := Vector2(cos(th), sin(th))
 	var side := Vector2(-dir.y, dir.x)
 	b.house(_p3(c + dir * r * 0.35, y), _face(c + dir * r * 0.35, c), {"w": 10.0, "d": 8.5, "floors": 2, "style": "plaster", "roof": "tile", "balcony": true, "porch": false})
-	b.warehouse(_p3(c - dir * r * 0.35, y), _face(c - dir * r * 0.35, c))
-	b.silo(_p3(c - dir * r * 0.35 + side * 14.5, y))
-	b.silo(_p3(c - dir * r * 0.35 + side * 21.5, y))
+	b.barn(_p3(c - dir * r * 0.35, y), _face(c - dir * r * 0.35, c))
+	b.silo(_p3(c - dir * r * 0.35 + side * 15.0, y))
+	b.silo(_p3(c - dir * r * 0.35 + side * 22.0, y))
 	b.water_tower(_p3(c + side * r * 0.5, y))
 	for k in rng.randi_range(5, 8):
 		var p := c + Vector2(rng.randf_range(-r * 0.7, r * 0.7), rng.randf_range(-r * 0.7, r * 0.7))
@@ -2187,7 +2265,8 @@ func _build_nature() -> void:
 		var s := rng.randf_range(0.8, 1.25)
 		var r := rng.randf() * TAU
 		var k := rng.randf()
-		var kind := "oak" if k < 0.5 else ("pine" if k < 0.78 else "tall")
+		# sem pinheiro (parecia árvore de natal): só copa larga e alta
+		var kind := "oak" if k < 0.62 else "tall"
 		# base afundada no ponto mais baixo em volta do tronco (sem flutuar no barranco)
 		var gy := low_h(p, 0.5 * s) - 0.1
 		var xf := Transform3D(Basis(Vector3.UP, r) * Basis.from_scale(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(x, gy, z))
@@ -2566,6 +2645,10 @@ func _build_map(wts: PackedColorArray) -> void:
 						var half := roof.darkened(0.12) if lz > 0.0 else roof.lightened(0.08)
 						img.set_pixel(x, y, Color(0.18, 0.15, 0.13) if edge else half)
 	img.generate_mipmaps()
+	_set_map_img.call_deferred(img)
+
+
+func _set_map_img(img: Image) -> void:
 	map_tex = ImageTexture.create_from_image(img)
 
 
@@ -2675,8 +2758,8 @@ func _build_env() -> void:
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
 	# dia nublado e pesado (pré-guerra): céu cinza, sol fraco, névoa de poeira e fumaça
-	sm.sky_top_color = Color(0.4, 0.44, 0.49)
-	sm.sky_horizon_color = Color(0.64, 0.64, 0.62)
+	sm.sky_top_color = Color(0.36, 0.48, 0.62)
+	sm.sky_horizon_color = Color(0.68, 0.7, 0.7)
 	sm.ground_horizon_color = Color(0.56, 0.55, 0.52)
 	sm.ground_bottom_color = Color(0.42, 0.41, 0.39)
 	sm.sky_curve = 0.18
@@ -2687,18 +2770,18 @@ func _build_env() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.64, 0.64, 0.64)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.62
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.6, 0.59, 0.56)
-	env.fog_density = 0.0032
+	env.fog_light_color = Color(0.64, 0.66, 0.66)
+	env.fog_density = 0.0024
 	env.fog_sky_affect = 0.55
 	# cores mais secas e frias (o mundo parece cansado)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 0.72
-	env.adjustment_contrast = 1.06
-	env.adjustment_brightness = 0.98
+	env.adjustment_saturation = 0.95
+	env.adjustment_contrast = 1.05
+	env.adjustment_brightness = 1.02
 	# chão em volta do mapa até o horizonte (só visual)
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
@@ -2744,8 +2827,8 @@ func _build_env() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-48, 35, 0)
-	sun.light_color = Color(0.94, 0.91, 0.85)
-	sun.light_energy = 0.78
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_energy = 0.95
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

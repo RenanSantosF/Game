@@ -6,8 +6,8 @@ extends CharacterBody3D
 # As rodas procuram o chão (raio pra baixo): o carro sobe e desce morro acompanhando o terreno.
 # Tiro machuca o carro; sem vida ele explode e machuca quem estiver perto.
 
-const MAX := [21.0, 16.5]        # velocidade máxima (m/s)
-const ACCEL := [7.0, 6.5]
+const MAX := [15.5, 12.5]        # velocidade máxima (m/s)
+const ACCEL := [4.2, 3.8]        # arranca devagar (o torque pra subir morro continua)
 const TURN := [1.7, 1.35]        # giro (rad/s) em velocidade boa
 const LEN := [5.0, 4.6]
 const HP := 520.0
@@ -250,6 +250,7 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 	move_and_slide()
 	# o chão (terreno) nunca segura o carro de frente: as rodas é que acompanham o morro
 	var hit_wall := false
+	var hit_other := false
 	var only_ground := get_slide_collision_count() > 0
 	for ci in get_slide_collision_count():
 		var c := get_slide_collision(ci)
@@ -257,6 +258,10 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 			continue
 		only_ground = false
 		var n := c.get_normal()
+		# chão de outra coisa (calçada, laje, pedra deitada) não conta como batida
+		if n.y > 0.6:
+			continue
+		hit_other = true
 		if absf(n.y) < 0.6 and fwd.dot(-n) * signf(speed) > 0.45 and absf(speed) > 4.0:
 			hit_wall = true
 	if only_ground:
@@ -265,8 +270,10 @@ func drive(delta: float, throttle: float, steer: float) -> void:
 	if hit_wall:
 		speed *= 0.5
 	var moved := Vector2(global_position.x - before.x, global_position.z - before.z).length()
-	if absf(speed) > 3.0 and moved < absf(speed) * delta * 0.15:
+	if hit_other and absf(speed) > 3.0 and moved < absf(speed) * delta * 0.15:
 		speed *= 0.5
+		hit_wall = true
+	_hit_now = hit_wall
 	_ground(delta)
 	target_pos = global_position
 	target_yaw = yaw
@@ -323,6 +330,7 @@ var _susp := [0.0, 0.0, 0.0, 0.0]
 var _susp_v := [0.0, 0.0, 0.0, 0.0]
 var _last_speed := 0.0
 var _crash_cd := 0.0
+var _hit_now := false     # bateu em parede/objeto neste quadro (subir morro não é batida)
 var crash_snd: AudioStreamPlayer3D
 
 
@@ -368,9 +376,9 @@ func _update_visual(delta: float) -> void:
 	# batida: perdeu velocidade de repente (só som, carro não toma dano de batida)
 	_crash_cd -= delta
 	var drop := absf(_last_speed) - absf(speed)
-	if drop > 2.5 and absf(_last_speed) > 3.5 and _crash_cd <= 0.0 and crash_snd:
+	if _hit_now and drop > 2.0 and absf(_last_speed) > 3.5 and _crash_cd <= 0.0 and crash_snd:
 		_crash_cd = 0.6
-		crash_snd.volume_db = (game.sfxn.db(0.0) if game.sfxn else 0.0) + clampf((drop - 2.5) * 0.8, 0.0, 6.0) - 4.0
+		crash_snd.volume_db = (game.sfxn.db(0.0) if game.sfxn else 0.0) + clampf((drop - 2.0) * 0.8, 0.0, 6.0) + 1.0
 		crash_snd.pitch_scale = randf_range(0.9, 1.1)
 		crash_snd.play()
 	_last_speed = speed

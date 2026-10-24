@@ -4,10 +4,10 @@ extends CharacterBody3D
 const SPEED := 6.0
 const GRAVITY := 22.0
 const JUMP := 7.0
-const FALL_SPEED := 20.0       # queda livre
-const FALL_MOVE := 22.0
-const CHUTE_SPEED := 5.5       # paraquedas
-const CHUTE_MOVE := 8.0
+const FALL_SPEED := 15.0       # queda livre
+const FALL_MOVE := 16.0
+const CHUTE_SPEED := 4.5       # paraquedas
+const CHUTE_MOVE := 6.5
 const CHUTE_OPEN_H := 60.0
 const VAULT_TIME := 0.5
 
@@ -41,6 +41,7 @@ var reload_t := 0.0
 var cool := 0.0
 var scoped := false
 var crouch := false
+var prone := false       # deitado (rasteja devagar, fica baixinho)
 var want_jump := false
 var wish := Vector3.ZERO  # direção desejada no mundo (comprimento até 1)
 var shown_wid := "glock"
@@ -200,7 +201,7 @@ func has_gun(wid: String) -> bool:
 
 
 func head_y() -> float:
-	return 1.03 if crouch else 1.48
+	return 0.38 if prone else (1.03 if crouch else 1.48)
 
 
 func capacity() -> int:
@@ -216,12 +217,13 @@ func count(kind: String) -> int:
 
 
 func flags() -> int:
-	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8) | (int(reload_t > 0.0) << 9)
+	return air | (int(crouch) << 2) | (int(heal_t > 0.0) << 3) | (int(vault_t >= 0.0) << 4) | (int(punch_t > 0.0) << 5) | (int(not is_on_floor() and air == 0) << 6) | (int(car >= 0) << 7) | (int(stun_t > 0.0) << 8) | (int(reload_t > 0.0) << 9) | (int(prone) << 10)
 
 
 func set_flags(f: int) -> void:
 	air = f & 3
 	set_crouch(((f >> 2) & 1) == 1)
+	set_prone(((f >> 10) & 1) == 1)
 	heal_t = 1.0 if ((f >> 3) & 1) == 1 else 0.0
 	vault_t = 0.2 if ((f >> 4) & 1) == 1 else -1.0
 	if ((f >> 5) & 1) == 1 and punch_t <= 0.0:
@@ -246,7 +248,24 @@ func set_crouch(c: bool) -> void:
 	crouch = c
 	if c:
 		sprint = false
-	cap.height = 1.25 if c else 1.8
+		if prone:
+			prone = false
+	_fit_capsule()
+
+
+func set_prone(c: bool) -> void:
+	if c == prone:
+		return
+	prone = c
+	if c:
+		sprint = false
+		crouch = false
+	_fit_capsule()
+
+
+# altura da colisão: em pé, agachado ou deitado
+func _fit_capsule() -> void:
+	cap.height = 0.8 if prone else (1.25 if crouch else 1.8)
 	cshape.position.y = cap.height / 2.0
 
 
@@ -366,8 +385,6 @@ func _build_model() -> void:
 	tag.modulate = Color(1, 1, 1, 0.85)
 	tag.visible = false
 	add_child(tag)
-	for g in [vest_mi, bag_mi, helmet_mi]:
-		g.visibility_range_end = 120.0
 	refresh_gear()
 
 
@@ -410,7 +427,7 @@ func _set_gun_model(w: String, att: Array) -> void:
 	aim.add_child(gun)
 	for c in gun.get_children():
 		if c is GeometryInstance3D:
-			c.visibility_range_end = 200.0
+			c.visibility_range_end = 0.0     # o inimigo aparece igual de qualquer distância
 	update_back_guns()
 
 
@@ -421,9 +438,13 @@ var _back := []        # armas grandes penduradas nas costas
 
 
 # armas grandes que não estão na mão ficam nas costas (em X, cano pra cima)
+var _back_key := ""
+
+
 func update_back_guns() -> void:
 	if not visual or sol == null:
 		return
+	_back_key = _back_sig()
 	for n in _back:
 		if is_instance_valid(n):
 			n.queue_free()
@@ -437,15 +458,22 @@ func update_back_guns() -> void:
 		var m := Weapons.build_model(g["id"], g["att"])
 		# cano pra cima, atravessado nas costas; a segunda arma cruza a primeira
 		var tilt := 0.55 if k == 0 else -0.55
-		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 0.98, 0.13 + (0.1 if bag > 0 else 0.0) + k * 0.04))
+		# colada nas costas (ou por cima da mochila, se tiver)
+		var bz: float = 0.175 if bag <= 0 else 0.15 + 0.11 * [0.0, 0.85, 1.0, 1.12][clampi(bag, 0, 3)] + 0.03
+		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 1.0, bz + k * 0.035))
 		for c in m.get_children():
 			if c is GeometryInstance3D:
-				c.visibility_range_end = 60.0
+				c.visibility_range_end = 0.0
 				(c as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(m)
 		sol.attach("Spine2", holder)
 		_back.append(holder.get_parent())
 		k += 1
+
+
+# o que está nas costas depende das armas, da selecionada e da que aparece na mão
+func _back_sig() -> String:
+	return "%s|%s|%d|%s|%d" % [guns[0]["id"], guns[1]["id"], sel, shown_wid, bag]
 
 
 func muzzle_pos() -> Vector3:
@@ -474,6 +502,7 @@ func die() -> void:
 	heal_t = 0.0
 	vault_t = -1.0
 	set_crouch(false)
+	set_prone(false)
 	velocity = Vector3.ZERO
 	if sol and model and model.visible and air == 0:
 		dying_t = 2.2
@@ -507,6 +536,7 @@ func reset_state(pos: Vector3) -> void:
 	inv = {}
 	air = 0
 	set_crouch(false)
+	set_prone(false)
 	refill()
 	position = pos
 	target_pos = pos
@@ -526,6 +556,7 @@ func reset_state(pos: Vector3) -> void:
 func board() -> void:
 	air = 3
 	set_crouch(false)
+	set_prone(false)
 	velocity = Vector3.ZERO
 	collision_mask = 0
 
@@ -626,9 +657,9 @@ func _move(delta: float) -> void:
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
 	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
-	var spd := lerpf(3.8, 5.0, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
+	var spd := lerpf(3.5, 4.5, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
 	if sprint:
-		spd = 6.9 if (sel < 0 or cur_wid() == "fist") else 6.5
+		spd = 6.2 if (sel < 0 or cur_wid() == "fist") else 5.8
 	# atirando ou dando soco anda bem mais devagar
 	if (aim_t > 0.0 and not sprint) or (is_local and game.hud != null and game.hud.fire_held):
 		spd = minf(spd, 2.6)
@@ -636,6 +667,8 @@ func _move(delta: float) -> void:
 		spd = minf(spd, 2.2)
 	if crouch:
 		spd = 2.8
+	if prone:
+		spd = minf(spd, 0.9)
 	if scoped:
 		spd = minf(spd, 3.2)
 	if heal_t > 0.0:
@@ -643,7 +676,7 @@ func _move(delta: float) -> void:
 	if game.world.in_water(position):
 		spd = minf(spd, 3.2)
 	if is_bot:
-		spd = (6.6 if sprint else 5.4) if b_target == 0 else (6.0 if sprint else 4.6)
+		spd = (5.8 if sprint else 4.5) if b_target == 0 else (5.4 if sprint else 4.2)
 		if crouch:
 			spd = 2.6
 	if stun_t > 0.0:
@@ -670,8 +703,11 @@ func _move(delta: float) -> void:
 		_air_time += delta
 		_fall_v = maxf(_fall_v, -velocity.y)
 	elif want_jump and stun_t <= 0.0:
-		if crouch:
+		if prone:
+			set_prone(false)
+		elif crouch:
 			set_crouch(false)
+			set_prone(false)
 		elif not try_vault(dir if dir.length() > 0.1 else Basis(Vector3.UP, yaw) * Vector3.FORWARD):
 			velocity.y = JUMP
 			if is_local:
@@ -782,6 +818,7 @@ func try_vault(dir: Vector3) -> bool:
 			collision_mask = 0
 			yaw = atan2(-f.x, -f.z)
 			set_crouch(false)
+			set_prone(false)
 			game.sfx_at("vault", base, is_local)
 			return true
 	# onde vai cair do outro lado
@@ -806,6 +843,7 @@ func try_vault(dir: Vector3) -> bool:
 		collision_mask = 0
 		yaw = atan2(-f.x, -f.z)
 		set_crouch(false)
+		set_prone(false)
 		game.sfx_at("vault", base, is_local)
 		return true
 	return false
@@ -870,7 +908,11 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.tick(delta, not game.near_cam(global_position, 35.0), 0.0, 0.85, [wp - rt * 0.2, wp + rt * 0.2])
 		return
 	aim.visible = true
-	model.rotation.y = yaw
+	# arma das costas sempre igual ao que o jogador tem (largou/trocou: atualiza na hora)
+	if _back_sig() != _back_key:
+		update_back_guns()
+	# o corpo vira rápido mas não de estalo (movimento mais natural)
+	model.rotation.y = lerp_angle(model.rotation.y, yaw, minf(1.0, 16.0 * delta))
 	chute.rotation.y = yaw
 	var k := minf(1.0, 12.0 * delta)
 	var airborne := (not is_on_floor()) if sim else _remote_air
@@ -919,8 +961,10 @@ func _animate(delta: float, sim: bool) -> void:
 	# sem atirar: arma baixa, perto da barriga; atirando ou mirando: levanta e aponta
 	var rdy: bool = ready_t > 0.0 or aim_t > 0.0 or scoped or (is_local and game.hud != null and game.hud.fire_held)
 	_ready_k = lerpf(_ready_k, 1.0 if rdy else 0.0, minf(1.0, (18.0 if rdy else 5.0) * delta))
-	var low := maxf(_gun_low, (1.0 - _ready_k) * 0.62)
-	aim.rotation.x = pitch * 0.85 * (1.0 - low) - 1.1 * low
+	# sem atirar o rifle fica quase na horizontal (só um pouco abaixado)
+	var low := maxf(_gun_low, (1.0 - _ready_k) * 0.1)
+	# só acompanha a mira (pra cima/baixo) atirando ou mirando; andando a arma fica na horizontal
+	aim.rotation.x = pitch * 0.85 * _ready_k * (1.0 - low) - 1.1 * low
 	aim.position = Vector3(0, 1.36 - (1.0 - _ready_k) * 0.12, (1.0 - _ready_k) * 0.06)
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
 	if stun_t > 0.0 and not airborne:
@@ -943,6 +987,18 @@ func _animate(delta: float, sim: bool) -> void:
 			gun.visible = false
 		sol.tick(delta, far, 0.0, 0.0, [])
 		return
+	# deitado: rasteja (parado segura a pose); a arma fica baixinha na frente, sem esticar os braços
+	if prone and not airborne and sol.has_anim("Prone"):
+		if sp < 0.15:
+			sol.play("ProneIdle" if sol.has_anim("ProneIdle") else "Prone", 0.3)
+		else:
+			sol.play("Prone", 0.3, clampf(sp / 0.45, 0.6, 1.6))
+		aim.position = Vector3(0.05, 0.28, -0.75)
+		aim.rotation.x = pitch * 0.5 * _ready_k
+		if gun:
+			gun.visible = armed
+		sol.tick(delta, far, 0.0, 0.0, [])
+		return
 	# animações do Mixamo: parado (com e sem arma), andar, correr, correr rápido, pular, saltar janela.
 	# O ritmo acompanha a velocidade do jogo (o pé quase não desliza), com limite pra não ficar frenético.
 	var ual := sol.has_anim("Sprint")
@@ -956,12 +1012,9 @@ func _animate(delta: float, sim: bool) -> void:
 		# salto da janela: a animação inteira cabe no tempo do pulo
 		if sol.cur != "Vault":
 			sol.play("Vault", 0.06, sol.ap.get_animation("Vault").length / (VAULT_TIME * 1.6))
-	elif airborne and mix and sol.has_anim("Jump") and (not sim or velocity.y > 1.5 or _air_time > 0.2):
-		# pulo: começa na decolagem e segura o meio do pulo enquanto estiver no ar
-		if sol.cur != "Jump" and sol.cur != "Air":
-			sol.play("Jump", 0.08, 1.5)
-		elif sol.cur == "Jump" and sol.ap.current_animation_position > sol.ap.current_animation_length * 0.2:
-			sol.play("Air", 0.2)
+	elif airborne and mix and (not sim or velocity.y > 1.5 or _air_time > 0.2):
+		# pulo: encolhe as pernas (juntas) enquanto estiver no ar
+		sol.play("Air", 0.18)
 	elif airborne and sp > 2.5 and vault_t < 0.0:
 		# pulando correndo: as pernas continuam no passo
 		sol.play("Running", 0.15, 0.8)
@@ -979,23 +1032,23 @@ func _animate(delta: float, sim: bool) -> void:
 		elif mix and firing and not crouch:
 			sol.play("Fire", 0.12)
 		elif mix and armed:
-			sol.play("RifleIdle", 0.25)
+			sol.play("RifleIdle", 0.3)
 		else:
-			sol.play("Idle", 0.25)
+			sol.play("Idle", 0.3)
 	elif sp < (1.9 if mix else 2.9) or crouch:
 		# andando (mirando, atirando, agachado): com arma anda com o rifle, sem arma com os braços soltos
 		var wn := "Walking" if armed or not sol.has_anim("WalkFree") else "WalkFree"
 		if mix:
-			sol.play(wn, 0.2, clampf(sp / 0.95, 0.6, 2.0) if not crouch else clampf(sp / 1.6, 0.4, 1.2))
+			sol.play(wn, 0.3, clampf(sp / 1.25, 0.6, 1.4) if not crouch else clampf(sp / 1.8, 0.4, 1.0))
 		else:
 			sol.play("Walking", 0.2, clampf(sp / 1.15, 0.55, 2.3) if not crouch else clampf(sp / 2.4, 0.25, 0.8))
-	elif sp < 5.8 or not ual:
+	elif sp < 5.2 or not ual:
 		if mix:
-			sol.play("Running", 0.15, clampf(sp / 2.7, 0.85, 1.75))
+			sol.play("Running", 0.25, clampf(sp / 3.6, 0.8, 1.25))
 		else:
 			sol.play("Running", 0.2, clampf(sp / 3.2, 0.8, 1.7) if ual else clampf(sp / 5.4, 0.62, 1.5))
 	else:
-		sol.play("Sprint", 0.15, clampf(sp / 3.6, 0.95, 1.8) if mix else clampf(sp / 5.0, 0.9, 1.6))
+		sol.play("Sprint", 0.25, clampf(sp / 5.0, 0.95, 1.3) if mix else clampf(sp / 5.0, 0.9, 1.6))
 	if crouch_anim and crouch:
 		cr = -1.0     # a própria animação agacha (sem dobrar as pernas por código)
 	if heal_t > 0.0:
@@ -1139,6 +1192,7 @@ func _bot(delta: float) -> void:
 	else:
 		b_react = randf_range(0.45, 0.9)
 		set_crouch(false)
+		set_prone(false)
 		if heal_t > 0.0:
 			if not out_zone:
 				wish = Vector3.ZERO

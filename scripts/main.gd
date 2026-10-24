@@ -10,7 +10,7 @@ const PLANE := 1
 const MATCH := 2
 const END := 3
 const PLANE_H := 230.0
-const PLANE_SPEED := 24.0
+const PLANE_SPEED := 18.0
 const LOBBY_T := 45.0
 const PLANE_OUT := 220.0     # metros de voo fora do mapa antes e depois
 # espera, tempo fechando, raio final, dano por segundo
@@ -1245,6 +1245,7 @@ func on_car(i: int, id: int) -> void:
 			p.scoped = false
 			p.sprint = false
 			p.set_crouch(false)
+			p.set_prone(false)
 			if id == local_id:
 				sfx("door", -2.0)
 	elif old != 0:
@@ -1337,6 +1338,57 @@ func on_explode(i: int) -> void:
 	_explosion_fx(v.global_position + Vector3(0, 0.8, 0), 1.3)
 
 
+static var _scorch_mat: StandardMaterial3D
+
+
+# nuvem de partículas com a textura de fumaça (cor do começo pro fim, sobe/espalha e cresce)
+func _boom_particles(at: Vector3, size: float, n: int, life: float, c0: Color, c1: Color, v0: float, v1: float, grav: Vector3, s0: float, s1: float, fire: bool, spread: float) -> void:
+	var ps := CPUParticles3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2.ONE
+	ps.mesh = qm
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = World.smoke_tex()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED if fire else BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	if fire:
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	ps.material_override = m
+	ps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ps.one_shot = true
+	ps.explosiveness = 0.85
+	ps.amount = n
+	ps.lifetime = life
+	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	ps.emission_sphere_radius = 0.5 * size
+	ps.direction = Vector3.UP
+	ps.spread = 180.0 if spread <= 0.0 else spread
+	if spread >= 80.0:
+		ps.flatness = 0.85
+	ps.initial_velocity_min = v0 * size
+	ps.initial_velocity_max = v1 * size
+	ps.damping_min = 2.5
+	ps.damping_max = 4.0
+	ps.gravity = grav
+	ps.scale_amount_min = s0
+	ps.scale_amount_max = s0 * 1.4
+	var cr := Curve.new()
+	cr.add_point(Vector2(0, 0.6))
+	cr.add_point(Vector2(1, s1 / maxf(s0, 0.01)))
+	cr.max_value = maxf(4.0, s1 / maxf(s0, 0.01) + 0.5)
+	ps.scale_amount_curve = cr
+	var gr := Gradient.new()
+	gr.set_color(0, c0)
+	gr.set_color(1, c1)
+	ps.color_ramp = gr
+	add_child(ps)
+	ps.global_position = at
+	ps.emitting = true
+	get_tree().create_timer(life + 0.5).timeout.connect(ps.queue_free)
+
+
 func _explosion_fx(at: Vector3, size: float) -> void:
 	if dedicated:
 		return
@@ -1350,24 +1402,46 @@ func _explosion_fx(at: Vector3, size: float) -> void:
 	var tw := create_tween()
 	tw.tween_property(fl, "light_energy", 0.0, 0.8)
 	tw.tween_callback(fl.queue_free)
-	for k in 12:
-		var mi := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.5
-		sm.height = 1.0
-		sm.radial_segments = 8
-		sm.rings = 4
-		mi.mesh = sm
-		var fire := k < 6
-		mi.material_override = U.mat(Color(1.0, 0.5, 0.15) if fire else Color(0.15, 0.14, 0.13), fire)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
-		mi.global_position = at + Vector3(randf_range(-0.8, 0.8), randf() * 0.5, randf_range(-0.8, 0.8)) * size
-		var t2 := create_tween()
-		var dur := randf_range(0.4, 0.8) if fire else randf_range(1.6, 2.8)
-		t2.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-2, 2), randf_range(2, 5), randf_range(-2, 2)) * size, dur)
-		t2.parallel().tween_property(mi, "scale", Vector3.ONE * (randf_range(1.8, 3.0) if fire else randf_range(2.5, 4.5)) * size, dur)
-		t2.tween_callback(mi.queue_free)
+	# bola de fogo rápida, poeira rasteira em anel, fumaça escura subindo devagar, terra voando
+	# e mancha de queimado no chão (tudo em partículas com textura de fumaça, nada de bolas)
+	_boom_particles(at, size, 10, 0.45, Color(1.0, 0.72, 0.35, 1.0), Color(0.9, 0.3, 0.08, 0.0), 2.5, 5.0, Vector3(0, 0.5, 0), 0.9 * size, 2.4 * size, true, 0.0)
+	_boom_particles(at, size, 14, 1.6, Color(0.55, 0.5, 0.42, 0.7), Color(0.55, 0.5, 0.42, 0.0), 3.0, 6.5, Vector3(0, -0.4, 0), 0.8 * size, 2.2 * size, false, 85.0)
+	_boom_particles(at + Vector3(0, 0.6, 0), size, 12, 3.2, Color(0.16, 0.15, 0.14, 0.85), Color(0.3, 0.29, 0.27, 0.0), 0.8, 2.2, Vector3(0, 1.4, 0), 1.0 * size, 3.2 * size, false, 25.0)
+	var dirt := CPUParticles3D.new()
+	dirt.mesh = U.box_mesh(Vector3(0.06, 0.06, 0.06))
+	dirt.material_override = U.mat(Color(0.3, 0.25, 0.2))
+	dirt.one_shot = true
+	dirt.explosiveness = 1.0
+	dirt.amount = 16
+	dirt.lifetime = 1.4
+	dirt.direction = Vector3.UP
+	dirt.spread = 55.0
+	dirt.initial_velocity_min = 4.0 * size
+	dirt.initial_velocity_max = 9.0 * size
+	dirt.gravity = Vector3(0, -12.0, 0)
+	add_child(dirt)
+	dirt.global_position = at + Vector3(0, 0.2, 0)
+	dirt.emitting = true
+	get_tree().create_timer(2.0).timeout.connect(dirt.queue_free)
+	# queimado no chão
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3(0, 1.0, 0), at - Vector3(0, 3.0, 0))
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var sc := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2.ONE * 2.6 * size
+		sc.mesh = qm
+		if _scorch_mat == null:
+			_scorch_mat = StandardMaterial3D.new()
+			_scorch_mat.albedo_texture = World.smoke_tex()
+			_scorch_mat.albedo_color = Color(0.05, 0.045, 0.04)
+			_scorch_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		sc.material_override = _scorch_mat
+		sc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(sc)
+		var n: Vector3 = hit["normal"]
+		sc.global_transform = Transform3D(Basis.looking_at(-n, Vector3.FORWARD if absf(n.y) > 0.9 else Vector3.UP), (hit["position"] as Vector3) + n * 0.02)
+		get_tree().create_timer(30.0).timeout.connect(sc.queue_free)
 	if cam and cam.global_position.distance_to(at) < 30.0:
 		_shake = 0.6
 
@@ -1514,8 +1588,10 @@ func _server_runover(driver: int, vid: int, spd: float) -> void:
 
 func _drive_local(lp: Player, delta: float) -> void:
 	var v: Vehicle = vehicles[lp.car]
-	var mv := hud.move_vec
-	# botões do carro (pedais e volante); o analógico/teclado continua valendo
+	# no carro só os botões (pedais e volante); o analógico some. Teclado continua valendo no PC.
+	var mv := Vector2(
+		float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
+		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
 	var di := hud.drive_input()
 	var th := clampf(di.x - mv.y, -1.0, 1.0)
 	var st := clampf(di.y + mv.x, -1.0, 1.0)
@@ -1729,15 +1805,15 @@ func _apply_quality() -> void:
 	var sun: DirectionalLight3D = world.get_node_or_null("Sun")
 	var env: WorldEnvironment = world.get_node_or_null("Env")
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-	var far := 380.0
+	var far := 300.0     # mais curto que antes: o jogo fica mais leve (a névoa esconde o fim)
 	match int(Cfg.get_v("quality")):
 		0:
 			vp.scaling_3d_scale = 0.6
 			vp.msaa_3d = Viewport.MSAA_DISABLED
 			if sun:
 				sun.shadow_enabled = false
-			far = 320.0
-			world.set_view(220.0)
+			far = 250.0
+			world.set_view(200.0)
 		1:
 			vp.scaling_3d_scale = 0.8
 			vp.msaa_3d = Viewport.MSAA_DISABLED
@@ -1751,8 +1827,8 @@ func _apply_quality() -> void:
 			if sun:
 				sun.shadow_enabled = true
 				sun.directional_shadow_max_distance = 55.0
-			far = 460.0
-			world.set_view(380.0)
+			far = 380.0
+			world.set_view(300.0)
 	# ajustes finos das configurações
 	if sun and not bool(Cfg.get_v("shadows")):
 		sun.shadow_enabled = false
@@ -2073,6 +2149,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		mode = "lobby"
 	hud.mode = mode
 	hud.crouched = lp.crouch
+	hud.proned = lp.prone
 	hud.can_start = phase == LOBBY and multiplayer.is_server() and not training
 	var zoom: float = float(w["zoom"]) if lp.scoped else 1.0
 	var look := hud.take_look()
@@ -2135,7 +2212,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		lp.wish = Vector3.ZERO
 	# câmera
 	var t := _view_target()
-	var target_len := 3.0
+	var target_len := 2.1
 	var fov := 75.0
 	var base := t.position if t else Vector3.ZERO
 	var cy := cam_yaw_v
@@ -2151,8 +2228,14 @@ func _local_update(lp: Player, delta: float) -> void:
 	elif t and (t.air == 1 or t.air == 2):
 		target_len = 7.0
 	elif t and t.car >= 0 and t.car < vehicles.size():
-		target_len = 7.5
+		target_len = 7.0
 		base = vehicles[t.car].global_position + Vector3(0, 0.6, 0)
+		# dirigindo: a câmera vai pra trás do carro e acompanha a frente dele
+		var vy: float = vehicles[t.car].yaw
+		cy = lerp_angle(cam_yaw.rotation.y, vy, minf(1.0, 3.5 * delta))
+		if t == lp:
+			cam_yaw_v = cy
+		cp = minf(cp, -0.18)
 	elif t != lp:
 		target_len = 4.5
 	# mirando (com ou sem acessório): primeira pessoa, no olho, olhando pela mira da arma
@@ -2165,20 +2248,22 @@ func _local_update(lp: Player, delta: float) -> void:
 		fp = false
 	if lp.model:
 		lp.model.visible = not fp
-	cam_yaw.position = base + Vector3(0, (1.62 if fp else 1.55) if not (t and t.crouch) else (1.15 if fp else 1.1), 0)
+	cam_yaw.position = base + Vector3(0, 0.75 if (t and t.prone) else ((1.62 if fp else 1.55) if not (t and t.crouch) else (1.15 if fp else 1.1)), 0)
 	cam_yaw.rotation.y = cy if t == lp else lerp_angle(cam_yaw.rotation.y, cy, minf(1.0, 6.0 * delta))
 	cam_pitch.rotation.x = cp
 	# ombro da câmera: se tem parede do lado, encosta a câmera no centro (não vê através da parede)
-	var side := 0.0 if fp else 0.55
-	if t and t.air == 0 and not fp:
+	var side := 0.0 if fp else 0.45
+	if t and t.car >= 0:
+		side = 0.0
+	if t and t.air == 0 and not fp and t.car < 0:
 		var from := cam_yaw.global_position
-		var right := cam_pitch.global_transform.basis * Vector3(0.55 + 0.35, 0.15, 0)
+		var right := cam_pitch.global_transform.basis * Vector3(0.45 + 0.35, 0.15, 0)
 		var q := PhysicsRayQueryParameters3D.create(from, from + right, 1)
 		if t:
 			q.exclude = [t.get_rid()]
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		if not hit.is_empty():
-			side = clampf(from.distance_to(hit["position"]) - 0.35, 0.0, 0.55)
+			side = clampf(from.distance_to(hit["position"]) - 0.35, 0.0, 0.45)
 	spring.position.x = lerpf(spring.position.x, side, minf(1.0, (25.0 if side < spring.position.x else 6.0) * delta))
 	spring.spring_length = lerpf(spring.spring_length, target_len, minf(1.0, 8.0 * delta))
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, 12.0 * delta))
@@ -2471,6 +2556,9 @@ func _on_action(act: String) -> void:
 		"crouch":
 			if lp.air == 0:
 				lp.set_crouch(not lp.crouch)
+		"prone":
+			if lp.air == 0 and lp.car < 0:
+				lp.set_prone(not lp.prone)
 		"reload":
 			_start_reload(lp)
 		"scope":
@@ -2507,6 +2595,9 @@ func _on_action(act: String) -> void:
 			lp.sprint = not lp.sprint
 			if lp.sprint and lp.crouch:
 				lp.set_crouch(false)
+				lp.set_prone(false)
+			if lp.sprint and lp.prone:
+				lp.set_prone(false)
 			sfx("click", -8.0)
 
 
@@ -2656,6 +2747,8 @@ func _local_fire(lp: Player) -> void:
 		spread *= float(w["ads"])
 	if lp.crouch:
 		spread *= 0.7
+	if lp.prone:
+		spread *= 0.5
 	# andando o tiro abre bem mais (parado/agachado é que é preciso)
 	var hv := Vector2(lp.velocity.x, lp.velocity.z).length()
 	if hv > 0.6:
@@ -2727,7 +2820,7 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 	if not far:
 		# sem traçante colorido: só a poeira no impacto e um clarão rápido de luz no cano
 		for e in ends:
-			_temp_box(e, 0.08, Color(0.45, 0.42, 0.36), 0.25)
+			_impact(from, e)
 		if not ("silencer" in att) and cam and cam.global_position.distance_to(from) < 60.0:
 			var fl := OmniLight3D.new()
 			fl.light_color = Color(1.0, 0.75, 0.45)
@@ -2770,6 +2863,140 @@ func _blood(at: Vector3) -> void:
 		tw.tween_property(mi, "global_position", mi.global_position + Vector3(randf_range(-0.4, 0.4), randf_range(-0.6, 0.1), randf_range(-0.4, 0.4)), 0.35)
 		tw.parallel().tween_property(mi, "scale", Vector3(0.2, 0.2, 0.2), 0.35)
 		tw.tween_callback(mi.queue_free)
+
+
+# ---------------- marca de tiro ----------------
+# Onde a bala bate (parede, chão, carro): furo escuro com borda lascada que fica um tempo,
+# nuvenzinha de poeira e lascas voando. Em gente o sangue é outro efeito.
+var _holes: Array = []
+static var _hole_mat: StandardMaterial3D
+static var _dust_mat: StandardMaterial3D
+static var _chip_mat: StandardMaterial3D
+
+
+static func _hole_tex() -> Texture2D:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var cracks := []
+	for k in 6:
+		cracks.append([rng.randf() * TAU, rng.randf_range(0.55, 1.0)])
+	for y in n:
+		for x in n:
+			var v := Vector2(x - n / 2.0 + 0.5, y - n / 2.0 + 0.5) / (n / 2.0)
+			var r := v.length()
+			var ang := atan2(v.y, v.x)
+			var a := 0.0
+			var c := Color(0.08, 0.07, 0.06)
+			if r < 0.22:
+				a = 1.0
+				c = Color(0.03, 0.03, 0.03)
+			elif r < 0.5:
+				# borda lascada e chamuscada
+				a = 1.0 - smoothstep(0.3, 0.5, r) * 0.6
+				c = Color(0.18, 0.16, 0.14).lerp(Color(0.32, 0.29, 0.25), (r - 0.22) / 0.28)
+			for cr in cracks:
+				var da := absf(wrapf(ang - float(cr[0]), -PI, PI))
+				if r < float(cr[1]) and da < 0.06 * (1.0 - r) + 0.01:
+					a = maxf(a, 0.8 * (1.0 - r / float(cr[1])))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, clampf(a, 0.0, 1.0)))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+func _impact(from: Vector3, to: Vector3) -> void:
+	if cam == null or cam.global_position.distance_to(to) > 90.0:
+		return
+	var dir := (to - from).normalized()
+	var q := PhysicsRayQueryParameters3D.create(to - dir * 0.6, to + dir * 0.4)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or hit["collider"] is Player:
+		return
+	var pos: Vector3 = hit["position"]
+	var nrm: Vector3 = hit["normal"]
+	if _hole_mat == null:
+		_hole_mat = StandardMaterial3D.new()
+		_hole_mat.albedo_texture = _hole_tex()
+		_hole_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_hole_mat.roughness = 1.0
+		_dust_mat = StandardMaterial3D.new()
+		_dust_mat.albedo_texture = World.smoke_tex()
+		_dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_dust_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		_dust_mat.vertex_color_use_as_albedo = true
+		_chip_mat = StandardMaterial3D.new()
+		_chip_mat.vertex_color_use_as_albedo = true
+	# furo (fica ~20 s; no máximo 60 no mapa)
+	var hole := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2.ONE * randf_range(0.09, 0.13)
+	hole.mesh = qm
+	hole.material_override = _hole_mat
+	hole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(hole)
+	var up := Vector3.UP if absf(nrm.y) < 0.95 else Vector3.FORWARD
+	hole.global_transform = Transform3D(Basis.looking_at(-nrm, up).rotated(nrm, randf() * TAU), pos + nrm * 0.006)
+	_holes.append(hole)
+	if _holes.size() > 60:
+		var old = _holes.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
+	get_tree().create_timer(20.0).timeout.connect(func():
+		if is_instance_valid(hole):
+			_holes.erase(hole)
+			hole.queue_free())
+	# poeira saindo da parede/chão
+	var dust := CPUParticles3D.new()
+	var dq := QuadMesh.new()
+	dq.size = Vector2(0.18, 0.18)
+	dust.mesh = dq
+	dust.material_override = _dust_mat
+	dust.one_shot = true
+	dust.explosiveness = 0.9
+	dust.amount = 7
+	dust.lifetime = 0.7
+	dust.direction = nrm
+	dust.spread = 30.0
+	dust.initial_velocity_min = 0.8
+	dust.initial_velocity_max = 2.2
+	dust.gravity = Vector3(0, -1.5, 0)
+	dust.damping_min = 2.0
+	dust.damping_max = 3.0
+	dust.scale_amount_min = 0.8
+	dust.scale_amount_max = 1.8
+	var cr := Curve.new()
+	cr.add_point(Vector2(0, 0.5))
+	cr.add_point(Vector2(1, 1.6))
+	dust.scale_amount_curve = cr
+	var gr := Gradient.new()
+	gr.set_color(0, Color(0.62, 0.57, 0.5, 0.75))
+	gr.set_color(1, Color(0.62, 0.57, 0.5, 0.0))
+	dust.color_ramp = gr
+	add_child(dust)
+	dust.global_position = pos + nrm * 0.03
+	dust.emitting = true
+	# lascas (pedacinhos que caem)
+	var chips := CPUParticles3D.new()
+	chips.mesh = U.box_mesh(Vector3(0.018, 0.018, 0.018))
+	chips.material_override = _chip_mat
+	chips.one_shot = true
+	chips.explosiveness = 1.0
+	chips.amount = 5
+	chips.lifetime = 0.6
+	chips.direction = nrm
+	chips.spread = 45.0
+	chips.initial_velocity_min = 2.0
+	chips.initial_velocity_max = 4.0
+	chips.gravity = Vector3(0, -9.8, 0)
+	chips.color = Color(0.3, 0.27, 0.23)
+	add_child(chips)
+	chips.global_position = pos + nrm * 0.02
+	chips.emitting = true
+	get_tree().create_timer(1.2).timeout.connect(func():
+		dust.queue_free()
+		chips.queue_free())
 
 
 func _temp_box(pos: Vector3, size: float, col: Color, life: float, unshaded := false) -> void:
@@ -2954,7 +3181,7 @@ func _server_tick(delta: float) -> void:
 				if not p.spect and p.alive:
 					ids.append(id)
 			var buf := PackedByteArray()
-			buf.resize(ids.size() * 22)
+			buf.resize(ids.size() * SNAP_REC)
 			var o := 0
 			for id in ids:
 				var p: Player = players[id]
@@ -2965,8 +3192,8 @@ func _server_tick(delta: float) -> void:
 				buf.encode_s16(o + 16, int(wrapf(p.yaw, -PI, PI) * 10000.0))
 				buf.encode_s16(o + 18, int(clampf(p.pitch, -1.6, 1.6) * 20000.0))
 				buf.encode_u8(o + 20, WIDS.find(p.shown_wid))
-				buf.encode_u8(o + 21, p.flags() & 255)
-				o += 22
+				buf.encode_u16(o + 21, p.flags() & 0xFFFF)
+				o += SNAP_REC
 			rpc("snap", buf)
 
 
@@ -3655,18 +3882,22 @@ func remove_player(id: int) -> void:
 		info.erase(id)
 
 
+# registro de cada jogador no pacote: id, posição, giro, mira, arma e os estados (16 bits)
+const SNAP_REC := 23
+
+
 @rpc("authority", "call_remote", "unreliable_ordered")
 func snap(buf: PackedByteArray) -> void:
 	var o := 0
-	while o + 22 <= buf.size():
+	while o + SNAP_REC <= buf.size():
 		var id := buf.decode_s32(o)
 		if id != local_id:
 			var p: Player = players.get(id)
 			if p:
 				var pos := Vector3(buf.decode_float(o + 4), buf.decode_float(o + 8), buf.decode_float(o + 12))
 				var wi := buf.decode_u8(o + 20)
-				p.net_target(pos, buf.decode_s16(o + 16) / 10000.0, buf.decode_s16(o + 18) / 20000.0, WIDS[wi] if wi < WIDS.size() else "fist", buf.decode_u8(o + 21))
-		o += 22
+				p.net_target(pos, buf.decode_s16(o + 16) / 10000.0, buf.decode_s16(o + 18) / 20000.0, WIDS[wi] if wi < WIDS.size() else "fist", buf.decode_u16(o + 21))
+		o += SNAP_REC
 
 
 @rpc("authority", "call_remote", "unreliable")

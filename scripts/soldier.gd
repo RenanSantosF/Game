@@ -35,12 +35,9 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	for k in 2:
 		var mi: MeshInstance3D = body.find_child("Body%d" % k, true, false)
 		meshes.append(mi)
-	meshes[0].visibility_range_end = 22.0
-	meshes[0].visibility_range_end_margin = 2.0
-	meshes[1].visibility_range_begin = 22.0
-	meshes[1].visibility_range_begin_margin = 2.0
-	meshes[1].visibility_range_end = 320.0
-	meshes[1].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# inimigo aparece igual em qualquer distância (sem trocar de modelo nem sumir de longe);
+	# a malha já tem níveis de detalhe automáticos, então a cópia de longe não é usada
+	meshes[1].visible = false
 	for n in ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm",
 			"RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"]:
 		b[n] = sk.find_bone("mixamorig_" + n)
@@ -59,8 +56,7 @@ func play(n: String, blend := 0.18, speed := 1.0) -> void:
 
 
 # ajuste dos acessórios (medidos no boneco antigo, que tinha a mesma altura): deslocamento e tamanho
-const FIT := {"vest": [Vector3(0, -0.08, 0.0), Vector3(1.06, 1.0, 1.1)], "bag": [Vector3(0, -0.11, -0.06), Vector3.ONE],
-	"helmet": [Vector3(0, 0.012, 0.0), Vector3(1.06, 1.0, 1.06)]}
+const FIT := {}   # colete, capacete e mochila já são feitos nas medidas do boneco do Mixamo
 
 
 # anexa um objeto (colete, capacete, mochila feitos no espaço do boneco) num osso
