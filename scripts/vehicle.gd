@@ -292,7 +292,7 @@ func _ground(delta: float) -> void:
 	var ys := []
 	for o in [Vector3(-wx, 0, zc - hz), Vector3(wx, 0, zc - hz), Vector3(-wx, 0, zc + hz), Vector3(wx, 0, zc + hz)]:
 		var p: Vector3 = global_position + b * o
-		var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1.6, 0), p + Vector3(0, -2.5, 0), 1, [get_rid()])
+		var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 3.0, 0), p + Vector3(0, -2.5, 0), 1, [get_rid()])
 		var r := space.intersect_ray(q)
 		ys.append(float(r["position"].y) if not r.is_empty() else -9999.0)
 	var hits := 0
@@ -323,6 +323,12 @@ func _ground(delta: float) -> void:
 	else:
 		_vy -= 22.0 * delta
 		global_position.y += _vy * delta
+	# nunca fica embaixo do terreno (antes dava pra cair no "limbo" numa subida forte)
+	if game and game.world:
+		var gy: float = game.world.height(global_position.x, global_position.z)
+		if global_position.y < gy - 0.3:
+			global_position.y = gy + 0.05
+			_vy = 0.0
 
 
 var _want_tilt := Basis()

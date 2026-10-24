@@ -809,17 +809,20 @@ func add_item(pos: Vector3, kind: String, dout, din, up := false) -> void:
 	# (sorteio próprio pela posição: não mexe na sequência do mapa)
 	var xr := RandomNumberGenerator.new()
 	xr.seed = hash(Vector3i(int(pos.x * 10.0), int(pos.y * 10.0), int(pos.z * 10.0)))
-	var extra := 0
-	if xr.randf() < 0.65:
+	# muito loot: todo ponto ganha 2 a 4 itens a mais (arma vem com munição do lado)
+	var extra := 2
+	if xr.randf() < 0.6:
 		extra += 1
-	if xr.randf() < 0.25:
+	if xr.randf() < 0.3:
 		extra += 1
 	for k in extra:
-		var ek: String = Weapons.LOOT[xr.randi() % Weapons.LOOT.size()] if xr.randf() < 0.8 else Weapons.LOOT_GUNS[xr.randi() % Weapons.LOOT_GUNS.size()]
-		var eo := Vector3(xr.randf_range(-0.6, 0.6), 0, xr.randf_range(-0.6, 0.6))
-		if Weapons.is_gun(ek):
-			ek = Weapons.ammo_of(ek) if xr.randf() < 0.5 else ek
+		var ek: String = Weapons.LOOT[xr.randi() % Weapons.LOOT.size()] if xr.randf() < 0.72 else Weapons.LOOT_GUNS[xr.randi() % Weapons.LOOT_GUNS.size()]
+		var ang := TAU * (k + xr.randf() * 0.5) / extra
+		var eo := Vector3(cos(ang), 0, sin(ang)) * xr.randf_range(0.45, 0.8)
 		items.append({"pos": pos + eo, "kind": ek, "n": Weapons.default_count(ek), "door_out": dout, "door_in": din, "up": up})
+		if Weapons.is_gun(ek):
+			var am2 := Weapons.ammo_of(ek)
+			items.append({"pos": pos + eo + Vector3(0.3, 0, 0.2), "kind": am2, "n": Weapons.default_count(am2), "door_out": dout, "door_in": din, "up": up})
 
 
 func loot_kind(rng: RandomNumberGenerator, gun: bool) -> String:
@@ -2854,10 +2857,10 @@ func _build_env() -> void:
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
 	# dia de guerra, mas com cor: céu azul com bruma de poeira, sol firme
-	sm.sky_top_color = Color(0.22, 0.4, 0.7)
-	sm.sky_horizon_color = Color(0.6, 0.7, 0.8)
-	sm.ground_horizon_color = Color(0.6, 0.68, 0.76)   # mesma cor da bruma (nada de faixa marrom no horizonte)
-	sm.ground_bottom_color = Color(0.5, 0.56, 0.6)
+	sm.sky_top_color = Color(0.27, 0.42, 0.66)
+	sm.sky_horizon_color = Color(0.72, 0.72, 0.7)
+	sm.ground_horizon_color = Color(0.7, 0.69, 0.66)   # mesma cor da bruma (nada de faixa marrom no horizonte)
+	sm.ground_bottom_color = Color(0.58, 0.57, 0.55)
 	sm.sky_curve = 0.18
 	sm.sun_angle_max = 40.0
 	sm.sun_curve = 0.6
@@ -2865,17 +2868,17 @@ func _build_env() -> void:
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.68, 0.7, 0.74)
+	env.ambient_light_color = Color(0.72, 0.68, 0.64)
 	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.58, 0.64, 0.7)
+	env.fog_light_color = Color(0.68, 0.66, 0.62)
 	env.fog_density = 0.0018
 	env.fog_sky_affect = 0.55
-	# cores vivas e com contraste (sombras mais fundas, luz mais clara)
+	# meio da tarde (~15:30): cor um pouco menos viva, luz mais quente e baixa
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.15
+	env.adjustment_saturation = 1.02
 	env.adjustment_contrast = 1.12
 	env.adjustment_brightness = 0.95
 	# chão em volta do mapa até o horizonte (só visual)
@@ -2942,9 +2945,9 @@ func _build_env() -> void:
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-48, 35, 0)
-	sun.light_color = Color(1.0, 0.94, 0.82)
-	sun.light_energy = 1.05
+	sun.rotation_degrees = Vector3(-31, 52, 0)
+	sun.light_color = Color(1.0, 0.86, 0.68)
+	sun.light_energy = 1.0
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

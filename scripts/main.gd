@@ -122,6 +122,7 @@ var z_tick := 0.0
 var n_static := 0
 var n_start := 0
 var winner := 0
+var alive_cached := 50     # vivos (atualizado no servidor a cada quadro; os bots usam)
 var spec_id := 0
 var bots_per_match := 30
 var next_bot := 1000
@@ -2029,6 +2030,7 @@ func _process(delta: float) -> void:
 		END:
 			phase_t = maxf(phase_t - delta, 0.0)
 	if multiplayer.is_server():
+		alive_cached = _alive_count()
 		_server_tick(delta)
 	if dedicated:
 		return
@@ -3357,7 +3359,9 @@ func server_bot_shot(id: int, origin: Vector3, dirs: Array, wid: String) -> void
 		ends.append(r["position"])
 		var c = r["collider"]
 		if c is Player and c.alive:
-			_acc(dmg, c.pid, w, (r["position"].y - c.position.y) > c.head_y(), 0.75, origin.distance_to(r["position"]))
+			# bot contra bot no começo da partida machuca menos (sobra mais gente pro final)
+			var bm := 0.75 * (lerpf(0.45, 1.0, p.bot_aggro()) if c.is_bot else 1.0)
+			_acc(dmg, c.pid, w, (r["position"].y - c.position.y) > c.head_y(), bm, origin.distance_to(r["position"]))
 	_server_apply(id, ends, dmg, wid)
 
 
@@ -4010,10 +4014,6 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 	if hp > old and vid == local_id and Time.get_ticks_msec() - _heal_snd > 2500:
 		_heal_snd = Time.get_ticks_msec()
 		sfx("heal_done")
-	# tomando dano da zona: gemido de dor (de tempos em tempos)
-	if hp < old and vid == local_id and aid == 0 and Time.get_ticks_msec() - _pain_snd > 1800:
-		_pain_snd = Time.get_ticks_msec()
-		sfx("pain%d" % randi_range(0, 2), -2.0)
 	# acerto (vale também no lobby, onde ninguém perde vida: mostra quanto teria tirado)
 	if amount > 0.0 and aid == local_id and vid != local_id:
 		hud.hit(head, false)
@@ -4033,7 +4033,9 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 		_blood(v.position + Vector3(0, v.head_y() - (0.0 if head else 0.45), 0))
 	if hp < old:
 		if vid == local_id:
-			sfx("hurt", -4.0)
+			# dano da zona não faz barulho (só o aviso vermelho na tela)
+			if aid != 0:
+				sfx("hurt", -4.0)
 			var a: Player = players.get(aid)
 			if a and v:
 				var d := a.position - v.position
@@ -4041,8 +4043,6 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 				hud.hurt(-angle_difference(cam_yaw_v, wy))
 			else:
 				hud.hurt()
-				if aid == 0:
-					sfx("zone", -8.0)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -35,11 +35,13 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Recarga com som do começo ao fim (tira o pente, pente novo entra, puxa o ferrolho); silenciador abafado e grave
 - Colete justo no corpo com bordas e listras brilhantes na cor do nível (1, 2 ou 3 listras); armas menores nas costas
 - Rodovias gastas (rachaduras, remendos, buracos, faixas apagadas, terra na beirada); casas de madeira com tábuas bem marcadas
-- Mais itens espalhados; tocar num colete/capacete/mochila de nível menor troca pelo que você está usando
+- Muito loot (2 a 4 itens a mais em cada ponto, arma sempre com munição do lado); tocar num colete/capacete/mochila de nível menor troca pelo que você está usando
 - Abate: caveira animada no meio da tela (dourada no tiro na cabeça) com estrondo grave
 - Paraquedas tipo asa, largo, de nylon brilhante com células estufadas tremendo no vento e cordas finas em cascata; corpo balança com o vento na queda e no paraquedas
 - De longe o mapa aparece inteiro em versão simples (blocos de casas e árvores, serra no horizonte), leve pro celular
 - Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
+- Bots lootam e brigam pouco no começo e ficam agressivos quando sobra pouca gente (final cheio)
+- Luz de meio da tarde (~15:30): sol mais baixo e quente, cores menos vivas
 - Clima de guerra com cor: céu azul com bruma de poeira, verde vivo com manchas queimadas, sombras fundas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
 - Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela
 - Marcas da guerra no mapa todo: postos de controle nas rodovias, tanques queimados, crateras, trincheiras, arame farpado, ouriços de aço, casamatas e canhões

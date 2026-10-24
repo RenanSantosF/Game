@@ -1723,13 +1723,22 @@ func _bot_plan() -> void:
 		b_dest_t = 25.0
 
 
+# 0 = começo (cheio de gente) .. 1 = fim (pouca gente): o quanto o bot procura briga
+func bot_aggro() -> float:
+	var alive: int = game.alive_cached
+	return clampf(1.0 - (float(alive) - 10.0) / 28.0, 0.25, 1.0)
+
+
 func _bot_pick_target() -> void:
 	var zn: Array = game.zone_now()
 	var far_out: bool = Vector2(position.x, position.z).distance_to(zn[0]) > float(zn[1]) + 10.0
 	var best := 0
-	var bd := 75.0
+	# começo da partida (muita gente viva): bot foca em lootear e só briga de perto;
+	# com pouca gente o bot fica agressivo (sobra mais gente pro final)
+	var agg := bot_aggro()
+	var bd := lerpf(18.0, 75.0, agg)
 	if float(cur_stat()["range"]) > 150.0:
-		bd = 120.0
+		bd = lerpf(30.0, 120.0, agg)
 	var space := get_world_3d().direct_space_state
 	var from := position + Vector3(0, head_y(), 0)
 	b_far = true
@@ -1744,6 +1753,9 @@ func _bot_pick_target() -> void:
 			continue
 		# sem arma não compra briga de longe: vai atrás de arma primeiro
 		if not has_any_gun() and dd > 7.0:
+			continue
+		# no começo bot quase não caça outro bot (só se estiver colado)
+		if o.is_bot and agg < 0.65 and dd > lerpf(7.0, 24.0, agg / 0.65):
 			continue
 		# agachado em moita fica mais difícil de ver de longe
 		if o.crouch and dd > 35.0:
@@ -1785,7 +1797,9 @@ func _bot_fire(from: Vector3, aimp: Vector3, w: Dictionary) -> void:
 	var up := right.cross(base)
 	# erra um pouco mais (e mais ainda de longe e com o alvo correndo)
 	var far_k := clampf(from.distance_to(aimp) / 60.0, 0.0, 1.0)
-	var s := tan(deg_to_rad(float(w["spread"]) * 0.85 + (2.9 + 1.6 * far_k) / b_skill))
+	# no começo erram bem mais (menos mortes cedo); no fim mira normal
+	var early := 1.0 + (1.0 - bot_aggro()) * 1.5
+	var s := tan(deg_to_rad(float(w["spread"]) * 0.85 + (2.9 + 1.6 * far_k) / b_skill * early))
 	var dirs := []
 	for i in int(w["pellets"]):
 		var a := randf() * TAU

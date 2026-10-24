@@ -402,14 +402,19 @@ func _draw_win() -> void:
 	# brilho passando
 	var sx := fmod(win_t * 520.0, s.x + 400.0) - 200.0
 	win_ctl.draw_rect(Rect2(sx, cy - band / 2.0, 80, band), Color(1, 0.9, 0.5, 0.08))
-	var fs := int(78 * pop)
+	# tamanho da fonte FIXO e o "pulo" feito escalando o desenho: mudar o tamanho da fonte a cada quadro
+	# criava um cache de letras gigantes novo por quadro e estourava a memória do celular na vitória
+	var fs := 78
 	var txt := "INVICTO!"
 	var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	var a := k
-	var bp := Vector2(s.x / 2.0 - w / 2.0, cy + fs * 0.33)
+	var ctr := Vector2(s.x / 2.0, cy)
+	win_ctl.draw_set_transform(ctr, 0.0, Vector2.ONE * pop)
+	var bp := Vector2(-w / 2.0, fs * 0.33)
 	win_ctl.draw_string_outline(font, bp + Vector2(0, 4), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color(0, 0, 0, 0.8 * a))
 	win_ctl.draw_string_outline(font, bp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 6, Color(0.55, 0.25, 0.0, a))
 	win_ctl.draw_string(font, bp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(gold.r, gold.g, gold.b, a))
+	win_ctl.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if win_t > 0.6:
 		var sa := clampf((win_t - 0.6) / 0.4, 0.0, 1.0)
 		var sw := font.get_string_size(win_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
@@ -1407,11 +1412,16 @@ func _draw_kill(font: Font, s: Vector2) -> void:
 	if kill_n >= 2:
 		t1 = "%dº ABATE" % kill_n + ("  ·  NA CABEÇA" if kill_head else "")
 	var tk := clampf((e - 0.1) / 0.18, 0.0, 1.0)
-	var fs := int(28 * lerpf(1.6, 1.0, tk))
+	# fonte em tamanho fixo (escala no desenho): não cria cache de letra novo a cada quadro
+	var fs := 28
 	var tw := font.get_string_size(t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	var tp := Vector2(c.x - tw / 2.0, c.y + r + 50.0)
+	var tc := Vector2(c.x, c.y + r + 50.0)
+	pad.draw_set_transform(tc, 0.0, Vector2.ONE * lerpf(1.6, 1.0, tk))
+	var tp := Vector2(-tw / 2.0, 0.0)
 	pad.draw_string_outline(font, tp, t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 8, Color(0, 0, 0, 0.85 * fade * tk))
 	pad.draw_string(font, tp, t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(main_c.r, main_c.g, main_c.b, fade * tk))
+	pad.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	tp = tc + tp
 	if kill_txt != "":
 		var vw := font.get_string_size(kill_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
 		var vp := Vector2(c.x - vw / 2.0, tp.y + 26.0)
