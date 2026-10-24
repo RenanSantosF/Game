@@ -167,7 +167,7 @@ func _ready() -> void:
 	sfxn = Sfx.new()
 	add_child(sfxn)
 	sfxn.volume = float(Cfg.get_v("volume"))
-	Engine.max_fps = int(Cfg.get_v("fps"))
+	_apply_fps()
 	var args := OS.get_cmdline_user_args()
 	for a in args:
 		if a.begins_with("--bots="):
@@ -865,12 +865,20 @@ func open_settings() -> void:
 					edit_hud = null))
 
 
+# limite de FPS; com 30 (celular fraco) a física também roda 30 vezes por segundo: antes eram 2 passos
+# de física por quadro mostrado (metade do trabalho jogado fora, a tela não mostra a diferença)
+func _apply_fps() -> void:
+	var f := int(Cfg.get_v("fps"))
+	Engine.max_fps = f
+	Engine.physics_ticks_per_second = 30 if (f > 0 and f <= 30 and not dedicated) else 60
+
+
 func _on_setting(key: String) -> void:
 	match key:
 		"volume":
 			sfxn.volume = float(Cfg.get_v("volume"))
 		"fps":
-			Engine.max_fps = int(Cfg.get_v("fps"))
+			_apply_fps()
 		"quality", "shadows", "grass":
 			if in_game and not dedicated:
 				_apply_quality()
@@ -883,6 +891,7 @@ func _on_setting(key: String) -> void:
 
 func start_dedicated() -> void:
 	dedicated = true
+	Engine.physics_ticks_per_second = 60
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(PORT, 64)
 	if err != OK:

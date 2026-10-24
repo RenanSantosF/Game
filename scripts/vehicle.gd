@@ -86,6 +86,7 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 		smoke.amount = 40
 		smoke.lifetime = 2.2
 		smoke.emitting = false
+		smoke.visible = false     # parado e inteiro: nem desenha (partícula vazia ainda custava um desenho)
 		smoke.local_coords = false
 		smoke.position = Vector3(0, 1.1, float(wh[2]) - 0.3)
 		smoke.direction = Vector3(0, 1, 0)
@@ -394,6 +395,8 @@ func _update_visual(delta: float) -> void:
 	if smoke:
 		var dmg := 1.0 - hp / HP
 		smoke.emitting = not dead and dmg > 0.3
+		if smoke.emitting:
+			smoke.visible = true
 		if smoke.emitting:
 			var k := clampf((dmg - 0.3) / 0.6, 0.0, 1.0)
 			smoke.amount_ratio = lerpf(0.25, 1.0, k)

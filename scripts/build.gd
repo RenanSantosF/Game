@@ -27,7 +27,11 @@ func _init(world: World) -> void:
 	headless = world.headless
 
 
+var _h0 := 0
+
+
 func begin(seed_v: int) -> void:
+	_h0 = w.houses.size()
 	mb = MB.new()
 	rng.seed = seed_v
 	vrng.seed = seed_v + 7
@@ -41,6 +45,9 @@ func finish(vis := 700.0) -> void:
 	mi.material_override = U.wmat()
 	mi.visibility_range_end = vis
 	w.add_child(mi)
+	# casas deste grupo: o cenário de longe delas vira um bloco só que troca com este detalhe
+	for i in range(_h0, w.houses.size()):
+		w.houses[i]["grp"] = w.detail_meshes.size()
 	w.detail_meshes.append([mi, vis])
 
 
@@ -1460,6 +1467,8 @@ func _k_car(pos: Vector3, yaw: float) -> void:
 		var tmi := MeshInstance3D.new()
 		tmi.mesh = tmb.commit()
 		tmi.material_override = U.wmat()
+		tmi.visibility_range_end = 120.0   # pneu solto: pequeno, não precisa aparecer de longe
+		tmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(tmi)
 
 

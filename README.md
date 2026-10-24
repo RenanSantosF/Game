@@ -81,6 +81,14 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Tudo fica salvo no aparelho e já vale no treino (o minimapa acompanha as casas). **COPIAR** copia as alterações em texto: cole no chat do Claude pra elas irem pro jogo de todo mundo (`data/map_edits.json`). **LIMPAR** (toque duas vezes) apaga as alterações do aparelho
 - Partida em rede usa só as alterações que vão no jogo, pra todo mundo ver o mesmo mapa
 
+## Novidades da 0.24.1 (otimização)
+
+- Celular com limite de 30 FPS: a física roda 30 vezes por segundo (antes eram 2 passos de física por quadro mostrado)
+- Árvores com shader próprio: tronco e folhas numa chamada de desenho só, casca com 1 leitura de textura (antes 3) e luz por vértice
+- Cenário de longe de cada cidade num bloco só, trocando com a cidade detalhada na hora certa (sem buraco nem piscar)
+- Estradas, pedras, moitas e troncos em pedaços maiores; pneus soltos e fumaça de carro parado não desenham de longe/à toa
+- Resultado: 24% a 37% menos chamadas de desenho nos mesmos pontos do mapa, com o mesmo visual
+
 ## Novidades da 0.24.0
 
 - Corrigido o boneco "pendurado" embaixo do avião (era o seu próprio boneco, que a câmera deixava visível)

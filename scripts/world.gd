@@ -142,12 +142,14 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 	]
 
 
+var tree_far := 180.0
 var tree_lod := 60.0       # até onde as árvores usam o modelo com folhas (depende da qualidade)
 var island := false        # borda vira praia/mar (ligado depois de posicionar as coisas)
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
 var detail_meshes := []   # [malha de cidade/objetos, alcance original]: some longe, entra a versão simples
 var far_lod := []         # versão bem simples (blocos de casas e árvores) que aparece de longe
 var far_trees := []       # parte das árvores do far_lod (escondida com o jogador no chão)
+var far_groups := []      # [bloco de longe, índice do detalhe] (o detalhe é filho de visibilidade do bloco)
 var _on_ground := false
 var _view := 240.0
 var _map_task := -1
@@ -464,7 +466,8 @@ func _build_highway_mesh() -> void:
 				m.quad(Vector3(p0.x + w1.x, y0 + 0.01, p0.y + w1.y), Vector3(p1.x + w1.x, y1 + 0.01, p1.y + w1.y), Vector3(p1.x - w1.x, y1 + 0.01, p1.y - w1.y), Vector3(p0.x - w1.x, y0 + 0.01, p0.y - w1.y), Color(0.76, 0.64, 0.3), Vector3.UP)
 			_road_wear(m, hr, p0, p1, y0, y1, d, sd, half)
 			chunk += 1
-			if chunk >= 20 or i == line.size() - 2:
+			# pedaços de ~60 trechos: bem menos chamadas de desenho (a estrada é só uma faixa no chão)
+			if chunk >= 60 or i == line.size() - 2:
 				var mi := MeshInstance3D.new()
 				mi.mesh = m.commit()
 				mi.material_override = U.wmat()
@@ -2496,7 +2499,12 @@ func _build_nature() -> void:
 	var tint := RandomNumberGenerator.new()
 	tint.seed = SEED + 3
 	for k in sets:
-		var chunk := 32.0 if k == "grass" else 80.0
+		# grama em blocos pequenos (some perto); pedras, moitas e troncos em blocos maiores (menos chamadas)
+		var chunk := 32.0 if k == "grass" else (80.0 if meshes.has(k + "_lo") else 120.0)
+		# árvores (com versão simples e textura própria): ver _scatter_trees
+		if meshes.has(k + "_lo") and not headless and not sets[k].is_empty() and (meshes[k] as Mesh).surface_get_material(0) is BaseMaterial3D:
+			_scatter_trees(k, meshes[k], meshes[k + "_lo"], sets[k], chunk, tint)
+			continue
 		_scatter(k, meshes[k], sets[k], chunk, tint, meshes.get(k + "_lo"))
 	set_view(300.0)
 
@@ -2567,6 +2575,91 @@ func _scatter(kind: String, mesh: Mesh, xfs: Array, chunk: float, rng: RandomNum
 			_scatter_nodes.append([mmi, kind if variant == mesh else kind + "_lo", lo != null])
 
 
+
+
+# junta os tipos de árvore (tronco e folhas de cada um) numa malha de uma superfície só;
+# UV2 = (tipo, 1 no tronco); a cor do material vai pra cor do vértice
+static func _merge_trees(meshes: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for ki in meshes.size():
+		var m: Mesh = meshes[ki]
+		for si in m.get_surface_count():
+			var mat := m.surface_get_material(si) as BaseMaterial3D
+			var trunk := mat != null and mat.uv1_triplanar
+			var tint: Color = mat.albedo_color.srgb_to_linear() if mat else Color.WHITE
+			var arr := m.surface_get_arrays(si)
+			var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var ns = arr[Mesh.ARRAY_NORMAL]
+			var uvs = arr[Mesh.ARRAY_TEX_UV]
+			var cs = arr[Mesh.ARRAY_COLOR]
+			var idx = arr[Mesh.ARRAY_INDEX]
+			var order: Array = Array(idx) if idx != null else range(vs.size())
+			for vi in order:
+				if ns != null:
+					st.set_normal(ns[vi])
+				st.set_uv(uvs[vi] if uvs != null else Vector2.ZERO)
+				st.set_uv2(Vector2(ki, 1.0 if trunk else 0.0))
+				st.set_color((cs[vi] if cs != null else Color.WHITE) * tint)
+				st.add_vertex(vs[vi])
+	st.index()
+	return st.commit()
+
+
+func _tree_mat(mesh: Mesh, far: bool) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/tree.gdshader")
+	for si in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(si) as BaseMaterial3D
+		if mat == null:
+			continue
+		if mat.uv1_triplanar:
+			m.set_shader_parameter("trunk_tex", mat.albedo_texture)
+			m.set_shader_parameter("uv_scale", mat.uv1_scale.x)
+		else:
+			m.set_shader_parameter("leaf_tex", mat.albedo_texture)
+			m.set_shader_parameter("scissor", mat.alpha_scissor_threshold)
+	return m
+
+
+# Árvores de um tipo, em blocos: em cada bloco a versão detalhada (perto) e a simples (longe), com
+# tronco e folhas numa chamada de desenho só.
+func _scatter_trees(kind: String, mesh: Mesh, lo: Mesh, xfs: Array, chunk: float, rng: RandomNumberGenerator) -> void:
+	var meshes := [_merge_trees([mesh]), _merge_trees([lo])]
+	var mats := [_tree_mat(mesh, false), _tree_mat(lo, true)]
+	var buckets := {}
+	for xf: Transform3D in xfs:
+		var key := Vector2i(floori(xf.origin.x / chunk), floori(xf.origin.z / chunk))
+		if not buckets.has(key):
+			buckets[key] = []
+		buckets[key].append(xf)
+	for key in buckets:
+		var list: Array = buckets[key]
+		var center := Vector3((key.x + 0.5) * chunk, 0, (key.y + 0.5) * chunk)
+		var cols := []
+		for i in list.size():
+			var k := rng.randf_range(0.8, 1.1)
+			cols.append(Color(k, k * rng.randf_range(0.94, 1.06), k))
+		for v in 2:
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = true
+			mm.mesh = meshes[v]
+			mm.instance_count = list.size()
+			for i in list.size():
+				var xf: Transform3D = list[i]
+				xf.origin -= center
+				mm.set_instance_transform(i, xf)
+				mm.set_instance_color(i, cols[i])
+			var mmi := MultiMeshInstance3D.new()
+			mmi.multimesh = mm
+			mmi.material_override = mats[v]
+			mmi.position = center
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mmi)
+			_scatter_nodes.append([mmi, kind if v == 0 else kind + "_lo", true])
+
+
 func show_grass(on: bool) -> void:
 	for e in _scatter_nodes:
 		if e[1] == "grass":
@@ -2598,6 +2691,9 @@ static func _cheap_tree(m: Mesh) -> Mesh:
 				c.roughness = 1.0
 				c.metallic_specular = 0.0
 				c.disable_ambient_light = false
+				# luz calculada por vértice (não por pixel): sem sombras quase não muda o visual e as
+				# folhas (que cobrem muita tela) ficam bem mais leves de desenhar no celular
+				c.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
 				_cheap_mats[mt] = c
 			m.surface_set_material(i, _cheap_mats[mt])
 	return m
@@ -2616,10 +2712,19 @@ func set_view(dist: float) -> void:
 	_view = dist
 	# árvore detalhada (folhas recortadas, pesadas no celular) só perto; depois a versão simples
 	var lod := tree_lod
+	# no chão não precisa ver árvore lá longe (é o que mais pesa): só até ~180 m
+	tree_far = (minf(dist, 140.0) if _on_ground else dist) + 40.0
 	# cidades e objetos com detalhe até a distância de visão; dali pra frente só os blocos simples
 	for e in detail_meshes:
 		if is_instance_valid(e[0]):
 			(e[0] as MeshInstance3D).visibility_range_end = minf(float(e[1]), dist + 70.0)
+	for g in far_groups:
+		if is_instance_valid(g[0]):
+			# o bloco de longe aparece a partir de onde o detalhe sumia; o detalhe (filho de
+			# visibilidade) aparece só quando o bloco some, então não tem limite próprio
+			var e: Array = detail_meshes[g[1]]
+			(g[0] as MeshInstance3D).visibility_range_begin = minf(float(e[1]), dist + 70.0)
+			(e[0] as MeshInstance3D).visibility_range_end = 0.0
 	for mi in far_lod:
 		if is_instance_valid(mi):
 			# começa exatamente onde o detalhe some (os dois juntos "brigavam" e piscavam)
@@ -2638,8 +2743,7 @@ func set_view(dist: float) -> void:
 			_:
 				if kind.ends_with("_lo"):
 					mmi.visibility_range_begin = lod
-					# no chão não precisa ver árvore lá longe (é o que mais pesa): só até ~180 m
-					mmi.visibility_range_end = (minf(dist, 140.0) if _on_ground else dist) + 40.0
+					mmi.visibility_range_end = tree_far
 				elif has_lo:
 					mmi.visibility_range_begin = 0.0
 					mmi.visibility_range_end = lod
@@ -3147,6 +3251,15 @@ func _build_far_lod() -> void:
 		return cells[key]
 	var walls := [Color(0.74, 0.68, 0.57), Color(0.66, 0.6, 0.52), Color(0.7, 0.52, 0.42), Color(0.62, 0.64, 0.6)]
 	var roofs := [Color(0.58, 0.3, 0.24), Color(0.42, 0.4, 0.38), Color(0.5, 0.36, 0.27), Color(0.64, 0.38, 0.26)]
+	# casas de um grupo com detalhe (cidade, base...) ficam num bloco só desse grupo, se o grupo
+	# for compacto (casas espalhadas pelo mapa todo continuam nos blocos de 100 m)
+	var gcells := {}
+	var gbox := {}
+	for h in houses:
+		var gi0: int = h.get("grp", -1)
+		if gi0 >= 0:
+			var p0 := Vector2(h["pos"])
+			gbox[gi0] = Rect2(p0, Vector2.ZERO) if not gbox.has(gi0) else (gbox[gi0] as Rect2).expand(p0)
 	for h in houses:
 		var c: Vector2 = h["pos"]
 		var yaw: float = h["yaw"]
@@ -3155,7 +3268,15 @@ func _build_far_lod() -> void:
 		var y: float = h.get("y", height(c.x, c.y))
 		var hh := absi(hash(Vector2i(int(c.x * 3.0), int(c.y * 3.0))))
 		var ht := 3.2 if maxf(wd, dp) < 9.0 else 5.5
-		var m: MB = get_mb.call(c)
+		var m: MB
+		var gi: int = h.get("grp", -1)
+		if gi >= 0 and gi < detail_meshes.size() and (gbox[gi] as Rect2).size.length() < 170.0:
+			if not gcells.has(gi):
+				gcells[gi] = MB.new()
+				(gcells[gi] as MB).tex(U.PLAIN, 1.0)
+			m = gcells[gi]
+		else:
+			m = get_mb.call(c)
 		var bs := Basis(Vector3.UP, yaw)
 		m.box(Transform3D(bs, Vector3(c.x, y + ht / 2.0, c.y)), Vector3(wd, ht, dp), walls[hh % walls.size()])
 		m.box(Transform3D(bs, Vector3(c.x, y + ht + 0.45, c.y)), Vector3(wd + 0.3, 0.9, dp + 0.3), roofs[(hh / 7) % roofs.size()])
@@ -3193,4 +3314,20 @@ func _build_far_lod() -> void:
 			far_lod.append(mi)
 			if d == tcells:
 				far_trees.append(mi)
+	# bloco de longe de cada grupo: o detalhe do grupo só aparece quando o bloco some (pai de
+	# visibilidade): troca exata, sem buraco nem os dois juntos piscando, e 1 chamada por cidade
+	for gi in gcells:
+		var m: MB = gcells[gi]
+		if m.count == 0:
+			continue
+		var mi := MeshInstance3D.new()
+		mi.mesh = m.commit()
+		mi.material_override = U.wmat()
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.visibility_range_begin = 250.0
+		add_child(mi)
+		var det: MeshInstance3D = detail_meshes[gi][0]
+		if is_instance_valid(det):
+			det.visibility_parent = det.get_path_to(mi)
+			far_groups.append([mi, gi])
 	set_ground(_on_ground)
