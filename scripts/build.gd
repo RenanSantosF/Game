@@ -41,6 +41,7 @@ func finish(vis := 700.0) -> void:
 	mi.material_override = U.wmat()
 	mi.visibility_range_end = vis
 	w.add_child(mi)
+	w.detail_meshes.append([mi, vis])
 
 
 func body(pos: Vector3, yaw: float) -> StaticBody3D:
@@ -418,7 +419,7 @@ func _k_house(pos: Vector3, yaw: float, spec: Dictionary) -> void:
 	var breach_c := rng.randf_range(-dp * 0.2, dp * 0.2)
 	var root := body(pos, yaw)
 	w.claim(Vector2(pos.x, pos.z), maxf(wd, dp) * 0.75)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": maxf(wd, dp) * 0.5, "yaw": yaw, "w": wd, "d": dp})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": maxf(wd, dp) * 0.5, "yaw": yaw, "w": wd, "d": dp})
 	var door_c := rng.randf_range(-wd * 0.18, wd * 0.18)
 	var door_w: float = spec.get("door_w", 1.4)
 	var balcony: bool = spec.get("balcony", false) and floors > 1
@@ -610,7 +611,7 @@ func _k_shack(pos: Vector3, yaw: float) -> void:
 	var h := 2.8
 	var col := Color(1, 1, 1).darkened(rng.randf() * 0.3)
 	w.claim(Vector2(pos.x, pos.z), 4.0)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 2.5, "yaw": yaw, "w": wd, "d": dp})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 2.5, "yaw": yaw, "w": wd, "d": dp})
 	wall(root, true, -dp / 2.0, wd, h, 0.0, [_door(0.6, 1.2)], col, U.WOOD, 0.4)
 	wall(root, true, dp / 2.0, wd, h, 0.0, [_win(-0.5)], col, U.WOOD, 0.4)
 	wall(root, false, -wd / 2.0, dp, h, 0.0, [], col, U.WOOD, 0.4)
@@ -646,7 +647,7 @@ func _k_church(pos: Vector3, yaw: float) -> void:
 	var h := 5.5
 	var col: Color = PLASTER_TINTS[rng.randi() % PLASTER_TINTS.size()]
 	w.claim(Vector2(pos.x, pos.z), 12.0)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 8.0, "yaw": yaw, "w": wd, "d": dp})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 8.0, "yaw": yaw, "w": wd, "d": dp})
 	wall(root, true, -dp / 2.0, wd, h, 0.0, [[0.0, 2.2, 0.0, 3.4]], col, U.PLASTER, 0.3)
 	wall(root, true, dp / 2.0, wd, h, 0.0, [[0.0, 1.0, 2.5, 4.2]], col, U.PLASTER, 0.3)
 	for sx in [-1.0, 1.0]:
@@ -1023,7 +1024,7 @@ func _k_ruin(pos: Vector3, yaw: float) -> void:
 	var wd := rng.randf_range(7.0, 11.0)
 	var dp := rng.randf_range(6.0, 9.0)
 	w.claim(Vector2(pos.x, pos.z), maxf(wd, dp) * 0.7)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": maxf(wd, dp) * 0.5, "yaw": yaw, "w": wd, "d": dp})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": maxf(wd, dp) * 0.5, "yaw": yaw, "w": wd, "d": dp})
 	var col := Color(1, 1, 1).darkened(rng.randf() * 0.2)
 	for side in 4:
 		var along := side % 2 == 0
@@ -1543,7 +1544,7 @@ func _k_hangar(pos: Vector3, yaw: float) -> void:
 		barrel(pos + bs * Vector3(W / 2.0 - 2.0 - k * 1.0, 0.05, -D / 2.0 + 4.0 + (k % 2) * 0.9))
 	var din := pos + bs * Vector3(0, 0.3, -D / 2.0 + 3.0)
 	var dout := pos + bs * Vector3(0, 0.3, -D / 2.0 - 3.0)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 11.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 11.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
 	for k in 4:
 		w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.1, rng.randf_range(-D * 0.35, D * 0.35)), w.loot_kind(rng, k < 2), dout, din)
 
@@ -1590,7 +1591,7 @@ func _k_galpao(pos: Vector3, yaw: float) -> void:
 		crates(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.05, rng.randf_range(-D * 0.3, D * 0.05)), yaw + rng.randf_range(-0.3, 0.3), false)
 	var din := pos + bs * Vector3(gx, 0.3, -D / 2.0 + 2.0)
 	var dout := pos + bs * Vector3(gx, 0.3, -D / 2.0 - 3.0)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": D * 0.5, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": D * 0.5, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
 	w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), mh + 0.12, D / 2.0 - md / 2.0), w.loot_kind(rng, true), null, null, true)
 	w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), mh + 0.12, D / 2.0 - md / 2.0), w.loot_kind(rng, false), null, null, true)
 	for k in 2:
@@ -1636,7 +1637,7 @@ func _k_stilt_hut(pos: Vector3, yaw: float, linked := false) -> void:
 		for k in 4:
 			vis(root, Vector3(1.4, 0.16, 0.16), Vector3(-0.8, 0.08 + k * 0.15, -0.2 + (k % 2) * 0.12), Color(0.55, 0.42, 0.3), U.WOOD, 0.8, Basis(Vector3.UP, k * 0.2))
 	if not linked:
-		w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 2.4, "yaw": yaw, "w": wd, "d": dp,
+		w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 2.4, "yaw": yaw, "w": wd, "d": dp,
 			"din": pos + bs * Vector3(-wd * 0.18, h + 0.3, -dp / 2.0 + 1.0), "dout": pos + bs * Vector3(wd / 2.0 - 0.6, 0.3, -dp / 2.0 - 1.6 - h * 1.6)})
 	w.add_item(pos + bs * Vector3(rng.randf_range(-wd * 0.3, wd * 0.3), h + 0.14, rng.randf_range(0.0, dp * 0.3)), w.loot_kind(rng, rng.randf() < 0.45), null, null, true)
 
@@ -1787,7 +1788,7 @@ func _k_bunker(pos: Vector3, yaw: float) -> void:
 		mb.blob(root.transform * Transform3D(Basis.from_scale(Vector3(W * 0.42, 0.6, D * 0.42)), Vector3(0, H + 0.55, 0.3)), 8, 3, Color(0.5, 0.44, 0.34), vrng, 0.2)
 	var din := pos + bs * Vector3(1.6, 0.3, D / 2.0 - 1.0)
 	var dout := pos + bs * Vector3(1.6, 0.3, D / 2.0 + 1.8)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 2.6, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 2.6, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
 	w.add_item(pos + bs * Vector3(-1.2, 0.1, 0.4), w.loot_kind(rng, true), dout, din)
 	w.add_item(pos + bs * Vector3(1.4, 0.1, -0.6), w.loot_kind(rng, false), dout, din)
 
@@ -2054,7 +2055,7 @@ func _k_barn(pos: Vector3, yaw: float) -> void:
 		hay(pos + bs * Vector3(rng.randf_range(-W * 0.3, W * 0.3), 0.05, rng.randf_range(-D * 0.3, 0.0)), yaw + rng.randf_range(-0.4, 0.4))
 	var din := pos + bs * Vector3(0, 0.3, -D / 2.0 + 2.0)
 	var dout := pos + bs * Vector3(0, 0.3, -D / 2.0 - 3.0)
-	w.houses.append({"pos": Vector2(pos.x, pos.z), "r": 7.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
+	w.houses.append({"y": pos.y, "pos": Vector2(pos.x, pos.z), "r": 7.0, "yaw": yaw, "w": W, "d": D, "din": din, "dout": dout})
 	w.add_item(pos + bs * Vector3(rng.randf_range(-3, 3), mh + 0.12, D / 2.0 - 2.5), w.loot_kind(rng, true), null, null, true)
 	for k in 2:
 		w.add_item(pos + bs * Vector3(rng.randf_range(-W * 0.35, W * 0.35), 0.1, rng.randf_range(-D * 0.35, 0.0)), w.loot_kind(rng, k == 0), dout, din)

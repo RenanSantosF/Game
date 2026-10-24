@@ -134,11 +134,14 @@ func build_steps(is_headless: bool, q := 1) -> Array:
 				else:
 					_build_map(wts)
 				_build_env()
-				_build_smoke()],
+				_build_smoke()
+				_build_far_lod()],
 	]
 
 
 var map_thread := true    # testes que leem o mapa logo depois desligam isso
+var detail_meshes := []   # [malha de cidade/objetos, alcance original]: some longe, entra a versão simples
+var far_lod := []         # versão bem simples (blocos de casas e árvores) que aparece de longe
 var _map_task := -1
 
 
@@ -2440,6 +2443,13 @@ func show_grass(on: bool) -> void:
 # Distância de visão da vegetação (depende da qualidade gráfica)
 func set_view(dist: float) -> void:
 	var lod := clampf(dist * 0.35, 75.0, 140.0)
+	# cidades e objetos com detalhe até a distância de visão; dali pra frente só os blocos simples
+	for e in detail_meshes:
+		if is_instance_valid(e[0]):
+			(e[0] as MeshInstance3D).visibility_range_end = minf(float(e[1]), dist + 70.0)
+	for mi in far_lod:
+		if is_instance_valid(mi):
+			(mi as MeshInstance3D).visibility_range_begin = dist + 50.0
 	for e in _scatter_nodes:
 		var mmi: MultiMeshInstance3D = e[0]
 		var kind: String = e[1]
@@ -2769,8 +2779,8 @@ func _build_env() -> void:
 	# dia de guerra, mas com cor: céu azul com bruma de poeira, sol firme
 	sm.sky_top_color = Color(0.22, 0.4, 0.7)
 	sm.sky_horizon_color = Color(0.6, 0.7, 0.8)
-	sm.ground_horizon_color = Color(0.56, 0.55, 0.52)
-	sm.ground_bottom_color = Color(0.42, 0.41, 0.39)
+	sm.ground_horizon_color = Color(0.6, 0.68, 0.76)   # mesma cor da bruma (nada de faixa marrom no horizonte)
+	sm.ground_bottom_color = Color(0.5, 0.56, 0.6)
 	sm.sky_curve = 0.18
 	sm.sun_angle_max = 40.0
 	sm.sun_curve = 0.6
@@ -2795,12 +2805,32 @@ func _build_env() -> void:
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
 	var h := SIZE / 2.0
-	var far := 4000.0
+	var far := 1000.0
 	var y := 40.0
-	var oc := Color(0.62, 0.62, 0.54)
+	var oc := Color(0.5, 0.56, 0.4)
 	var rects := [[-far, -far, far, -h], [-far, h, far, far], [-far, -h, -h, h], [h, -h, far, h]]
 	for r in rects:
 		mb.quad(Vector3(r[0], y, r[1]), Vector3(r[2], y, r[1]), Vector3(r[2], y, r[3]), Vector3(r[0], y, r[3]), oc, Vector3.UP)
+	# serra ao longe em volta de tudo (a névoa apaga): o horizonte não fica com borda reta
+	var segs := 72
+	var mtn := func(a: float, k: float) -> Vector3:
+		var r := lerpf(880.0, 1380.0, k)
+		var ht := 30.0 + k * (90.0 + 70.0 * (0.5 + 0.5 * sin(a * 5.0 + 1.3)) + 40.0 * sin(a * 13.0)) * (1.0 - 0.35 * k * k)
+		return Vector3(cos(a) * r, ht, sin(a) * r)
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		for j in 4:
+			var k0 := j / 4.0
+			var k1 := (j + 1) / 4.0
+			var p00: Vector3 = mtn.call(a0, k0)
+			var p01: Vector3 = mtn.call(a1, k0)
+			var p10: Vector3 = mtn.call(a0, k1)
+			var p11: Vector3 = mtn.call(a1, k1)
+			var nrm := (p10 - p00).cross(p01 - p00).normalized()
+			if nrm.y < 0.0:
+				nrm = -nrm
+			mb.quad(p00, p01, p11, p10, oc.lerp(Color(0.42, 0.48, 0.44), k1), nrm)
 	var ring := MeshInstance3D.new()
 	ring.mesh = mb.commit()
 	ring.material_override = U.wmat()
@@ -2913,3 +2943,62 @@ func nearest_town(p: Vector2) -> Dictionary:
 
 func in_water(p: Vector3) -> bool:
 	return p.y < WATER_Y - 0.25 and Vector2(p.x, p.z).distance_to(LAKE_C) < LAKE_R + 30.0
+
+
+# Cenário de longe (leve): cada casa vira um bloco com telhado, as árvores viram tronco + copa
+# de caixa, a cidade alta ganha o deque. Fica em pedaços de 100 m (cada um some/aparece pela distância).
+func _build_far_lod() -> void:
+	const CELL := 100.0
+	var cells := {}
+	var get_mb := func(p: Vector2) -> MB:
+		var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
+		if not cells.has(key):
+			var m := MB.new()
+			m.tex(U.PLAIN, 1.0)
+			cells[key] = m
+		return cells[key]
+	var walls := [Color(0.74, 0.68, 0.57), Color(0.66, 0.6, 0.52), Color(0.7, 0.52, 0.42), Color(0.62, 0.64, 0.6)]
+	var roofs := [Color(0.58, 0.3, 0.24), Color(0.42, 0.4, 0.38), Color(0.5, 0.36, 0.27), Color(0.64, 0.38, 0.26)]
+	for h in houses:
+		var c: Vector2 = h["pos"]
+		var yaw: float = h["yaw"]
+		var wd: float = h["w"]
+		var dp: float = h["d"]
+		var y: float = h.get("y", height(c.x, c.y))
+		var hh := absi(hash(Vector2i(int(c.x * 3.0), int(c.y * 3.0))))
+		var ht := 3.2 if maxf(wd, dp) < 9.0 else 5.5
+		var m: MB = get_mb.call(c)
+		var bs := Basis(Vector3.UP, yaw)
+		m.box(Transform3D(bs, Vector3(c.x, y + ht / 2.0, c.y)), Vector3(wd, ht, dp), walls[hh % walls.size()])
+		m.box(Transform3D(bs, Vector3(c.x, y + ht + 0.45, c.y)), Vector3(wd + 0.3, 0.9, dp + 0.3), roofs[(hh / 7) % roofs.size()])
+	for t in towns:
+		if str(t.get("kind", "")) == "alta":
+			var c: Vector2 = t["pos"]
+			var m: MB = get_mb.call(c)
+			m.box(Transform3D(Basis(), Vector3(c.x, float(t["h"]) + ALTA_H / 2.0, c.y)), Vector3(ALTA_SIZE, ALTA_H, ALTA_SIZE), Color(0.62, 0.6, 0.56))
+	for mk in map_marks:
+		var kind: String = mk[0]
+		if kind == "log" or kind == "rock":
+			continue
+		var p: Vector2 = mk[1]
+		var sc: float = mk[2]
+		var y := height(p.x, p.y)
+		var m: MB = get_mb.call(p)
+		if kind == "bush":
+			m.box(Transform3D(Basis(Vector3.UP, sc), Vector3(p.x, y + 0.5 * sc, p.y)), Vector3(1.6, 1.0, 1.6) * sc, Color(0.3, 0.42, 0.18))
+			continue
+		var th := 3.0 * sc
+		m.box(Transform3D(Basis(), Vector3(p.x, y + th / 2.0, p.y)), Vector3(0.5, th, 0.5) * maxf(sc, 0.8), Color(0.36, 0.28, 0.2))
+		var cr := 2.4 * sc
+		m.box(Transform3D(Basis(Vector3.UP, p.x), Vector3(p.x, y + th + cr * 0.45, p.y)), Vector3(cr * 1.6, cr * 1.2, cr * 1.6), Color(0.24, 0.38, 0.16))
+	for key in cells:
+		var m: MB = cells[key]
+		if m.count == 0:
+			continue
+		var mi := MeshInstance3D.new()
+		mi.mesh = m.commit()
+		mi.material_override = U.wmat()
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.visibility_range_begin = 250.0
+		add_child(mi)
+		far_lod.append(mi)

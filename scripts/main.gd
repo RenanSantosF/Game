@@ -1840,8 +1840,10 @@ func _apply_quality() -> void:
 	var vk: float = [0.75, 1.0, 1.25][clampi(int(Cfg.get_v("view")), 0, 2)]
 	far *= vk
 	world.set_view(far * 0.8)
-	cam.far = far
-	fog_base = 2.2 / far * 0.55
+	# a câmera enxerga o mapa todo: depois da distância de visão entra o cenário simples (blocos),
+	# então longe não fica só cinza; a névoa é mais leve (bruma de guerra, mas dá pra ver o horizonte)
+	cam.far = 1500.0
+	fog_base = 0.42 / far
 	if env:
 		env.environment.fog_density = fog_base
 
@@ -2167,6 +2169,10 @@ func _local_update(lp: Player, delta: float) -> void:
 		up_drag += -look.y
 	elif not firing:
 		up_drag = maxf(up_drag - delta * 120.0, 0.0)
+	# atrito da mira: com alvo grudado o dedo mexe menos a câmera (fica no peito; subir pra capa
+	# pede arrastar mais)
+	if firing and assist_target != 0 and players.has(assist_target) and int(Cfg.get_v("aim_assist")) > 0:
+		sens *= 0.62
 	if playing:
 		cam_yaw_v -= look.x * sens
 		cam_pitch_v = clampf(cam_pitch_v - look.y * sens * inv_y, -1.3, 1.25)
@@ -2197,8 +2203,8 @@ func _local_update(lp: Player, delta: float) -> void:
 		hud.cross_bloom = lp.bloom + clampf(Vector2(lp.velocity.x, lp.velocity.z).length() / 2.6, 0.0, 1.6) * 0.8
 		if _snap_t > 0.0:
 			_snap_t -= delta
-		if firing or _shot_pending or _snap_t > 0.0:
-			_aim_assist(lp, w, delta)
+		if firing or _shot_pending or _snap_t > 0.0 or lp.scoped:
+			_aim_assist(lp, w, delta, not (firing or _shot_pending or _snap_t > 0.0))
 		if firing or _shot_pending:
 			_press_t += delta
 			lp.aim_t = maxf(lp.aim_t, 0.3)
@@ -2215,7 +2221,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		lp.wish = Vector3.ZERO
 	# câmera
 	var t := _view_target()
-	var target_len := 1.8
+	var target_len := 1.55
 	var fov := 75.0
 	var base := t.position if t else Vector3.ZERO
 	var cy := cam_yaw_v
@@ -2231,7 +2237,7 @@ func _local_update(lp: Player, delta: float) -> void:
 	elif t and (t.air == 1 or t.air == 2):
 		target_len = 7.0
 	elif t and t.car >= 0 and t.car < vehicles.size():
-		target_len = 7.0
+		target_len = 5.6
 		base = vehicles[t.car].global_position + Vector3(0, 0.6, 0)
 		# dirigindo: a câmera vai pra trás do carro e acompanha a frente dele
 		var vy: float = vehicles[t.car].yaw
@@ -2303,6 +2309,7 @@ func _local_update(lp: Player, delta: float) -> void:
 		sl.append({"id": gid, "att": g["att"], "ammo": int(lp.mag.get(gid, 0)) if gid != "" else 0, "max": int(Weapons.stat(gid, g["att"])["mag"]) if gid != "" else 0,
 			"res": lp.count(Weapons.ammo_of(gid)) if gid != "" else 0})
 	hud.slots = sl
+	hud.bag_fill = float(Weapons.slots_used(lp.inv)) / maxf(1.0, float(lp.capacity()))
 	hud.sel = lp.sel + 1
 	hud.sprinting = lp.sprint
 	hud.car_near = lp.car >= 0 or (lp.air == 0 and lp.alive and phase != LOBBY and near_vehicle(lp) >= 0)
@@ -2313,7 +2320,7 @@ func _local_update(lp: Player, delta: float) -> void:
 # Mira assistida: só puxa ao tocar/segurar o tiro ou ao abrir a mira. Gruda no peito de quem está
 # mais perto da mira (empate: o mais perto de mim); de longe precisa estar mais perto da mira pra pegar.
 # Arrastar pra cima atirando sobe pra cabeça (capa).
-func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
+func _aim_assist(lp: Player, w: Dictionary, delta: float, only_far := false) -> void:
 	var mode: int = int(Cfg.get_v("aim_assist"))
 	# armas de munição de sniper (Kar98, AWM) não têm mira assistida
 	if mode == 0 or (mode == 1 and lp.scoped) or lp.cur_wid() == "fist" or Weapons.ammo_of(lp.cur_wid()) == "a762":
@@ -2333,11 +2340,14 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 			var tp := o.position + Vector3(0, o.head_y() - 0.45, 0)
 			var d := tp - from
 			var dist := d.length()
-			if dist > minf(float(w["range"]), 120.0) or dist < 1.0:
+			if dist > minf(float(w["range"]), 150.0 if lp.scoped else 120.0) or dist < 1.0:
+				continue
+			# só mirando parado (sem atirar): puxa só quem está longe
+			if only_far and dist < 35.0:
 				continue
 			var ang := fwd.angle_to(d / dist)
-			# cone em graus "de tamanho de gente": quanto mais longe, mais fino
-			var lim := clampf(atan2(4.4, dist), 0.04, 0.5)
+			# cone em graus "de tamanho de gente": quanto mais longe, mais fino (de longe um pouco mais largo)
+			var lim := clampf(atan2(4.4, dist), 0.06 if dist > 50.0 else 0.04, 0.5)
 			if ang > lim:
 				continue
 			var score := ang + lp.position.distance_to(o.position) * 0.0025
@@ -2351,7 +2361,7 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 	var t: Player = players.get(assist_target)
 	if t == null or not t.alive:
 		return
-	var head := up_drag > 18.0
+	var head := up_drag > 30.0
 	var aimp := t.position + Vector3(0, t.head_y() + 0.1 if head else t.head_y() - 0.45, 0)
 	# acompanha quem corre (pouco, e com limite: nada de puxão doido)
 	var tv: Vector3 = t.velocity
@@ -2362,9 +2372,13 @@ func _aim_assist(lp: Player, w: Dictionary, delta: float) -> void:
 		return
 	var wy := atan2(-dir.x, -dir.z)
 	var wp := asin(clampf(dir.y, -1.0, 1.0))
-	var k := minf(1.0, (34.0 if head else 30.0) * delta)
+	# de longe puxa um pouco mais (alvo pequeno na tela)
+	var far_k := clampf((from.distance_to(aimp) - 40.0) / 60.0, 0.0, 1.0)
+	var k := minf(1.0, ((34.0 if head else 32.0) + 14.0 * far_k) * delta)
 	if _snap_t > 0.0:
 		k = minf(1.0, 56.0 * delta)
+	if only_far:
+		k = minf(1.0, (6.0 + 8.0 * far_k) * delta)
 	cam_yaw_v = lerp_angle(cam_yaw_v, wy, k)
 	cam_pitch_v = lerpf(cam_pitch_v, wp, k)
 
@@ -2622,6 +2636,12 @@ func _select(lp: Player, s: int) -> void:
 	_view_k = 0.0
 	lp.update_gun()
 	sfx("switch", 2.0)
+	# arma vazia na mão: recarrega sozinha (depois de sacar)
+	var wid := lp.cur_wid()
+	if wid != "fist" and int(lp.mag.get(wid, 0)) <= 0:
+		get_tree().create_timer(Player.DRAW_T).timeout.connect(func():
+			if is_instance_valid(lp) and lp.alive and lp.cur_wid() == wid and int(lp.mag.get(wid, 0)) <= 0 and lp.count(Weapons.ammo_of(wid)) > 0:
+				_start_reload(lp))
 
 
 func _start_heal(lp: Player, kind: String) -> void:
@@ -2820,6 +2840,13 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 	var att := p.att_of(wid)
 	var far := cam != null and cam.global_position.distance_to(p.position) > 200.0
 	var from := p.muzzle_pos()
+	# tranco da arma no tiro (todo mundo vê); quem atira sente na câmera (mais forte quanto mais dano)
+	var wd := Weapons.get_w(wid)
+	p.kick = 1.0
+	if local:
+		var pk := clampf((float(wd["dmg"]) * float(wd["pellets"])) / 160.0, 0.25, 1.0)
+		_shake = maxf(_shake, 0.12 + 0.3 * pk)
+		cam.fov += 1.2 + 2.5 * pk
 	if not far:
 		# sem traçante colorido: só a poeira no impacto e um clarão rápido de luz no cano
 		for e in ends:
@@ -3374,8 +3401,9 @@ func _server_damage(vid: int, aid: int, amount: float, head: bool, wid: String, 
 			if v.helmet_hp <= 0.0:
 				broke = "helmet"
 		elif not head and v.armor > 0.0 and v.vest_lv > 0:
-			var ab := minf(v.armor, amount * float(Weapons.VEST_ABSORB[clampi(v.vest_lv, 0, 3)]))
-			v.armor -= ab
+			# o colete só gasta levando tiro (zona, queda, carro e explosão não contam) e dura mais
+			var ab := minf(v.armor / 0.6, amount * float(Weapons.VEST_ABSORB[clampi(v.vest_lv, 0, 3)]))
+			v.armor = maxf(v.armor - ab * 0.6, 0.0)
 			amount -= ab
 			if v.armor <= 0.0:
 				broke = "vest"
@@ -3986,8 +4014,11 @@ func on_hp(vid: int, hp: float, armor: float, aid: int, head: bool, amount: floa
 	# acerto (vale também no lobby, onde ninguém perde vida: mostra quanto teria tirado)
 	if amount > 0.0 and aid == local_id and vid != local_id:
 		hud.hit(head, false)
+		# o tiro que mata não toca o "tic" de acerto: só o estrondo do abate
+		if hp <= 0.0:
+			pass
 		# o "tim" metálico só quando bate no capacete
-		if head and v and v.helmet > 0:
+		elif head and v and v.helmet > 0:
 			sfx("headshot", -6.0)
 		elif head:
 			sfx("head_flesh", -3.0)
@@ -4046,9 +4077,8 @@ func on_died(vid: int, aid: int, wid: String, head: bool, rank: int, amount: flo
 	if aid == local_id and vid != local_id:
 		hud.hit(head, true)
 		hud.kill_banner(vn, head, int(info[local_id]["kills"]) if info.has(local_id) else 0)
-		sfx("kill", 0.0)
+		sfx("kill", 3.0)
 		hud.dmg_number(vpos, amount, head, true)
-		hud.center("Você eliminou %s" % vn, 2.0, "good")
 	if vid == local_id:
 		my_rank = rank
 		hud.hurt()

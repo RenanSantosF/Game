@@ -64,7 +64,7 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 		add_child(mesh)
 		var mat := car_material(paint_for(k, tint), 0.3)
 		mesh.add_child(body_node(k, mat))
-		var wm: Mesh = load("res://models/car%d_wheel.res" % k)
+		var wm: Mesh = wheel_of(k)
 		var wh: Array = wh_of(k)
 		for z in [wh[2], wh[3]]:
 			for sx in [-1.0, 1.0]:
@@ -73,7 +73,7 @@ func setup(g: Node, i: int, k: int, pos: Vector3, yw: float, tint: Color, visual
 				mesh.add_child(piv)
 				var w := MeshInstance3D.new()
 				w.mesh = wm
-				w.material_override = mat
+				w.material_override = mat if k != 0 else U.wmat()
 				w.rotation.y = 0.0 if sx > 0 else PI
 				w.scale = Vector3(wh[4], wh[1], wh[1])
 				w.visibility_range_end = 200.0
@@ -195,13 +195,13 @@ static func interior(k: int) -> Mesh:
 static func prop_node(k: int, mat: Material) -> Node3D:
 	var n := Node3D.new()
 	n.add_child(body_node(k, mat))
-	var wm: Mesh = load("res://models/car%d_wheel.res" % k)
+	var wm: Mesh = wheel_of(k)
 	var wh: Array = wh_of(k)
 	for z in [wh[2], wh[3]]:
 		for sx in [-1.0, 1.0]:
 			var w := MeshInstance3D.new()
 			w.mesh = wm
-			w.material_override = mat
+			w.material_override = mat if k != 0 else U.wmat()
 			w.position = Vector3(sx * wh[0], wh[1], z)
 			w.rotation.y = 0.0 if sx > 0 else PI
 			w.scale = Vector3(wh[4], wh[1], wh[1])
@@ -414,6 +414,44 @@ func explode_visual() -> void:
 
 
 # ---------------- modelos ----------------
+
+# malha da roda de cada carro (no tamanho 1: o jogo escala pelo raio e largura). O esportivo usa uma
+# roda feita aqui (a do modelo vinha com o eixo torto e girava "dobrada"); o jipe usa a do modelo.
+static func wheel_of(k: int) -> Mesh:
+	if k == 0:
+		return sport_wheel()
+	return load("res://models/car%d_wheel.res" % k)
+
+
+static func sport_wheel() -> Mesh:
+	if _mesh_cache.has("sport_wheel"):
+		return _mesh_cache["sport_wheel"]
+	var m := MB.new()
+	var tire := Color(0.08, 0.08, 0.085)
+	var wall := Color(0.13, 0.13, 0.14)
+	var chrome := Color(0.8, 0.8, 0.82)
+	m.tex(U.PLAIN, 1.0)
+	var side := Basis(Vector3.FORWARD, PI / 2.0)   # eixo ao longo de X; lado de fora = +X
+	# pneu (banda de rodagem) e flancos arredondados
+	m.cyl(Transform3D(side, Vector3(-0.42, 0, 0)), 1.0, 1.0, 0.84, 22, tire)
+	m.cyl(Transform3D(side, Vector3(0.42, 0, 0)), 0.97, 0.84, 0.08, 22, wall)
+	m.cyl(Transform3D(side, Vector3(-0.5, 0, 0)), 0.84, 0.97, 0.08, 22, wall)
+	# cravos do pneu
+	for k in 22:
+		var a := TAU * (k + 0.5) / 22.0
+		var b := Basis(Vector3.RIGHT, a)
+		m.box(Transform3D(b, b * Vector3(0, 1.005, 0)), Vector3(0.78, 0.04, 0.12), Color(0.06, 0.06, 0.06))
+	# aro cromado fundo, 5 raios largos e cubo
+	m.cyl(Transform3D(side, Vector3(0.42, 0, 0)), 0.62, 0.62, 0.1, 18, chrome.darkened(0.45))
+	m.cyl(Transform3D(side, Vector3(0.5, 0, 0)), 0.64, 0.6, 0.03, 18, chrome)
+	for k in 5:
+		var a := TAU * k / 5.0
+		var b := Basis(Vector3.RIGHT, a)
+		m.box(Transform3D(b, b * Vector3(0.5, 0.3, 0)), Vector3(0.05, 0.52, 0.16), chrome.darkened(0.1))
+	m.cyl(Transform3D(side, Vector3(0.5, 0, 0)), 0.16, 0.13, 0.07, 10, chrome.lightened(0.1))
+	_mesh_cache["sport_wheel"] = m.commit()
+	return _mesh_cache["sport_wheel"]
+
 
 static func wheel_mesh() -> Mesh:
 	if _mesh_cache.has("wheel"):

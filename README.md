@@ -31,6 +31,10 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo; mochila militar arredondada (lona estufada, tampa, bolsos e fitas)
 - Bots se escondem atrás de caixote, muro, carro ou árvore na troca de tiro (abaixam pra recarregar/curar e levantam pra atirar) e erram um pouco mais
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
+- Arma baixa e atravessada na frente do corpo sem atirar; saque animado (a arma vem das costas e engatilha) com som de ferrolho de verdade; arma vazia recarrega sozinha ao sacar; tiros mais lentos e mais fortes, com tranco na arma e na câmera
+- Abate: caveira animada no meio da tela (dourada no tiro na cabeça) com estrondo grave
+- Paraquedas tipo asa, largo, de nylon brilhante com células estufadas tremendo no vento e cordas finas em cascata; corpo balança com o vento na queda e no paraquedas
+- De longe o mapa aparece inteiro em versão simples (blocos de casas e árvores, serra no horizonte), leve pro celular
 - Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
 - Clima de guerra com cor: céu azul com bruma de poeira, verde vivo com manchas queimadas, sombras fundas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
 - Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela

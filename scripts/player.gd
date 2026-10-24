@@ -152,7 +152,10 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1
 	floor_max_angle = deg_to_rad(50)
-	floor_snap_length = 0.4
+	floor_snap_length = 0.55
+	# na rampa anda na mesma velocidade (sem "patinar" subindo) e parado não escorrega
+	floor_constant_speed = true
+	floor_stop_on_slope = true
 	cshape = CollisionShape3D.new()
 	cap = CapsuleShape3D.new()
 	cap.radius = 0.4
@@ -290,51 +293,118 @@ static func _gear(kind: String) -> Mesh:
 			_shared[kind] = Weapons.gear(kind)
 			return _shared[kind]
 		"chute":
-			# velame retangular (asa) arqueado, com espessura, e cordas presas na borda de baixo
-			var ca := Color(0.52, 0.56, 0.38)
-			var cb := Color(0.82, 0.8, 0.7)
-			var n := 10
-			var tops := []
-			var bots := []
-			for i in n + 1:
-				var ang := lerpf(-0.85, 0.85, float(i) / n)
-				var x := sin(ang) * 3.0
-				var y := 4.7 + cos(ang) * 1.5
-				tops.append(Vector3(x, y, 0))
-				bots.append(Vector3(x * 0.97, y - 0.32, 0))
-			m.tex(U.FABRIC, 0.6)
-			var zf := -1.15
-			var zb := 1.0
-			for i in n:
-				var c: Color = ca if i % 2 == 0 else cb
-				var t0: Vector3 = tops[i]
-				var t1: Vector3 = tops[i + 1]
-				var b0: Vector3 = bots[i]
-				var b1: Vector3 = bots[i + 1]
-				var up := ((t0 + t1) / 2.0 - Vector3(0, 4.7, 0)).normalized()
-				# em cima, embaixo, frente (boca de ar) e trás
-				m.quad(t0 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0, zb), t0 + Vector3(0, 0, zb), c, up)
-				m.quad(b0 + Vector3(0, 0, zf * 0.92), b1 + Vector3(0, 0, zf * 0.92), b1 + Vector3(0, 0.12, zb), b0 + Vector3(0, 0.12, zb), c.darkened(0.25), -up)
-				m.quad(t0 + Vector3(0, 0.1, zf), t1 + Vector3(0, 0.1, zf), b1 + Vector3(0, 0, zf * 0.92), b0 + Vector3(0, 0, zf * 0.92), c.darkened(0.45), Vector3.FORWARD)
-				m.quad(t0 + Vector3(0, 0, zb), t1 + Vector3(0, 0, zb), b1 + Vector3(0, 0.12, zb), b0 + Vector3(0, 0.12, zb), c.darkened(0.1), Vector3.BACK)
-			for e in [0, n]:
-				var t: Vector3 = tops[e]
-				var bt: Vector3 = bots[e]
-				var sd := Vector3(signf(t.x), 0, 0)
-				m.quad(t + Vector3(0, 0.1, zf), t + Vector3(0, 0, zb), bt + Vector3(0, 0.12, zb), bt + Vector3(0, 0, zf * 0.92), ca.darkened(0.2), sd)
-			# cordas: da borda de baixo do velame até os tirantes nos ombros
-			var line := Color(0.15, 0.15, 0.14)
-			m.tex(U.PLAIN, 1.0)
-			for i in [0, 2, 4, 6, 8, 10]:
-				var bp: Vector3 = bots[i]
-				var riser := Vector3(signf(bp.x) * 0.2 if absf(bp.x) > 0.2 else 0.0, 1.62, 0)
-				for z in [zf * 0.85, zb * 0.85]:
-					var top := bp + Vector3(0, 0.03, z)
-					var dir := top - riser
-					var bb := Basis(Quaternion(Vector3.UP, dir.normalized()))
-					m.box(Transform3D(bb, (top + riser) / 2.0), Vector3(0.018, dir.length(), 0.018), line)
+			_shared[kind] = _chute_mesh()
+			return _shared[kind]
 	var mesh := m.commit()
 	_shared[kind] = mesh
+	return mesh
+
+
+# Paraquedas: velame tipo asa, largo (8,6 m) e arqueado, com 9 células estufadas entre as costuras,
+# perfil de asa (grosso na frente, fino atrás), listras e cordas finas em cascata (várias cordas do
+# velame juntam em 4 pontos e descem nos dois tirantes dos ombros). Tecido brilhante (shaders/chute).
+static func _chute_mesh() -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	const CELLS := 9
+	const SU := 6           # divisões por célula
+	const SV := 9           # divisões na corda (frente -> trás)
+	var span_a := 0.95      # meio ângulo do arco
+	var R := 4.6
+	var H := 5.2
+	var chord := 3.3
+	var cols := [Color(0.4, 0.47, 0.28), Color(0.9, 0.85, 0.68)]
+	var nu := CELLS * SU
+	# ponto do velame: u 0..1 envergadura, v 0..1 corda, side +1 em cima / -1 embaixo
+	var surf := func(u: float, v: float, side: float) -> Vector3:
+		var a := lerpf(-span_a, span_a, u)
+		var x := sin(a) * R
+		var y := H + (cos(a) - 1.0) * R * 0.55
+		var z := lerpf(-chord * 0.5, chord * 0.5, v)
+		# ângulo de ataque: bordo de fuga um pouco mais baixo
+		y -= v * 0.28
+		# perfil de asa e células estufadas (entre costuras) só em cima
+		var cell := fmod(u * CELLS, 1.0)
+		var puff := 0.55 + 0.45 * sin(cell * PI)
+		var thick := 0.36 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
+		if side > 0.0:
+			y += thick
+		else:
+			y -= 0.04 * sin(PI * v)
+		# o arco "empurra" a altura pra fora do centro (normal do arco)
+		return Vector3(x, y, z)
+	for side in [1.0, -1.0]:
+		for j in SV:
+			for i in nu:
+				var u0 := float(i) / nu
+				var u1 := float(i + 1) / nu
+				var v0 := float(j) / SV
+				var v1 := float(j + 1) / SV
+				var ci := int(float(i) / SU)
+				var c: Color = cols[ci % cols.size()] if ci != CELLS / 2 else Color(0.78, 0.2, 0.12)
+				if side < 0.0:
+					c = c.darkened(0.08)
+				var pts := [surf.call(u0, v0, side), surf.call(u1, v0, side), surf.call(u1, v1, side), surf.call(u0, v1, side)]
+				var uvs := [Vector2(u0 * CELLS, v0), Vector2(u1 * CELLS, v0), Vector2(u1 * CELLS, v1), Vector2(u0 * CELLS, v1)]
+				var order := [0, 1, 2, 0, 2, 3] if side > 0.0 else [0, 2, 1, 0, 3, 2]
+				for k in order:
+					st.set_color(c)
+					st.set_uv(uvs[k])
+					st.set_uv2(Vector2(0.0, 1.0 if side < 0.0 else 0.0))
+					st.add_vertex(pts[k])
+	# boca de ar na frente e fechamento atrás (entre a pele de cima e a de baixo)
+	for edge_v in [0.0, 1.0]:
+		for i in nu:
+			var u0 := float(i) / nu
+			var u1 := float(i + 1) / nu
+			var t0: Vector3 = surf.call(u0, edge_v, 1.0)
+			var t1: Vector3 = surf.call(u1, edge_v, 1.0)
+			var b0: Vector3 = surf.call(u0, edge_v, -1.0)
+			var b1: Vector3 = surf.call(u1, edge_v, -1.0)
+			var c := Color(0.2, 0.22, 0.16)
+			for p in [t0, t1, b1, t0, b1, b0]:
+				st.set_color(c)
+				st.set_uv(Vector2(0.5, edge_v))
+				st.set_uv2(Vector2.ZERO)
+				st.add_vertex(p)
+	# cordas finas: 4 fileiras (A..D) em cada costura -> 2 pontos de junção por lado -> tirante no ombro
+	var line_c := Color(0.86, 0.85, 0.8)
+	var risers := [Vector3(-0.2, 1.62, 0.02), Vector3(0.2, 1.62, 0.02)]
+	var add_line := func(a: Vector3, b: Vector3, w: float) -> void:
+		var d := b - a
+		var side := d.cross(Vector3.FORWARD).normalized() * w
+		var side2 := d.cross(Vector3.RIGHT).normalized() * w
+		for sv in [side, side2]:
+			for p in [a - sv, a + sv, b + sv, a - sv, b + sv, b - sv]:
+				st.set_color(line_c)
+				st.set_uv(Vector2.ZERO)
+				st.set_uv2(Vector2(1.0, 0.0))
+				st.add_vertex(p)
+	for sd in 2:
+		var r: Vector3 = risers[sd]
+		var sx := -1.0 if sd == 0 else 1.0
+		for g in 2:
+			# ponto de junção (cascata) a ~1,3 m acima do ombro, um mais pra dentro e outro pra fora
+			var gx := sx * (0.55 + g * 1.0)
+			var jp := Vector3(gx, 3.0 + g * 0.15, 0.0)
+			add_line.call(r, jp, 0.008)
+			for rib in range(CELLS + 1):
+				var u := float(rib) / CELLS
+				var px: float = (surf.call(u, 0.5, -1.0) as Vector3).x
+				if signf(px) != sx and absf(px) > 0.05:
+					continue
+				# cada junção pega as costuras do seu lado (dentro / fora)
+				var outer := absf(px) > R * 0.45
+				if (g == 1) != outer:
+					continue
+				for v in [0.12, 0.38, 0.62, 0.88]:
+					add_line.call(jp, surf.call(u, v, -1.0), 0.005)
+	st.generate_normals()
+	var mesh := st.commit()
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/chute.gdshader")
+	mat.set_shader_parameter("cells", float(CELLS))
+	mesh.surface_set_material(0, mat)
 	return mesh
 
 
@@ -380,7 +450,10 @@ func _build_model() -> void:
 	aim.position = Vector3(0, 1.36, 0)
 	model.add_child(aim)
 	chute = Node3D.new()
-	U.mesh(chute, _gear("chute"))
+	var cmi := MeshInstance3D.new()
+	cmi.mesh = _gear("chute")
+	cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	chute.add_child(cmi)
 	chute.visible = false
 	add_child(chute)
 	tag = Label3D.new()
@@ -430,8 +503,11 @@ func _set_gun_model(w: String, att: Array) -> void:
 	var t: String = Weapons.get_w(w)["type"]
 	gun.position = Vector3(0.13, -0.02, -0.36) if t != "pistol" else Vector3(0.06, 0.0, -0.45)
 	_gun_base = gun.position
-	# pistola sai rápido do coldre (da lateral da perna pra mão)
-	_draw_t = DRAW_TIME if t == "pistol" else 0.0
+	# saque: pistola sai rápido do coldre (da lateral da perna pra mão); arma grande vem das costas
+	# por cima do ombro, desce pra frente e dá um tranco (engatilha)
+	_draw_dur = DRAW_TIME if t == "pistol" else DRAW_T
+	_draw_t = _draw_dur
+	_draw_pistol = t == "pistol"
 	aim.add_child(gun)
 	for c in gun.get_children():
 		if c is GeometryInstance3D:
@@ -440,7 +516,14 @@ func _set_gun_model(w: String, att: Array) -> void:
 
 
 const DRAW_TIME := 0.22
+const DRAW_T := 0.45        # saque da arma grande (das costas pra mão)
 var _draw_t := 0.0
+var _draw_dur := DRAW_TIME
+var _draw_pistol := true
+var _wind_t := 0.0
+var vis_dy := 0.0           # diferença entre a altura mostrada (suave) e a real
+var _last_vis_y := 0.0
+var kick := 0.0             # tranco do tiro (1 no disparo, volta rápido)
 var _gun_base := Vector3.ZERO
 var _back := []        # armas grandes penduradas nas costas
 
@@ -710,6 +793,9 @@ func _move(delta: float) -> void:
 		velocity.y -= GRAVITY * delta
 		_air_time += delta
 		_fall_v = maxf(_fall_v, -velocity.y)
+	elif not want_jump or stun_t > 0.0:
+		# no chão: nada de velocidade vertical sobrando (senão fica quicando na rampa)
+		velocity.y = 0.0
 	elif want_jump and stun_t <= 0.0:
 		if prone:
 			set_prone(false)
@@ -942,6 +1028,11 @@ func _animate(delta: float, sim: bool) -> void:
 		model.rotation.x = lerpf(model.rotation.x, 0.0 if mix else -1.2, k)
 		model.position.y = 0.2 if mix else 0.6
 		sol.play("Fall" if mix else "Air", 0.25)
+		# vento na queda livre: o corpo balança e treme um pouco
+		_wind_t += delta
+		var wt := _wind_t + float(pid % 7)
+		model.rotation.z = sin(wt * 2.3) * 0.12 + sin(wt * 6.1) * 0.035
+		model.rotation.x += sin(wt * 1.7) * 0.07 + sin(wt * 7.3) * 0.02
 		if not mix:
 			hands = [model.global_transform * Vector3(-0.8, 1.45, 0.15), model.global_transform * Vector3(0.8, 1.45, 0.15)]
 		sol.tick(delta, far, 0.0, 0.0, hands)
@@ -956,6 +1047,13 @@ func _animate(delta: float, sim: bool) -> void:
 	if air == 2:
 		# paraquedas: pendurado com os braços pra cima segurando as cordas
 		model.position.y = -0.15 if sol.has_anim("Chute") else 0.0
+		# pendurado no paraquedas: balança como pêndulo com o vento (e o paraquedas acompanha de leve)
+		_wind_t += delta
+		var ct := _wind_t + float(pid % 5)
+		model.rotation.z = sin(ct * 1.35) * 0.11 + sin(ct * 3.7) * 0.025
+		model.rotation.x = sin(ct * 1.05) * 0.07
+		chute.rotation.z = sin(ct * 1.35 - 0.5) * 0.05
+		chute.rotation.x = sin(ct * 1.05 - 0.5) * 0.03
 		if sol.has_anim("Chute"):
 			sol.play("Chute", 0.3)
 		else:
@@ -964,6 +1062,18 @@ func _animate(delta: float, sim: bool) -> void:
 		sol.tick(delta, far, 0.0, 0.0, hands)
 		return
 	model.position.y = 0.0
+	model.rotation.z = lerpf(model.rotation.z, 0.0, minf(1.0, 8.0 * delta))
+	# degrau/rampa irregular: o corpo acompanha a altura suave (o pulo da colisão não aparece)
+	if not airborne:
+		var jump_y := _last_vis_y - global_position.y
+		vis_dy = lerpf(vis_dy, 0.0, minf(1.0, 14.0 * delta))
+		# só esconde saltos bruscos (degrau); subida contínua de rampa passa direto
+		if absf(jump_y) > 0.06 and absf(jump_y) < 0.6:
+			vis_dy = clampf(vis_dy + jump_y, -0.3, 0.3)
+		model.position.y = vis_dy
+	else:
+		vis_dy = 0.0
+	_last_vis_y = global_position.y
 	# arma encostada na parede: abaixa o cano (não atravessa a parede)
 	_wall_chk -= delta
 	if _wall_chk <= 0.0 and armed and gun and not far:
@@ -976,12 +1086,16 @@ func _animate(delta: float, sim: bool) -> void:
 	# sem atirar: arma baixa, perto da barriga; atirando ou mirando: levanta e aponta
 	var rdy: bool = ready_t > 0.0 or aim_t > 0.0 or scoped or (is_local and game.hud != null and game.hud.fire_held)
 	_ready_k = lerpf(_ready_k, 1.0 if rdy else 0.0, minf(1.0, (18.0 if rdy else 5.0) * delta))
-	# sem atirar o rifle fica quase na horizontal (só um pouco abaixado)
-	var low := maxf(_gun_low, (1.0 - _ready_k) * 0.1)
-	# só acompanha a mira (pra cima/baixo) atirando ou mirando; andando a arma fica na horizontal
-	aim.rotation.x = pitch * 0.85 * _ready_k * (1.0 - low) - 1.1 * low
-	aim.position = Vector3(0, 1.36 - (1.0 - _ready_k) * 0.12, (1.0 - _ready_k) * 0.06)
+	# sem atirar: arma abaixada e atravessada na frente do corpo (cano pra baixo e pro lado esquerdo);
+	# atirando ou mirando levanta e aponta pra mira
+	var idle_k := 1.0 - _ready_k
+	var low := _gun_low
 	_crouch_k = lerpf(_crouch_k, 1.0 if crouch else 0.0, k)
+	aim.rotation.x = pitch * 0.85 * _ready_k * (1.0 - low) - 1.1 * low - 0.5 * idle_k * (1.0 - low)
+	aim.rotation.y = 0.55 * idle_k
+	# agachado a arma desce junto (fica no ombro/peito, não em cima da cabeça)
+	var sh_y := lerpf(1.36, 0.98, _crouch_k)
+	aim.position = Vector3(-0.04 * idle_k, sh_y - idle_k * 0.1, idle_k * 0.04)
 	if stun_t > 0.0 and not airborne:
 		# caiu de alto: aterrissa agachado com a mão no chão
 		if sol.has_anim("Land"):
@@ -1087,11 +1201,24 @@ func _animate(delta: float, sim: bool) -> void:
 			gun.visible = true
 			if _draw_t > 0.0:
 				_draw_t = maxf(_draw_t - delta, 0.0)
-				var dk := _draw_t / DRAW_TIME
-				gun.position = _gun_base + Vector3(0.12, -0.5, 0.32) * dk * dk
-				gun.rotation.x = -1.2 * dk * dk
+				var dk := _draw_t / _draw_dur
+				var e2 := dk * dk
+				if _draw_pistol:
+					gun.position = _gun_base + Vector3(0.12, -0.5, 0.32) * e2
+					gun.rotation = Vector3(-1.2 * e2, 0, 0)
+				else:
+					# das costas: sobe por cima do ombro (cano pra cima), desce e dá o tranco no fim
+					var rack := sin(clampf(dk / 0.35, 0.0, 1.0) * PI) * (1.0 if dk < 0.35 else 0.0)
+					gun.position = _gun_base + Vector3(0.16, 0.3, 0.45) * e2 + Vector3(0, 0, 0.05) * rack
+					gun.rotation = Vector3(1.15 * e2 - 0.08 * rack, 0.0, 0.55 * e2)
 			else:
-				gun.rotation.x = 0.0
+				gun.rotation = Vector3.ZERO
+				gun.position = _gun_base
+			if kick > 0.0:
+				kick = maxf(kick - delta * 9.0, 0.0)
+				var kk := kick * kick
+				gun.position += Vector3(0, 0.015, 0.07) * kk
+				gun.rotation.x += 0.16 * kk
 		var gp := gun.position if gun else Vector3(0.12, -0.02, -0.36)
 		var t: String = Weapons.get_w(shown_wid)["type"]
 		var grip := aim.global_transform * (gp + Vector3(0, -0.05, 0.03))

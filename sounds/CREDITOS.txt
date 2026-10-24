@@ -8,6 +8,8 @@ Gravações (domínio público, CC0), cortadas e tratadas por tools/prepare_soun
 - Passos na grama/terra e no piso: "Fantozzi's Footsteps (Grass/Sand & Stone)" (OpenGameArt.org, CC0)
 - Passos no cascalho: Corsica_S, "42 Snow and Gravel Footsteps" (OpenGameArt.org, CC0)
 
+- Troca de arma e abate (montados por tools/synth_lote11.py): "equipment clicks III" de LFA e
+  "Gun reload sounds" de SpringySpringo (OpenGameArt.org, CC0) — estalos de ferrolho de rifle de verdade
 - Gemidos de dor (dano da zona): HaelDB, "Male Grunt/Yelling sounds" (OpenGameArt.org, CC0)
 
 Sintetizados por tools/synth_sounds.py (feitos pra este jogo):

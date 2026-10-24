@@ -59,6 +59,7 @@ var bag_bar: Control
 var bag_act: HBoxContainer
 var bag_sel := {}          # item escolhido na mochila: {t, kind, slot}
 var _bag_cap_k := 0.0
+var bag_fill := 0.0     # quanto da mochila está ocupado (0..1): borda do botão vai enchendo
 
 var center_t := 0.0
 var hit_t := 0.0
@@ -101,6 +102,7 @@ var bag_open := false
 var _pick_sig := ""
 var _pick_n := 0
 var kill_t := 0.0
+const KILL_T := 1.9
 var win_ctl: Control
 var win_t := -1.0          # vitória: tempo desde que apareceu (-1 = não)
 var win_sub := ""
@@ -445,7 +447,7 @@ func add_step(p: Vector3) -> void:
 
 # abate: caveira grande no meio da tela, curta e séria
 func kill_banner(victim: String, head: bool, total: int) -> void:
-	kill_t = 1.6
+	kill_t = KILL_T
 	kill_txt = victim
 	kill_head = head
 	kill_n = total
@@ -1148,6 +1150,11 @@ func _draw_btn(font: Font, k: String, pos: Vector2, r: float, icon: String) -> v
 	pad.draw_circle(pos, r, bg)
 	pad.draw_arc(pos, r, 0, TAU, 40, ring, 2.5)
 	glyph(pad, icon, pos, r * 0.48, Color(1, 1, 1, 0.95))
+	if k == "bag" and bag_fill > 0.0:
+		# borda que enche com o espaço usado: branca, amarela quase cheia, vermelha cheia
+		var bf := clampf(bag_fill, 0.0, 1.0)
+		var bc := Color(1, 0.25, 0.2) if bf >= 0.999 else (Color(1, 0.82, 0.2) if bf >= 0.75 else Color(1, 1, 1, 0.9))
+		pad.draw_arc(pos, r + 3.5, -PI / 2.0, -PI / 2.0 + TAU * bf, 48, bc, 5.0)
 	if k == "grenade":
 		var gs := "%d" % grenades
 		pad.draw_circle(pos + Vector2(r * 0.68, -r * 0.68), 10.0, Color(0.5, 0.45, 0.2))
@@ -1325,6 +1332,94 @@ func _draw_face(c: Vector2, r: float, col: Color) -> void:
 	pad.draw_arc(c + Vector2(0, r * 0.05), r * 0.5, 0.35, PI - 0.35, 12, col, 2.0)
 
 
+# abate: caveira grande que bate na tela (pulo de escala + tremida), onda de choque, brilho vermelho
+# (dourado no tiro na cabeça), olhos acesos e o número de abates; some rápido
+func _draw_kill(font: Font, s: Vector2) -> void:
+	var e := KILL_T - kill_t
+	var c := Vector2(s.x * 0.5, s.y * 0.3)
+	var gold := Color(1.0, 0.78, 0.2)
+	var red := Color(0.95, 0.12, 0.08)
+	var main_c := gold if kill_head else red
+	var fade := clampf(kill_t / 0.45, 0.0, 1.0)
+	# entrada: vem grande e "bate" no tamanho certo com um repique
+	var k := clampf(e / 0.16, 0.0, 1.0)
+	var sc := lerpf(2.6, 1.0, 1.0 - pow(1.0 - k, 3.0))
+	if e > 0.16:
+		sc = 1.0 + sin((e - 0.16) * 30.0) * 0.08 * exp(-(e - 0.16) * 9.0)
+	var shake := Vector2(sin(e * 90.0), cos(e * 77.0)) * 6.0 * exp(-e * 10.0)
+	var r := 42.0 * sc
+	var cc := c + shake
+	# brilho atrás (camadas) e onda de choque saindo
+	for i in 4:
+		var gr := r * (1.5 + i * 0.35)
+		pad.draw_circle(cc, gr, Color(main_c.r, main_c.g, main_c.b, 0.07 * fade * (4 - i) / 4.0))
+	var wave := clampf(e / 0.5, 0.0, 1.0)
+	if wave < 1.0:
+		pad.draw_arc(c, 30.0 + wave * 120.0, 0, TAU, 48, Color(main_c.r, main_c.g, main_c.b, (1.0 - wave) * 0.8), 6.0 * (1.0 - wave) + 1.0)
+		pad.draw_arc(c, 20.0 + wave * 80.0, 0, TAU, 40, Color(1, 1, 1, (1.0 - wave) * 0.5), 2.0)
+	# raios saindo (estilo explosão)
+	if e < 0.6:
+		var rk := e / 0.6
+		for i in 12:
+			var a := TAU * i / 12.0 + 0.13
+			var d0 := r * (1.25 + rk * 1.6)
+			var d1 := d0 + 26.0 * (1.0 - rk)
+			pad.draw_line(cc + Vector2(cos(a), sin(a)) * d0, cc + Vector2(cos(a), sin(a)) * d1, Color(main_c.r, main_c.g, main_c.b, (1.0 - rk) * 0.9), 3.0)
+	var bone := Color(0.96, 0.94, 0.9, fade)
+	var dark := Color(0.06, 0.02, 0.02, fade)
+	var edge := Color(0, 0, 0, 0.85 * fade)
+	# crânio: contorno com maçãs do rosto e queixo
+	var pts := PackedVector2Array()
+	for i in 21:
+		var a := PI + PI * i / 20.0
+		pts.append(cc + Vector2(cos(a) * r, sin(a) * r * 0.95 - r * 0.1))
+	pts.append(cc + Vector2(r * 0.98, r * 0.12))
+	pts.append(cc + Vector2(r * 0.78, r * 0.42))
+	pts.append(cc + Vector2(r * 0.52, r * 0.52))
+	pts.append(cc + Vector2(r * 0.5, r * 0.86))
+	pts.append(cc + Vector2(-r * 0.5, r * 0.86))
+	pts.append(cc + Vector2(-r * 0.52, r * 0.52))
+	pts.append(cc + Vector2(-r * 0.78, r * 0.42))
+	pts.append(cc + Vector2(-r * 0.98, r * 0.12))
+	var outline := pts.duplicate()
+	outline.append(pts[0])
+	pad.draw_polyline(outline, edge, 7.0 * sc * 0.6 + 2.0, true)
+	pad.draw_colored_polygon(pts, bone)
+	# sombra embaixo do crânio (volume)
+	pad.draw_colored_polygon(PackedVector2Array([cc + Vector2(-r * 0.9, r * 0.1), cc + Vector2(r * 0.9, r * 0.1), cc + Vector2(r * 0.52, r * 0.5), cc + Vector2(-r * 0.52, r * 0.5)]), Color(0.75, 0.72, 0.68, fade))
+	# olhos (buracos com brilho aceso piscando)
+	var glow := 0.6 + 0.4 * sin(e * 22.0)
+	for sx in [-1.0, 1.0]:
+		var ec := cc + Vector2(sx * r * 0.38, -r * 0.05)
+		pad.draw_colored_polygon(PackedVector2Array([ec + Vector2(-r * 0.27, -r * 0.16), ec + Vector2(r * 0.27, -r * 0.2), ec + Vector2(r * 0.22, r * 0.2), ec + Vector2(-r * 0.2, r * 0.22)]), dark)
+		pad.draw_circle(ec + Vector2(0, r * 0.02), r * 0.1, Color(main_c.r, main_c.g * 0.8, main_c.b * 0.5, glow * fade))
+	# nariz
+	pad.draw_colored_polygon(PackedVector2Array([cc + Vector2(0, r * 0.2), cc + Vector2(-r * 0.13, r * 0.42), cc + Vector2(r * 0.13, r * 0.42)]), dark)
+	# dentes
+	pad.draw_rect(Rect2(cc + Vector2(-r * 0.46, r * 0.56), Vector2(r * 0.92, r * 0.06)), dark)
+	for i in 5:
+		var x := -r * 0.36 + i * r * 0.18
+		pad.draw_line(cc + Vector2(x, r * 0.56), cc + Vector2(x, r * 0.84), dark, 2.0)
+	# rachadura no crânio
+	pad.draw_polyline(PackedVector2Array([cc + Vector2(r * 0.1, -r * 1.02), cc + Vector2(r * 0.22, -r * 0.75), cc + Vector2(r * 0.08, -r * 0.6), cc + Vector2(r * 0.2, -r * 0.42)]), dark, 2.0)
+	# texto: ABATE / NA CABEÇA e o número
+	var t1 := "NA CABEÇA!" if kill_head else "ABATE!"
+	if kill_n >= 2:
+		t1 = "%dº ABATE" % kill_n + ("  ·  NA CABEÇA" if kill_head else "")
+	var tk := clampf((e - 0.1) / 0.18, 0.0, 1.0)
+	var fs := int(28 * lerpf(1.6, 1.0, tk))
+	var tw := font.get_string_size(t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var tp := Vector2(c.x - tw / 2.0, c.y + r + 50.0)
+	pad.draw_string_outline(font, tp, t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 8, Color(0, 0, 0, 0.85 * fade * tk))
+	pad.draw_string(font, tp, t1, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(main_c.r, main_c.g, main_c.b, fade * tk))
+	if kill_txt != "":
+		var vw := font.get_string_size(kill_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
+		var vp := Vector2(c.x - vw / 2.0, tp.y + 26.0)
+		pad.draw_string_outline(font, vp, kill_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 5, Color(0, 0, 0, 0.8 * fade * tk))
+		pad.draw_string(font, vp, kill_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(1, 1, 1, 0.9 * fade * tk))
+
+
+
 func _draw_skull(c: Vector2, r: float, col: Color) -> void:
 	pad.draw_circle(c + Vector2(0, -r * 0.15), r * 0.85, col)
 	pad.draw_rect(Rect2(c + Vector2(-r * 0.5, r * 0.3), Vector2(r, r * 0.55)), col)
@@ -1392,7 +1487,14 @@ func _slot_cell(font: Font, r: Rect2, i: int, active: bool) -> void:
 			var aw := font.get_string_size(at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x
 			var ax := r.end.x - aw - 10
 			pad.draw_string_outline(font, Vector2(ax, r.position.y + 38), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 4, Color(0, 0, 0, 0.7))
-			pad.draw_string(font, Vector2(ax, r.position.y + 38), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color(1, 0.3, 0.25) if int(e["ammo"]) == 0 else Color.WHITE)
+			# pouca munição no pente: número vermelho (piscando quando acaba)
+			var low_a := int(e["ammo"]) <= maxi(1, int(ceil(float(e.get("max", 30)) * 0.25)))
+			var ac := Color.WHITE
+			if int(e["ammo"]) == 0:
+				ac = Color(1, 0.2, 0.15, 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() / 160.0)))
+			elif low_a:
+				ac = Color(1, 0.3, 0.25)
+			pad.draw_string(font, Vector2(ax, r.position.y + 38), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, ac)
 			var rs := "RECARREG." if reloading else "/ %d" % int(e.get("res", 0))
 			var rw := font.get_string_size(rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 			pad.draw_string(font, Vector2(r.end.x - rw - 10, r.position.y + 60), rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.85, 0.4) if reloading else Color(1, 1, 1, 0.75))
@@ -1538,6 +1640,8 @@ func _draw_pad() -> void:
 		_draw_skull(Vector2(tx + 78, 29), 11.0, Color(0.9, 0.15, 0.12))
 		pad.draw_string_outline(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 5, Color(0, 0, 0, 0.8))
 		pad.draw_string(font, Vector2(tx + 94, 37), str(kills_n), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 0.45, 0.4))
+	if kill_t > 0.0:
+		_draw_kill(font, s)
 	# joystick
 	if mode in ["ground", "lobby", "fall", "glide", "plane"] and not bag_open and not driving:
 		if joy_active:
