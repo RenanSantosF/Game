@@ -521,8 +521,8 @@ func _set_gun_model(w: String, att: Array) -> void:
 	_draw_pistol = t == "pistol"
 	aim.add_child(gun)
 	for c in gun.get_children():
-		if c is GeometryInstance3D:
-			c.visibility_range_end = 0.0     # o inimigo aparece igual de qualquer distância
+		if c is GeometryInstance3D and not c.has_meta("lod"):
+			c.visibility_range_end = 0.0     # o inimigo aparece igual de qualquer distância (de longe na versão simples)
 	update_back_guns()
 
 
@@ -567,10 +567,10 @@ func update_back_guns() -> void:
 		var bz: float = 0.175 if bag <= 0 else 0.15 + 0.11 * [0.0, 0.85, 1.0, 1.12][clampi(bag, 0, 3)] + 0.03
 		# nas costas a arma fica menor (não cobre o boneco inteiro)
 		m.transform = Transform3D(Basis(Vector3.FORWARD, tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis.from_scale(Vector3.ONE * BACK_SCALE), Vector3(0.0, 1.05, bz + k * 0.03))
-		for c in m.get_children():
-			if c is GeometryInstance3D:
+		for c in m.find_children("*", "GeometryInstance3D", true, false):
+			if not c.has_meta("lod") and c.visibility_range_begin == 0.0:
 				c.visibility_range_end = 0.0
-				(c as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			(c as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(m)
 		sol.attach("Spine2", holder)
 		_back.append(holder.get_parent())

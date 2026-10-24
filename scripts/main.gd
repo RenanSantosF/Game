@@ -1180,6 +1180,11 @@ func _build_world() -> void:
 			await get_tree().process_frame
 			await get_tree().process_frame
 		(steps[i][1] as Callable).call()
+	# versões de longe das armas já prontas (senão a primeira de cada tipo dava um engasgo)
+	if not dedicated:
+		for gid in Weapons.DATA:
+			if gid != "fist":
+				U.cluster_mesh(Weapons.mesh_for(gid, []), 0.014)
 	_load_progress(1.0, "Pronto!")
 	_step("mapa pronto")
 	if map_editing:
@@ -2660,7 +2665,7 @@ func _view_gun_tick(on: bool, wid: String, att: Array, delta: float) -> void:
 			view_gun.queue_free()
 		# a holográfica/luneta curta não entra no modelo: a janela dela é desenhada na tela
 		var a2 := att.filter(func(a): return a != "holo" and a != "scope2")
-		view_gun = Weapons.build_model(wid, a2)
+		view_gun = Weapons.build_model(wid, a2, false)
 		_view_key = key
 		cam.add_child(view_gun)
 		_view_top = 0.0

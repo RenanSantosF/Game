@@ -406,11 +406,24 @@ static func muzzle_len(id: String, att: Array) -> float:
 
 
 # Modelo da arma. Origem no cabo, cano apontando para -Z.
-static func build_model(id: String, att: Array = []) -> Node3D:
+const GUN_LO := 12.0    # a partir daqui a arma (no chão, na mão ou nas costas dos outros) é a simplificada
+
+
+static func build_model(id: String, att: Array = [], lod := true) -> Node3D:
 	var root := Node3D.new()
 	var mesh := mesh_for(id, att)
 	if mesh:
-		U.mesh(root, mesh)
+		var hi := U.mesh(root, mesh)
+		# de longe a versão simplificada (cerca de metade dos triângulos), filha da malha completa
+		if lod:
+			hi.visibility_range_end = GUN_LO
+			hi.set_meta("lod", true)
+			var lo := MeshInstance3D.new()
+			lo.mesh = U.cluster_mesh(mesh, 0.014)
+			lo.material_override = hi.material_override
+			lo.visibility_range_begin = GUN_LO
+			lo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			hi.add_child(lo)
 	var muzzle := Node3D.new()
 	muzzle.name = "Muzzle"
 	var my: float = GunInfo.INFO[id]["muzzle"].y if GunInfo.INFO.has(id) else 0.035
@@ -756,10 +769,10 @@ static func build_item(kind: String, glow := true) -> Node3D:
 		g.position.y = 0.05
 		g.scale = Vector3(1.25, 1.25, 1.25)
 		root.add_child(g)
-		for c in g.get_children():
-			if c is MeshInstance3D:
+		for c in g.find_children("*", "MeshInstance3D", true, false):
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if not c.has_meta("lod"):
 				c.visibility_range_end = 50.0
-				c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if glow:
 			_apply_glow(root, glow_mat(kind))
 		return root

@@ -81,6 +81,12 @@ No menu, **EDITAR MAPA** abre o mapa sem ninguém, com câmera livre:
 - Tudo fica salvo no aparelho e já vale no treino (o minimapa acompanha as casas). **COPIAR** copia as alterações em texto: cole no chat do Claude pra elas irem pro jogo de todo mundo (`data/map_edits.json`). **LIMPAR** (toque duas vezes) apaga as alterações do aparelho
 - Partida em rede usa só as alterações que vão no jogo, pra todo mundo ver o mesmo mapa
 
+## Novidades da 0.24.3 (otimização)
+
+- Armas com versão simplificada a partir de 12 m (no chão, na mão e nas costas dos outros): cerca de metade dos triângulos, mesma forma; a sua arma na mira continua completa. Numa cidade com ~100 itens no chão isso tira dezenas de milhares de triângulos
+- As versões de longe das armas são preparadas no carregamento (sem engasgo na primeira vez)
+- Memória reservada pra sombra 4x menor (sombras só existem no menu)
+
 ## Novidades da 0.24.2 (otimização)
 
 - Jipe (carro e carcaças) com versão simplificada de longe: 14,5 mil → 4,2 mil triângulos a partir de 45 m (tools/prepare_car_lod.gd)

@@ -125,6 +125,52 @@ static func split_mesh(m: ArrayMesh, cell: float) -> Array:
 	return out
 
 
+# Versão simplificada de uma malha: junta os vértices que caem no mesmo cubinho de "cell" metros e
+# tira os triângulos que somem (funciona com peças soltas, onde o simplificador do motor não reduz).
+static var _clustered := {}
+
+
+static func cluster_mesh(m: Mesh, cell: float) -> ArrayMesh:
+	var key := str(m.get_instance_id()) + "|" + str(cell)
+	if _clustered.has(key):
+		return _clustered[key]
+	var out := ArrayMesh.new()
+	for si in m.get_surface_count():
+		var arr := m.surface_get_arrays(si)
+		var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(vs.size()))
+		var rep := {}
+		var remap := PackedInt32Array()
+		remap.resize(vs.size())
+		for v in vs.size():
+			var k := Vector3i((vs[v] / cell).floor())
+			if not rep.has(k):
+				rep[k] = v
+			remap[v] = rep[k]
+		var nidx := PackedInt32Array()
+		var seen := {}
+		for t in range(0, idx.size(), 3):
+			var a := remap[idx[t]]
+			var b := remap[idx[t + 1]]
+			var c := remap[idx[t + 2]]
+			if a == b or b == c or a == c:
+				continue
+			var tk := Vector3i(a, b, c)
+			if seen.has(tk):
+				continue
+			seen[tk] = true
+			nidx.append(a)
+			nidx.append(b)
+			nidx.append(c)
+		if nidx.is_empty():
+			continue
+		arr[Mesh.ARRAY_INDEX] = nidx
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		out.surface_set_material(out.get_surface_count() - 1, m.surface_get_material(si))
+	_clustered[key] = out
+	return out
+
+
 # Material único usado por quase tudo: textura do atlas + cor do vértice.
 static func wmat() -> ShaderMaterial:
 	if _wmat:
