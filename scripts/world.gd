@@ -2857,10 +2857,10 @@ func _build_env() -> void:
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
 	# dia de guerra, mas com cor: céu azul com bruma de poeira, sol firme
-	sm.sky_top_color = Color(0.27, 0.42, 0.66)
-	sm.sky_horizon_color = Color(0.72, 0.72, 0.7)
-	sm.ground_horizon_color = Color(0.7, 0.69, 0.66)   # mesma cor da bruma (nada de faixa marrom no horizonte)
-	sm.ground_bottom_color = Color(0.58, 0.57, 0.55)
+	sm.sky_top_color = Color(0.3, 0.45, 0.66)
+	sm.sky_horizon_color = Color(0.72, 0.78, 0.84)
+	sm.ground_horizon_color = Color(0.7, 0.76, 0.82)   # mesma cor da bruma (nada de faixa marrom no horizonte)
+	sm.ground_bottom_color = Color(0.56, 0.6, 0.65)
 	sm.sky_curve = 0.18
 	sm.sun_angle_max = 40.0
 	sm.sun_curve = 0.6
@@ -2868,19 +2868,19 @@ func _build_env() -> void:
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.72, 0.68, 0.64)
+	env.ambient_light_color = Color(0.68, 0.74, 0.82)
 	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.68, 0.66, 0.62)
+	env.fog_light_color = Color(0.68, 0.74, 0.8)
 	env.fog_density = 0.0018
 	env.fog_sky_affect = 0.55
-	# meio da tarde (~15:30): cor um pouco menos viva, luz mais quente e baixa
+	# luz fria e clara de guerra (sem amarelado), cor um pouco lavada
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.02
+	env.adjustment_saturation = 0.94
 	env.adjustment_contrast = 1.12
-	env.adjustment_brightness = 0.95
+	env.adjustment_brightness = 1.05
 	# chão em volta do mapa até o horizonte (só visual)
 	var mb := MB.new()
 	mb.tex(U.GRASS, 0.02)
@@ -2945,9 +2945,9 @@ func _build_env() -> void:
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-31, 52, 0)
-	sun.light_color = Color(1.0, 0.86, 0.68)
-	sun.light_energy = 1.0
+	sun.rotation_degrees = Vector3(-38, 48, 0)
+	sun.light_color = Color(0.96, 0.97, 1.0)
+	sun.light_energy = 1.08
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_max_distance = 40.0

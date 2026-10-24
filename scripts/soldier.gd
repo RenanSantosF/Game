@@ -39,7 +39,7 @@ func setup(skin: Color, shirt: Color, pants: Color, boots: Color, hair: Color) -
 	# a malha já tem níveis de detalhe automáticos, então a cópia de longe não é usada
 	meshes[1].visible = false
 	for n in ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm",
-			"RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"]:
+			"RightForeArm", "RightHand", "LeftHandMiddle1", "RightHandMiddle1", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"]:
 		b[n] = sk.find_bone("mixamorig_" + n)
 	play("Idle")
 
@@ -73,7 +73,9 @@ func attach(bone: String, node: Node3D, fit := "") -> void:
 
 
 # Avança a animação e aplica os ajustes. hands = [alvo mão esq., alvo mão dir.] no mundo (ou vazio)
-func tick(delta: float, far: bool, pitch: float, crouch: float, hands: Array) -> void:
+# hand_dirs (opcional): pra onde os dedos de cada mão apontam no mundo (a mão gira junto com a arma,
+# senão o pulso fica torto com a rotação da animação do fuzil); pole_k: 0 cotovelo pra fora .. 1 pra baixo
+func tick(delta: float, far: bool, pitch: float, crouch: float, hands: Array, hand_dirs: Array = [], pole_k := 0.0) -> void:
 	_acc += delta
 	# longe: anima menos vezes por segundo
 	if far and _acc < 0.1:
@@ -92,8 +94,50 @@ func tick(delta: float, far: bool, pitch: float, crouch: float, hands: Array) ->
 		var down := -gb.y.normalized()
 		var back := gb.z.normalized()
 		var rt := gb.x.normalized()
-		_two_bone(b["LeftArm"], b["LeftForeArm"], b["LeftHand"], inv * (hands[0] as Vector3), inv.basis * (down - rt * 0.7 + back * 0.2))
-		_two_bone(b["RightArm"], b["RightForeArm"], b["RightHand"], inv * (hands[1] as Vector3), inv.basis * (down + rt * 0.7 + back * 0.2))
+		var side := lerpf(0.7, 0.3, pole_k)
+		_two_bone(b["LeftArm"], b["LeftForeArm"], b["LeftHand"], inv * (hands[0] as Vector3), inv.basis * (down - rt * side + back * 0.2))
+		_two_bone(b["RightArm"], b["RightForeArm"], b["RightHand"], inv * (hands[1] as Vector3), inv.basis * (down + rt * side + back * 0.2))
+		if hand_dirs.size() == 2:
+			_aim_hand(b["LeftHand"], b.get("LeftHandMiddle1", -1), inv.basis * (hand_dirs[0] as Vector3))
+			_aim_hand(b["RightHand"], b.get("RightHandMiddle1", -1), inv.basis * (hand_dirs[1] as Vector3))
+			# dedos fechados em volta do cabo/guarda-mão (a animação do fuzil deixava a mão aberta)
+			_grip("Right", 1.0)
+			_grip("Left", 0.8)
+
+
+static var CURL_SIGN := -1.0
+var _fingers := {}
+
+
+# fecha a mão (k = 0 aberta .. 1 fechada no cabo)
+func _grip(side: String, k: float) -> void:
+	if not _fingers.has(side):
+		var l := []
+		for f in ["Index", "Middle", "Ring", "Pinky"]:
+			for j in [1, 2, 3]:
+				l.append([sk.find_bone("mixamorig_%sHand%s%d" % [side, f, j]), [0.85, 1.0, 0.7][j - 1]])
+		var th := []
+		for j in [1, 2, 3]:
+			th.append([sk.find_bone("mixamorig_%sHandThumb%d" % [side, j]), [0.25, 0.4, 0.35][j - 1]])
+		_fingers[side] = [l, th]
+	var e: Array = _fingers[side]
+	for f in e[0]:
+		if f[0] >= 0:
+			sk.set_bone_pose_rotation(f[0], Quaternion(Vector3.RIGHT, CURL_SIGN * k * float(f[1])))
+	for f in e[1]:
+		if f[0] >= 0:
+			sk.set_bone_pose_rotation(f[0], sk.get_bone_rest(f[0]).basis.get_rotation_quaternion() * Quaternion(Vector3.FORWARD, -CURL_SIGN * k * float(f[1]) * (1.0 if side == "Right" else -1.0)))
+
+
+# gira a mão pra os dedos apontarem na direção pedida (espaço do esqueleto)
+func _aim_hand(ih: int, imid: int, want: Vector3) -> void:
+	if ih < 0 or imid < 0 or want.length_squared() < 1e-6:
+		return
+	var h := _gpose(ih)
+	var cur := (_gpose(imid).origin - h.origin)
+	if cur.length_squared() < 1e-8:
+		return
+	_set_global_rot(ih, Basis(Quaternion(cur.normalized(), want.normalized())) * h.basis)
 
 
 func _gpose(i: int) -> Transform3D:

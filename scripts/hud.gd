@@ -1669,16 +1669,21 @@ func _draw_pad() -> void:
 		_draw_btn(font, k, b[k][0], b[k][1], b[k][2])
 	# vida e colete
 	if mode in ["ground", "lobby", "fall", "glide"]:
-		var bw := 360.0
+		# barra fina, sem borda: trilho bem leve, vida com brilho em cima, colete numa linha fininha
+		var bw := 250.0
 		var bx := s.x / 2.0 - bw / 2.0
-		var by := s.y - 40.0
+		var by := s.y - 30.0
+		var bh := 7.0
 		var f := clampf(hp / 200.0, 0.0, 1.0)
-		pad.draw_rect(Rect2(bx - 2, by - 2, bw + 4, 20), Color(0, 0, 0, 0.55))
-		pad.draw_rect(Rect2(bx, by, bw * f, 16), Color(lerpf(0.9, 0.25, f), lerpf(0.2, 0.8, f), 0.2))
-		pad.draw_string(font, Vector2(bx + bw + 10, by + 14), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+		var hc := Color(lerpf(0.92, 0.36, f), lerpf(0.25, 0.85, f), lerpf(0.2, 0.32, f))
+		pad.draw_rect(Rect2(bx, by, bw, bh), Color(0, 0, 0, 0.28))
+		pad.draw_rect(Rect2(bx, by, bw * f, bh), hc)
+		pad.draw_rect(Rect2(bx, by, bw * f, 2.0), hc.lightened(0.35))
+		pad.draw_string_outline(font, Vector2(bx + bw + 8, by + 8), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color(0, 0, 0, 0.6))
+		pad.draw_string(font, Vector2(bx + bw + 8, by + 8), "%d" % ceili(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.95))
 		if armor > 0.0:
-			pad.draw_rect(Rect2(bx - 2, by - 12, bw + 4, 9), Color(0, 0, 0, 0.55))
-			pad.draw_rect(Rect2(bx, by - 10, bw * clampf(armor / 100.0, 0.0, 1.0), 5), Color(0.35, 0.6, 1.0))
+			pad.draw_rect(Rect2(bx, by - 6, bw, 3), Color(0, 0, 0, 0.22))
+			pad.draw_rect(Rect2(bx, by - 6, bw * clampf(armor / 100.0, 0.0, 1.0), 3), Color(0.72, 0.8, 0.88))
 
 
 var _map_rot := 0.0     # giro do minimapa enquanto ele é desenhado

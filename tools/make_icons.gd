@@ -36,7 +36,16 @@ func render_all() -> void:
 	for k in Weapons.ITEMS:
 		list.append(k)
 	list.append("box")
+	# ONLY=vest,helmet,bag -> refaz só os ícones que começam com esses nomes
+	var only := OS.get_environment("ONLY")
 	for id in list:
+		if only != "":
+			var ok := false
+			for o in only.split(","):
+				if str(id).begins_with(o):
+					ok = true
+			if not ok:
+				continue
 		var node: Node3D
 		var size := 0.5
 		var center := Vector3.ZERO

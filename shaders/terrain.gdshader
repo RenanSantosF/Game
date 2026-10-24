@@ -35,7 +35,7 @@ void fragment() {
 	g = mix(g, g * vec3(0.92, 0.82, 0.62), smoothstep(0.55, 0.75, patch) * 0.45);
 	float burnt = smoothstep(0.8, 0.9, vn(wpos.xz * 0.011 + vec2(7.3, 1.9)));
 	g = mix(g, vec3(0.16, 0.14, 0.12), burnt * 0.45);
-	g *= vec3(0.82, 0.94, 0.76);   // verde mais fundo (sem amarelar)
+	g *= vec3(0.78, 0.92, 0.84);   // verde frio (sem amarelar)
 	vec3 d = atlas_sample(uv * 0.9, 1.0);
 	// pedra em três projeções (não estica nos barrancos)
 	vec3 bw = pow(abs(wnrm), vec3(4.0));

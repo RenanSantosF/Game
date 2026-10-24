@@ -83,14 +83,14 @@ const AMMO := ["a9", "a556", "a762", "a12"]
 const BAGS := [80, 160, 240, 320]   # espaço sem mochila e com mochila nível 1, 2 e 3
 const VEST_ABSORB := [0.0, 0.3, 0.42, 0.55]    # quanto do dano no corpo o colete segura
 const HELMET_ABSORB := [0.0, 0.25, 0.38, 0.5]  # quanto do dano na cabeça o capacete segura
-# cor de raridade (destaque no chão): nível 1 branco, 2 azul, 3 roxo; armas dourado
-const RARITY := [Color(0.9, 0.9, 0.9), Color(0.85, 0.85, 0.85), Color(0.3, 0.6, 1.0), Color(0.75, 0.35, 1.0)]
+# cor de raridade (destaque no chão): nível 1 cáqui, 2 verde, 3 cinza-aço (cores de guerra, nada de roxo); armas dourado
+const RARITY := [Color(0.9, 0.9, 0.9), Color(0.88, 0.8, 0.58), Color(0.45, 0.8, 0.33), Color(0.68, 0.74, 0.78)]
 
 # Loot espalhado pelo mapa (repetido = mais comum)
 const LOOT := [
 	"mp5", "ump45", "m4a1", "scar", "ak47", "r870", "m1014", "kar98", "deagle", "glock", "glock",
 	"bandage", "bandage", "bandage", "bandage", "bandage", "bandage", "med", "med", "med", "med", "med",
-	"drink", "drink", "drink", "grenade", "grenade",
+	"bandage", "bandage", "med", "grenade", "grenade",
 	"a9", "a9", "a9", "a556", "a556", "a556", "a556", "a762", "a762", "a12", "a12",
 	"vest1", "vest1", "vest2", "vest3", "helmet1", "helmet1", "helmet2", "helmet3", "bag1", "bag1", "bag2", "bag3",
 	"stock1", "stock2", "stock3", "mag1", "mag1", "mag2", "mag3", "holo", "holo", "scope2", "scope4", "scope8", "silencer",
@@ -415,10 +415,10 @@ static func build_model(id: String, att: Array = []) -> Node3D:
 
 # ---------------- colete, capacete e mochila ----------------
 # Um desenho só (vestido no boneco); no chão o mesmo modelo aparece deitado/em pé.
-# Cor por nível: 1 verde-oliva, 2 azul, 3 roxo.
-const LV_COL := [Color(0.46, 0.5, 0.32), Color(0.32, 0.46, 0.7), Color(0.52, 0.36, 0.66)]
+# Cor por nível: 1 verde-oliva, 2 verde, 3 cinza-aço.
+const LV_COL := [Color(0.46, 0.5, 0.32), Color(0.4, 0.6, 0.3), Color(0.5, 0.55, 0.58)]
 const STRAP := Color(0.1, 0.1, 0.1)
-const MIL_COL := [Color(0.58, 0.62, 0.43), Color(0.82, 0.72, 0.54), Color(0.5, 0.53, 0.47)]
+const MIL_COL := [Color(0.56, 0.62, 0.4), Color(0.52, 0.58, 0.5), Color(0.5, 0.52, 0.54)]   # nível 1 verde-oliva, 2 verde-acinzentado, 3 cinza
 
 
 static func gear(kind: String) -> Mesh:
@@ -711,7 +711,7 @@ static func item_mesh(kind: String) -> Mesh:
 	return mesh
 
 
-# brilho do item no chão na cor da raridade (nível 2 azul, 3 roxo, armas dourado, resto branco fraco)
+# brilho do item no chão na cor da raridade (nível 2 verde, 3 cinza-aço, armas dourado, resto branco fraco)
 static var _glow_mats := {}
 
 

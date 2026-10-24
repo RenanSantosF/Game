@@ -14,7 +14,7 @@ void vertex() {
 	under = UV2.y;
 	if (is_line < 0.5) {
 		// bordo de fuga treme mais que a frente; a onda corre pela envergadura
-		float w = sin(TIME * 7.5 + UV.x * 2.1) * 0.035 + sin(TIME * 13.0 + UV.x * 5.3 + UV.y * 3.0) * 0.012;
+		float w = sin(TIME * 7.5 + UV.x * 2.1) * 0.05 + sin(TIME * 13.0 + UV.x * 5.3 + UV.y * 3.0) * 0.018;
 		VERTEX.y += w * smoothstep(0.35, 1.0, UV.y) * 1.6;
 		VERTEX.z += sin(TIME * 5.0 + UV.x * 1.3) * 0.02 * UV.y;
 	}

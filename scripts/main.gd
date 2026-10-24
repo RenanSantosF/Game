@@ -1059,7 +1059,7 @@ func _sandbox_kit(p: Player) -> void:
 		_give(p, k, 1, 100.0 if k == "vest3" else null)
 	for k in [["a9", 120], ["a556", 150], ["a762", 30], ["a12", 40]]:
 		_give(p, k[0], k[1], null)
-	for k in [["med", 6], ["bandage", 10], ["drink", 5], ["grenade", 6]]:
+	for k in [["med", 6], ["bandage", 12], ["grenade", 6]]:
 		_give(p, k[0], k[1], null)
 
 
@@ -2847,8 +2847,8 @@ func _shot_fx(p: Player, ends: PackedVector3Array, wid: String, local: bool) -> 
 	p.kick = 1.0
 	if local:
 		var pk := clampf((float(wd["dmg"]) * float(wd["pellets"])) / 160.0, 0.25, 1.0)
-		# fuzis e submetralhadoras (tiro seguido) tremem um pouco menos
-		var auto_k := 0.82 if str(wd["type"]) in ["rifle", "scar", "ak", "smg"] else 1.0
+		# armas pequenas (pistola e submetralhadora) tremem um pouco menos; as grandes, o tranco cheio
+		var auto_k := 0.82 if str(wd["type"]) in ["pistol", "smg"] else 1.0
 		_shake = maxf(_shake, (0.12 + 0.3 * pk) * auto_k)
 		cam.fov += (1.2 + 2.5 * pk) * auto_k
 	if not far:

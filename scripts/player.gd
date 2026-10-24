@@ -2,8 +2,8 @@ class_name Player
 extends CharacterBody3D
 
 const SPEED := 6.0
-const GRAVITY := 22.0
-const JUMP := 7.0
+const GRAVITY := 18.5
+const JUMP := 6.3
 const FALL_SPEED := 15.0       # queda livre
 const FALL_MOVE := 16.0
 const CHUTE_SPEED := 4.5       # paraquedas
@@ -66,7 +66,7 @@ var _ready_k := 0.0
 var _air_time := 0.0
 var _jump_seen := false
 var _jump_t := -1.0          # tempo da animação do pulo (-1 = no chão)
-const JUMP_ANIM_T := 0.72   # ~ tempo no ar de um pulo normal
+const JUMP_ANIM_T := 0.76   # ~ tempo no ar de um pulo normal
 var _step_t := 0.0
 
 # jogadores remotos (interpolação)
@@ -310,7 +310,7 @@ static func _chute_mesh() -> Mesh:
 	const SU := 6           # divisões por célula
 	const SV := 9           # divisões na corda (frente -> trás)
 	var span_a := 0.95      # meio ângulo do arco
-	var R := 4.6
+	var R := 3.9
 	var H := 5.2
 	var chord := 3.3
 	var cols := [Color(0.4, 0.47, 0.28), Color(0.9, 0.85, 0.68)]
@@ -326,7 +326,7 @@ static func _chute_mesh() -> Mesh:
 		# perfil de asa e células estufadas (entre costuras) só em cima
 		var cell := fmod(u * CELLS, 1.0)
 		var puff := 0.55 + 0.45 * sin(cell * PI)
-		var thick := 0.36 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
+		var thick := 0.52 * pow(sin(PI * clampf(pow(v, 0.65), 0.0, 1.0)), 1.0) * puff
 		if side > 0.0:
 			y += thick
 		else:
@@ -733,12 +733,13 @@ func _move(delta: float) -> void:
 		dir = dir.normalized()
 	if air == 1 or air == 2:
 		var hs := FALL_MOVE if air == 1 else CHUTE_MOVE
-		var k := minf(1.0, 2.5 * delta)
+		# no paraquedas é mais pesado pra mudar de direção
+		var k := minf(1.0, (2.5 if air == 1 else 1.3) * delta)
 		velocity.x = lerpf(velocity.x, dir.x * hs, k)
 		velocity.z = lerpf(velocity.z, dir.z * hs, k)
 		velocity.y = -FALL_SPEED if air == 1 else -CHUTE_SPEED
 		if dir.length() > 0.1:
-			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, 3.0 * delta))
+			yaw = lerp_angle(yaw, atan2(-dir.x, -dir.z), minf(1.0, (3.0 if air == 1 else 1.2) * delta))
 		move_and_slide()
 		# não deixa sair da área do mapa durante a queda
 		var lim := World.PLAY - 4.0
@@ -757,9 +758,9 @@ func _move(delta: float) -> void:
 		return
 	# analógico: quanto mais empurra, mais rápido (até uma corrida leve); botão de correr = corrida forte
 	# o analógico já corre (corrida leve); o botão de correr é a corrida forte
-	var spd := lerpf(3.3, 4.2, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
+	var spd := lerpf(3.15, 4.05, clampf((dir.length() - 0.15) / 0.6, 0.0, 1.0)) if dir.length() > 0.15 else 0.0
 	if sprint:
-		spd = 5.8 if (sel < 0 or cur_wid() == "fist") else 5.45
+		spd = 5.6 if (sel < 0 or cur_wid() == "fist") else 5.3
 	# atirando ou dando soco anda bem mais devagar
 	if (aim_t > 0.0 and not sprint) or (is_local and game.hud != null and game.hud.fire_held):
 		spd = minf(spd, 2.6)
@@ -776,7 +777,7 @@ func _move(delta: float) -> void:
 	if game.world.in_water(position):
 		spd = minf(spd, 3.2)
 	if is_bot:
-		spd = (5.45 if sprint else 4.2) if b_target == 0 else (5.3 if sprint else 3.95)
+		spd = (5.3 if sprint else 4.05) if b_target == 0 else (5.15 if sprint else 3.8)
 		if crouch:
 			spd = 2.6
 	if stun_t > 0.0:
@@ -797,7 +798,7 @@ func _move(delta: float) -> void:
 			# vira pra onde anda sem estalar (girando o analógico rápido ele gira mais devagar)
 			var want := atan2(-dir.x, -dir.z)
 			var diff := angle_difference(yaw, want)
-			yaw += clampf(diff, -8.5 * delta, 8.5 * delta)
+			yaw += clampf(diff, -11.0 * delta, 11.0 * delta)
 	if not on_floor:
 		velocity.y -= GRAVITY * delta
 		_air_time += delta
@@ -1030,6 +1031,8 @@ func _animate(delta: float, sim: bool) -> void:
 	var far: bool = not game.near_cam(global_position, 35.0)
 	var cr := 0.0
 	var hands := []
+	var hand_dirs := []
+	var pole_k := 0.0
 	aim.rotation.x = 0.0
 	if air == 1:
 		# queda livre: a animação já é deitada (braços abertos); só endireita o corpo
@@ -1059,10 +1062,10 @@ func _animate(delta: float, sim: bool) -> void:
 		# pendurado no paraquedas: balança como pêndulo com o vento (e o paraquedas acompanha de leve)
 		_wind_t += delta
 		var ct := _wind_t + float(pid % 5)
-		model.rotation.z = sin(ct * 1.35) * 0.11 + sin(ct * 3.7) * 0.025
-		model.rotation.x = sin(ct * 1.05) * 0.07
-		chute.rotation.z = sin(ct * 1.35 - 0.5) * 0.05
-		chute.rotation.x = sin(ct * 1.05 - 0.5) * 0.03
+		model.rotation.z = sin(ct * 1.35) * 0.16 + sin(ct * 3.7) * 0.035
+		model.rotation.x = sin(ct * 1.05) * 0.1
+		chute.rotation.z = sin(ct * 1.35 - 0.5) * 0.08 + sin(ct * 2.9) * 0.02
+		chute.rotation.x = sin(ct * 1.05 - 0.5) * 0.05
 		if sol.has_anim("Chute"):
 			sol.play("Chute", 0.3)
 		else:
@@ -1136,10 +1139,20 @@ func _animate(delta: float, sim: bool) -> void:
 			sol.play("Prone", 0.3, clampf(sp / 0.45, 0.6, 1.6))
 		aim.rotation = Vector3(pitch * 0.3 * _ready_k, 0.0, 0.0)
 		if gun:
-			gun.visible = armed
-		sol.tick(delta, far, 0.0, 0.0, [])
+			gun.visible = armed and heal_t <= 0.0
+		var ph := []
+		if heal_t > 0.0 and sol.b.has("Head"):
+			# deitado se curando: braço esquerdo na frente do rosto e a mão direita enrolando a faixa
+			_heal_anim += delta
+			var hd: Vector3 = sol.sk.global_transform * sol.sk.get_bone_global_pose(sol.b["Head"]).origin
+			var mf := -model.global_transform.basis.z.normalized()
+			var mr := model.global_transform.basis.x.normalized()
+			var c0 := hd + mf * 0.28 + Vector3(0, -0.12, 0)
+			var ang := _heal_anim * 9.0
+			ph = [c0 - mr * 0.06, c0 + mr * 0.04 + Vector3(0, cos(ang) * 0.06, 0) + mf * sin(ang) * 0.06]
+		sol.tick(delta, far, 0.0, 0.0, ph)
 		# a arma fica na mão direita (a animação de rastejar mexe os braços; a arma vai junto)
-		if gun and armed and sol.b.has("RightHand"):
+		if gun and armed and heal_t <= 0.0 and sol.b.has("RightHand"):
 			var hand: Vector3 = sol.sk.global_transform * sol.sk.get_bone_global_pose(sol.b["RightHand"]).origin
 			var grip := gun.position + Vector3(0, -0.05, 0.03)
 			aim.global_position = hand - aim.global_transform.basis * grip
@@ -1237,8 +1250,9 @@ func _animate(delta: float, sim: bool) -> void:
 				gun.rotation.x += 0.16 * kk
 		var gp := gun.position if gun else Vector3(0.12, -0.02, -0.36)
 		var t: String = Weapons.get_w(shown_wid)["type"]
-		var grip := aim.global_transform * (gp + Vector3(0, -0.05, 0.03))
-		var fore := aim.global_transform * (gp + Vector3(-0.02, -0.03, -0.26 if t != "pistol" else -0.02))
+		# o pulso fica atrás/abaixo do cabo (a palma é que abraça o cabo)
+		var grip := aim.global_transform * (gp + (Vector3(0.0, -0.075, 0.085) if t == "pistol" else Vector3(0, -0.07, 0.07)))
+		var fore := aim.global_transform * (gp + (Vector3(-0.045, -0.09, 0.07) if t == "pistol" else Vector3(-0.02, -0.06, -0.2)))
 		if reload_t > 0.0:
 			# recarga: inclina a arma, mão esquerda tira o pente, vai na cintura e volta
 			var tot := maxf(float(cur_stat()["reload"]), 0.3)
@@ -1258,6 +1272,17 @@ func _animate(delta: float, sim: bool) -> void:
 		else:
 			aim.rotation.z = lerpf(aim.rotation.z, 0.0, minf(1.0, 10.0 * delta))
 		hands = [fore, grip]
+		# pulsos acompanham a arma (dedos pra frente/baixo na empunhadura; mão de apoio por baixo)
+		var ab := aim.global_transform.basis
+		var gf := -ab.z.normalized()
+		var gu := ab.y.normalized()
+		var gr := ab.x.normalized()
+		if t == "pistol":
+			hand_dirs = [(gf - gu * 0.55 + gr * 0.35).normalized(), (gf - gu * 0.6).normalized()]
+			pole_k = 1.0
+		else:
+			hand_dirs = [(gf * 0.6 + gr * 0.55 - gu * 0.35).normalized(), (gf - gu * 0.7).normalized()]
+			pole_k = 0.35
 	elif sol.cur == "Idle" and vault_t < 0.0 and not ual and not mix:
 		# parado de mãos livres: braços soltos do lado do corpo, respirando
 		_breath += delta
@@ -1269,7 +1294,9 @@ func _animate(delta: float, sim: bool) -> void:
 	if vk > 0.0:
 		# mão de apoio no batente
 		hands = [model.global_transform * Vector3(-0.25, 0.95, -0.45), hands[1] if hands.size() == 2 else model.global_transform * Vector3(0.25, 0.95, -0.4)]
-	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(0.0 if cr < 0.0 else _crouch_k, 0.85 * vk), hands)
+	if hands.size() != 2 or reload_t > 0.0 or heal_t > 0.0 or punch_t > 0.0 or vk > 0.0:
+		hand_dirs = []
+	sol.tick(delta, far, pitch * (1.0 - _gun_low) if armed else 0.0, maxf(0.0 if cr < 0.0 else _crouch_k, 0.85 * vk), hands, hand_dirs, pole_k)
 
 
 

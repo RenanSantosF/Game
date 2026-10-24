@@ -20,7 +20,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Árvores (folhas do Poly Haven, CC0): tronco reto e grosso (dá pra se proteger atrás) e copa falhada de cartões de folhas, leves pro celular; três tipos + moita
 - Avião bimotor com camuflagem e hélices girando (OpenGameArt, CC0)
 - Vida 200; colete, capacete, mochila, coronha e carregador com nível 1, 2 e 3 (cor diferente no chão e no ícone); dano de queda só em queda alta
-- Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta. Energético, kits e bandagens
+- Granada: segure o botão pra tirar o pino (bipes contando), solte pra jogar; se segurar demais explode na mão; o X guarda de volta. Kit médico e bandagem
 - Cenário de começo de guerra: casas com rombo na parede, fuligem e telhado queimado, paredes encardidas, ruas com buracos, rachaduras e entulho, barricadas de madeira em X, caixotes militares com arma em cima
 - Cinco cidades bem no alto de morro, com rampa longa e suave cheia de cobertura (pedras, sacos de areia, barricadas, caixotes, carcaças) pra trocar tiro subindo e descendo
 - Duas cidades com chão de cimento; casas de laje com escada maciça por fora pra subir no teto
@@ -28,7 +28,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - Cada cidade com a sua cara (cor das paredes, telhado e um marco no meio: monumento, moinho, ônibus ou caixa d'água) e mais casas
 - Casas nunca ficam tortas: o chão fica plano embaixo delas e de todos os objetos; cercas acompanham o terreno
 - Armas detalhadas (Ultimate Gun Pack da Quaternius, CC0) com luneta, holográfica e silenciador encaixados; dano cai com a distância (SMG e 12 fortes de perto e fracas de longe)
-- Colete, capacete e mochila redesenhados, com cor por nível: 1 verde-oliva, 2 azul, 3 roxo; mochila militar arredondada (lona estufada, tampa, bolsos e fitas)
+- Colete, capacete e mochila redesenhados, com cor por nível (cores de guerra): 1 verde-oliva, 2 verde-acinzentado, 3 cinza; mochila militar arredondada (lona estufada, tampa, bolsos e fitas)
 - Bots se escondem atrás de caixote, muro, carro ou árvore na troca de tiro (abaixam pra recarregar/curar e levantam pra atirar) e erram um pouco mais
 - Animações: corrida com as pernas mexendo até pulando, recarga (inclina a arma e troca o pente), kit médico (enrolando o braço)
 - Arma baixa e atravessada na frente do corpo sem atirar; saque animado (a arma vem das costas e engatilha) com som de ferrolho de verdade; arma vazia recarrega sozinha ao sacar; tiros mais lentos e mais fortes, com tranco na arma e na câmera
@@ -41,7 +41,7 @@ Battle royale em 3D para Android, no estilo dos primeiros battle royale de celul
 - De longe o mapa aparece inteiro em versão simples (blocos de casas e árvores, serra no horizonte), leve pro celular
 - Sem coice na tela; segurando o dedo o tiro abre em 2-3 s (com colete/capacete nível 3, um pouco mais devagar) e a mira abre junto. Mirando, a câmera vai pra primeira pessoa (com ou sem luneta)
 - Bots lootam e brigam pouco no começo e ficam agressivos quando sobra pouca gente (final cheio)
-- Luz de meio da tarde (~15:30): sol mais baixo e quente, cores menos vivas
+- Luz fria e clara de guerra (sem amarelado), cores um pouco lavadas
 - Clima de guerra com cor: céu azul com bruma de poeira, verde vivo com manchas queimadas, sombras fundas, colunas de fumaça no horizonte e sons de guerra ao longe (explosões, metralhadora, sirene, jato passando, vento)
 - Lugares novos: Aeródromo Carcará (pista de pouso, hangares em arco, torre de controle, tanques de combustível), Pátio dos Galpões (galpões com mezanino e escada, contêineres), Acampamento Sentinela (tendas, casamatas, canhões, ninho de metralhadora, trincheira, arame farpado), Brejo Seco com palafitas de madeira em cima da terra seca ligadas por passarelas, e Chapada Ventania bem no alto (subida longa e suave a pé e de carro) com praça elevada de concreto, escadas e passarela
 - Marcas da guerra no mapa todo: postos de controle nas rodovias, tanques queimados, crateras, trincheiras, arame farpado, ouriços de aço, casamatas e canhões
